@@ -132,21 +132,27 @@ def short_date(iso: str) -> str:
 _FTS_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
 
 
-def to_fts_query(raw: str) -> str:
-    """Turn a natural-language query into a safe FTS5 MATCH expression.
-
-    Each token is quoted as a phrase and AND-ed together. A trailing '*' on a
-    token is preserved as a prefix search. This never raises a MATCH syntax
-    error, at the cost of not exposing raw boolean operators (use --raw for that).
-    """
+def fts_tokens(raw: str) -> list[str]:
+    """Quoted, FTS5-safe tokens from a natural query (prefix '*' preserved)."""
     tokens = []
     for m in _FTS_TOKEN.finditer(raw or ""):
         tok = m.group(0)
-        # allow prefix search if the user typed word*
         end = m.end()
         star = end < len(raw) and raw[end] == "*"
         tokens.append(f'"{tok}"*' if star else f'"{tok}"')
-    return " ".join(tokens)
+    return tokens
+
+
+def to_fts_query(raw: str, op: str = "AND") -> str:
+    """Turn a natural-language query into a safe FTS5 MATCH expression.
+
+    op='AND' -> every term must appear (implicit AND, tokens space-joined).
+    op='OR'  -> any term may appear (ranked by bm25 so full matches rise).
+    Never raises a MATCH syntax error; use --raw for raw boolean operators.
+    """
+    tokens = fts_tokens(raw)
+    joiner = " OR " if op.upper() == "OR" else " "
+    return joiner.join(tokens)
 
 
 def chunks(seq: Iterable, n: int):

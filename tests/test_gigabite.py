@@ -93,6 +93,18 @@ class TestStore(unittest.TestCase):
         st.delete_document(doc.doc_id)
         self.assertIsNone(st.get_document(doc.doc_id))
 
+    def test_or_fallback_when_and_is_empty(self):
+        st = fresh_store("orfb")
+        st.upsert_document(Document(
+            source="claude_code", native_id="o1", title="FTS notes",
+            messages=[Message(0, "user", "sqlite fts5 works well with bm25")]))
+        # "ranking" doesn't co-occur, so strict AND is empty -> OR fallback finds it
+        self.assertFalse(st._run_match(util.to_fts_query("sqlite fts5 ranking", "AND"),
+                                       None, None, 20))
+        hits = st.search("sqlite fts5 ranking")
+        self.assertTrue(hits)
+        self.assertEqual(hits[0]["title"], "FTS notes")
+
     def test_malformed_query_never_raises(self):
         st = fresh_store("store2")
         st.upsert_document(Document(source="granola", native_id="g", title="t",

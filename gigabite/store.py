@@ -223,10 +223,17 @@ class Store:
         project: Optional[str] = None,
         limit: int = 20,
     ) -> list[dict]:
-        match = query if raw else util.to_fts_query(query)
+        if raw:
+            return self._run_match(query, sources, project, limit)
+        # AND (all terms) first; fall back to OR (any term, bm25-ranked) if empty.
+        rows = self._run_match(util.to_fts_query(query, "AND"), sources, project, limit)
+        if rows:
+            return rows
+        return self._run_match(util.to_fts_query(query, "OR"), sources, project, limit)
+
+    def _run_match(self, match, sources, project, limit) -> list[dict]:
         if not match.strip():
             return []
-
         where = ["fts MATCH ?"]
         params: list[Any] = [match]
         if sources:
