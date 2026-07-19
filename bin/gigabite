@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# gigabite launcher — self-locating, stdlib-only, no install step required.
+# Resolves the repo root from this script's own location (follows symlinks),
+# puts it on PYTHONPATH, and runs the package. Works from any directory.
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REPO="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+
+export PYTHONPATH="$REPO:${PYTHONPATH:-}"
+exec /usr/bin/python3 -m gigabite "$@"

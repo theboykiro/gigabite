@@ -1,0 +1,37 @@
+# gigabite — code only. No content, no secrets, ever.
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# macOS
+.DS_Store
+
+# Local stores live OUTSIDE the repo (~/.core, ~/.knowledge) by design.
+# These patterns are belt-and-suspenders in case anything is ever created in-tree.
+.core/
+.knowledge/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Any accidental content / exports / secrets
+*.enc
+conversations.json
+/knowledge/
+/core/
+secrets*
+*.key
+*.pem
+
+# ...but DO keep the scaffold templates (they contain no real content)
+!scaffold/core.md
+
+# Claude Code machine-local settings
+.claude/settings.local.json
