@@ -189,11 +189,17 @@ def cmd_claude_login(args) -> int:
     from .sources import claude_ai_live
     print(bold("Store your claude.ai session token (stays on this machine)"))
     print(dim(
-        "How to get it:\n"
-        "  1. Open claude.ai logged in → DevTools (⌥⌘I) → Application → Cookies\n"
-        "     → https://claude.ai → copy the value of `sessionKey` (starts sk-ant-sid…).\n"
-        "  2. Paste it at the secure prompt below. It is NOT shown, stored in a file,\n"
-        "     or visible to anyone — it goes straight into your macOS keychain.\n"))
+        "Get it (Safari): claude.ai → ⌥⌘I → Storage tab → Cookies → claude.ai →\n"
+        "  copy the `sessionKey` value (starts sk-ant-sid…; double-click to grab all of it).\n"))
+    print("When you press Enter, macOS's " + bold("security") + " tool will show:")
+    print(cyan("    password data for new item:"))
+    print(dim("That hidden line is where you PASTE the token (you won't see characters). "
+              "Press Enter, then paste again at ") + cyan("retype password for new item:") + dim(".\n"))
+    try:
+        input("Press Enter to open the secure prompt (Ctrl-C to cancel)… ")
+    except (EOFError, KeyboardInterrupt):
+        print(yellow("\ncancelled."))
+        return 1
     rc = claude_ai_live.store_token_interactive()
     if rc == 0:
         print(green("\n✓ Token saved to keychain. Now run: ") + "gigabite claude-sync")

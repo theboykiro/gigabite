@@ -66,17 +66,31 @@ def read_token() -> Optional[str]:
     return tok or None
 
 
+def delete_token() -> None:
+    """Remove any stored token (ignore if absent)."""
+    subprocess.run(
+        ["security", "delete-generic-password",
+         "-s", KEYCHAIN_SERVICE, "-a", keychain_account()],
+        capture_output=True,
+    )
+
+
 def store_token_interactive() -> int:
     """Run the macOS secure prompt so the user enters the token themselves.
 
-    `security` prompts for the value (twice, hidden) — it never appears on the
-    command line, in shell history, or in this process. -U updates if present.
+    Clears any prior item first (so re-running always works), then runs
+    `security` with `-w` LAST so it drops straight into its own hidden prompt:
+        password data for new item:
+        retype password for new item:
+    The value never appears on the command line, in shell history, or in this
+    process — `security` reads it directly.
     """
+    delete_token()
     return subprocess.call([
         "security", "add-generic-password",
         "-s", KEYCHAIN_SERVICE, "-a", keychain_account(),
-        "-U", "-w",
         "-D", "gigabite claude.ai sessionKey",
+        "-w",
     ])
 
 
