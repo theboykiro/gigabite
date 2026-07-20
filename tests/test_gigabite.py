@@ -269,8 +269,13 @@ class TestClaudeAiLive(unittest.TestCase):
 
     def test_no_token_is_a_clean_noop(self):
         st = fresh_store("live2")
-        claude_ai_live._get = self._orig      # ensure real path not hit
-        rep = claude_ai_live.ingest(st, token=None)   # explicit no token
+        claude_ai_live._get = self._orig               # ensure real API path not hit
+        orig_read = claude_ai_live.read_token
+        claude_ai_live.read_token = lambda: None       # hermetic: ignore machine keychain
+        try:
+            rep = claude_ai_live.ingest(st, token=None)
+        finally:
+            claude_ai_live.read_token = orig_read
         self.assertEqual(rep.changed, 0)
         self.assertEqual(rep.errors, [])
         self.assertTrue(any("no claude.ai token" in n for n in rep.notes))
