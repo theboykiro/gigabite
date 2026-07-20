@@ -69,7 +69,19 @@ def cmd_search(args) -> int:
         query, raw=args.raw,
         sources=[args.source] if args.source else None,
         project=args.project, limit=args.limit,
+        include_historical=args.all,
     )
+    if not hits and not args.all:
+        # transparent restore-on-access: retry across archived docs; a matching
+        # archived hit is restored to active by the store's record_access.
+        hits = store.search(
+            query, raw=args.raw,
+            sources=[args.source] if args.source else None,
+            project=args.project, limit=args.limit,
+            include_historical=True,
+        )
+        if hits:
+            print(dim("(no active matches — searched archived; matches are now restored)\n"))
     if args.json:
         print(json.dumps(hits, indent=2, ensure_ascii=False))
         return 0
@@ -240,8 +252,15 @@ def cmd_save(args) -> int:
     if not text.strip():
         print(yellow("nothing to save (empty text)."))
         return 1
-    savemod.ensure_project(args.project)
-    path = savemod.save_note(text, args.project, layer=args.layer, title=args.title, ts=args.date)
+    try:
+        # save_note validates + creates dirs; run it first so a bad project/layer
+        # doesn't leave an orphan project folder behind.
+        path = savemod.save_note(text, args.project, layer=args.layer,
+                                 title=args.title, ts=args.date)
+        savemod.ensure_project(args.project)   # add _project.md scaffold if absent
+    except ValueError as e:
+        print(yellow(f"can't save: {e} (check --project/--layer)"))
+        return 1
     # index it immediately so it's searchable now
     store = _open()
     from .sources import notes as notes_src
@@ -368,6 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--limit", type=int, default=20)
     ps.add_argument("--context", type=int, default=0, help="show up to N+1 snippets per conversation")
     ps.add_argument("--raw", action="store_true", help="pass query verbatim as an FTS5 expression")
+    ps.add_argument("--all", action="store_true", help="include archived (decayed) documents")
     ps.add_argument("--json", action="store_true")
     ps.set_defaults(func=cmd_search)
 

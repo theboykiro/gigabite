@@ -105,6 +105,22 @@ class TestStore(unittest.TestCase):
         self.assertTrue(hits)
         self.assertEqual(hits[0]["title"], "FTS notes")
 
+    def test_restore_on_access_via_historical_fallback(self):
+        st = fresh_store("restore")
+        st.upsert_document(Document(source="granola", native_id="arch", title="Archived meeting",
+                                    messages=[Message(0, "note", "the wombat migration plan")]))
+        did = util.doc_id("granola", "arch")
+        st.set_active(did, False)
+        # default search excludes it (decay working)
+        self.assertFalse(st.search("wombat"))
+        # historical search returns it AND restores it (record_access -> active=1)
+        hits = st.search("wombat", include_historical=True)
+        self.assertTrue(hits)
+        row = st.conn.execute("SELECT active FROM documents WHERE doc_id=?", (did,)).fetchone()
+        self.assertEqual(row["active"], 1)
+        # now it's active again for default search
+        self.assertTrue(st.search("wombat"))
+
     def test_malformed_query_never_raises(self):
         st = fresh_store("store2")
         st.upsert_document(Document(source="granola", native_id="g", title="t",
@@ -285,6 +301,16 @@ class TestGranola(unittest.TestCase):
         self.assertEqual(rep.changed, 1)                       # only real.md
         self.assertFalse(st.search("instructions"))            # README not indexed
         self.assertTrue(st.search("actual"))
+
+    def test_nested_reserved_dir_is_skipped(self):
+        box = Path(_TMP) / "gnest"
+        (box / "_archive").mkdir(parents=True, exist_ok=True)
+        (box / "_archive" / "old.md").write_text("# Old\nzebrafishmarker content")
+        (box / "live.md").write_text("# Live\ndolphinmarker content")
+        st = fresh_store("gnest")
+        granola.ingest(st, inbox=box)
+        self.assertTrue(st.search("dolphinmarker"))
+        self.assertFalse(st.search("zebrafishmarker"))   # nested under _archive -> skipped
 
     def test_json_api_shape_splits_notes_and_transcript(self):
         obj = {"id": "g9", "title": "Sync", "created_at": "2026-05-01T09:00:00Z",

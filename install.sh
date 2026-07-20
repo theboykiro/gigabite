@@ -20,7 +20,7 @@ CORE_DIR="${GIGABITE_CORE_DIR:-$HOME/.core}"
 KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/.knowledge}"
 
 # ---------------------------------------------------------------------------
-say "1/5  Creating the local store layout"
+say "1/6  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
 mkdir -p "$CORE_DIR/capability" "$KNOW_DIR/_inbox/claude_ai" "$KNOW_DIR/_inbox/granola"
 ok "core:      $CORE_DIR"
@@ -44,7 +44,7 @@ if [ -d "$REPO/scaffold/sops" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-say "2/5  Putting gigabite on your PATH"
+say "2/6  Putting gigabite on your PATH"
 INSTALLED=""
 for d in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
   if mkdir -p "$d" 2>/dev/null && [ -w "$d" ]; then
@@ -102,24 +102,41 @@ HOOK_DIR="$HOME/.claude/gigabite"
 mkdir -p "$HOOK_DIR"
 sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/hooks/gg-recall.sh" > "$HOOK_DIR/gg-recall.sh"
 chmod +x "$HOOK_DIR/gg-recall.sh"
-if GIGABITE_HOOK="$HOOK_DIR/gg-recall.sh" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
-import json, os, sys
+HOOK_STATUS=$(GIGABITE_HOOK="$HOOK_DIR/gg-recall.sh" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
+import json, os, sys, shutil
 path = sys.argv[1]; hook = os.environ["GIGABITE_HOOK"]
-try:
-    cfg = json.load(open(path))
-except Exception:
-    cfg = {}
+cfg = {}
+if os.path.exists(path):
+    try:
+        with open(path) as fh:
+            cfg = json.load(fh)
+    except Exception:
+        # Never clobber a file we couldn't parse — back it up and bail out.
+        shutil.copy2(path, path + ".gigabite.bak")
+        print("unparseable"); sys.exit(0)
+    if not isinstance(cfg, dict):
+        shutil.copy2(path, path + ".gigabite.bak")
+        print("unparseable"); sys.exit(0)
 hooks = cfg.setdefault("hooks", {})
+if not isinstance(hooks, dict):
+    print("hooks-not-dict"); sys.exit(0)          # leave user's config untouched
 ups = hooks.setdefault("UserPromptSubmit", [])
-blob = json.dumps(ups)
-if hook in blob:
+if not isinstance(ups, list):
+    print("ups-not-list"); sys.exit(0)
+if hook in json.dumps(ups):
     print("exists"); sys.exit(0)
 ups.append({"hooks": [{"type": "command", "command": hook}]})
-json.dump(cfg, open(path, "w"), indent=2)
+with open(path, "w") as fh:
+    json.dump(cfg, fh, indent=2)
 print("added")
 PY
-then :; fi
-ok "ambient recall hook installed (UserPromptSubmit). Disable by removing it from ~/.claude/settings.json"
+) || HOOK_STATUS="error"
+case "$HOOK_STATUS" in
+  added)         ok "ambient recall hook registered (UserPromptSubmit). Remove it from ~/.claude/settings.json to disable." ;;
+  exists)        note "ambient recall hook already registered" ;;
+  unparseable)   warn "~/.claude/settings.json isn't valid JSON — backed it up to .gigabite.bak and did NOT modify it. Add the hook manually or fix the file and re-run." ;;
+  *)             warn "could not register the recall hook automatically ($HOOK_STATUS). Hook script is at $HOOK_DIR/gg-recall.sh; add it to settings.json manually." ;;
+esac
 
 # ---------------------------------------------------------------------------
 say "5/6  Building the initial index"

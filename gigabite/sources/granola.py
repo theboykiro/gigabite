@@ -192,11 +192,17 @@ def ingest(store: Store, inbox: Optional[Path] = None, force: bool = False) -> I
         report.notes.append(f"no Granola inbox at {box}")
         return report
 
+    def _reserved(path: Path) -> bool:
+        # skip if any path segment (relative to the inbox) is hidden/reserved,
+        # not just the filename — matches the notes source's behaviour
+        rel = path.relative_to(box)
+        return any(part.startswith((".", "_")) for part in rel.parts)
+
     files = [
         p for p in sorted(box.rglob("*"))
         if p.suffix.lower() in (".md", ".txt", ".json")
         and p.name.lower() != "readme.md"          # skip the inbox instructions
-        and not p.name.startswith((".", "_"))
+        and not _reserved(p)
     ]
     if not files:
         report.notes.append(

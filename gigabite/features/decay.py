@@ -7,9 +7,16 @@ than flipping the index's `active` flag to 0.
 
 Non-destructive by design:
   - Nothing is deleted; archived rows stay in the index and remain searchable
-    on explicit request (`search(..., include_historical=True)`).
-  - Re-access restores automatically: `Store.record_access` (called by every
-    default search hit) sets `active = 1` and refreshes `accessed_utc`.
+    on explicit request (`search(..., include_historical=True)`, surfaced on the
+    CLI as `gigabite search --all`).
+  - Restore-on-access: when a search actually returns an archived document,
+    `Store.record_access` flips it back to `active = 1` and refreshes
+    `accessed_utc`. This fires whenever archived rows are in the result set —
+    i.e. under `--all`, and under the CLI's automatic fallback where a default
+    search with no active matches retries across archived docs. A default search
+    that already has active matches does NOT surface (or restore) archived docs,
+    which is the point of decay. Recovery by id is also available via
+    `decay.restore(store, doc_id)` / `gigabite decay --restore <doc_id>`.
 
 Last-touch is `accessed_utc`, falling back to `updated_utc`, then `created_utc`
 — the most recent signal that a document still matters. Documents with no usable

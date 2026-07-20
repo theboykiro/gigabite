@@ -32,7 +32,7 @@ hits = d.get("hits") or []
 # bm25 scores are negative; more negative = stronger. Only inject strong hits.
 strong = [h for h in hits if isinstance(h.get("score"), (int, float)) and h["score"] < -1.0]
 if not strong:
-    sys.exit(0)
+    raise SystemExit(0)
 ctx = d.get("context") or {}
 out = ["[gigabite recall — prior context from your own history; cite as source · title · date if used]"]
 if ctx.get("project"):
