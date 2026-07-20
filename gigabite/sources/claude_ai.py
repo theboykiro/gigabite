@@ -55,6 +55,24 @@ def _load_conversations(path: Path) -> list:
     return data if isinstance(data, list) else []
 
 
+def _alias(project: str) -> str:
+    """Map a claude.ai project label to your canonical short name.
+
+    Aliases live in ~/.knowledge/_aliases.json, e.g.
+        {"Acme Product Manager": "acme"}
+    so grouping survives future browser refreshes. Missing file -> no-op.
+    """
+    if not project:
+        return project
+    path = config.KNOWLEDGE_DIR / "_aliases.json"
+    try:
+        import json as _json
+        aliases = _json.loads(path.read_text(encoding="utf-8"))
+        return aliases.get(project, project)
+    except Exception:
+        return project
+
+
 def _msg_role(m: dict) -> str:
     sender = m.get("sender") or m.get("role") or ""
     return "user" if sender in ("human", "user") else ("assistant" if sender else "user")
@@ -111,6 +129,7 @@ def conversation_to_document(conv: dict, ref: str) -> Optional[Document]:
     project = conv.get("project_name") or conv.get("project") or ""
     if not project and conv.get("project_uuid"):
         project = str(conv["project_uuid"])[:8]
+    project = _alias(project)  # normalise long claude.ai labels to your short names
     return Document(
         source=config.SOURCE_CLAUDE_AI,
         native_id=str(uuid),
