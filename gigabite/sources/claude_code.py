@@ -51,6 +51,9 @@ def _attachment_text(ev: dict) -> str:
 
 def parse_session_file(path: Path) -> Optional[Document]:
     """Parse one .jsonl session into a Document, or None if it has no content."""
+    # Identity is the FILE, not the sessionId in events: subagent transcripts
+    # carry the parent's sessionId, which would collapse many files onto one doc.
+    native_id = path.stem
     session_id = path.stem
     title_custom = None
     title_ai = None
@@ -116,7 +119,7 @@ def parse_session_file(path: Path) -> Optional[Document]:
 
     return Document(
         source=config.SOURCE_CLAUDE_CODE,
-        native_id=session_id,
+        native_id=native_id,
         title=title.strip(),
         project=_project_from_cwd(cwd),
         created_utc=first_ts,
@@ -135,6 +138,9 @@ def ingest(store: Store, projects_dir: Optional[Path] = None, force: bool = Fals
         return report
 
     for path in sorted(root.rglob("*.jsonl")):
+        # Skip internal subagent transcripts — they're not the user's conversations.
+        if path.name.startswith("agent-"):
+            continue
         report.scanned += 1
         try:
             sig = _signature(path)

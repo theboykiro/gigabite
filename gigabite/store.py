@@ -93,7 +93,9 @@ def init_schema(conn: sqlite3.Connection) -> None:
             extra_json   TEXT,
             content_hash TEXT,
             msg_count    INTEGER DEFAULT 0,
-            word_count   INTEGER DEFAULT 0
+            word_count   INTEGER DEFAULT 0,
+            accessed_utc TEXT,
+            active       INTEGER DEFAULT 1
         );
         CREATE INDEX IF NOT EXISTS idx_documents_source  ON documents(source);
         CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project);
@@ -121,6 +123,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    _migrate(conn)
     cur = conn.execute("SELECT value FROM meta WHERE key='schema_version'")
     row = cur.fetchone()
     if row is None:
@@ -128,6 +131,16 @@ def init_schema(conn: sqlite3.Connection) -> None:
             "INSERT INTO meta(key,value) VALUES('schema_version',?)",
             (str(SCHEMA_VERSION),),
         )
+    conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after v1 to a pre-existing documents table."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)")}
+    if "accessed_utc" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN accessed_utc TEXT")
+    if "active" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN active INTEGER DEFAULT 1")
     conn.commit()
 
 
@@ -222,20 +235,27 @@ class Store:
         sources: Optional[Iterable[str]] = None,
         project: Optional[str] = None,
         limit: int = 20,
+        include_historical: bool = False,
+        record: bool = True,
     ) -> list[dict]:
         if raw:
-            return self._run_match(query, sources, project, limit)
-        # AND (all terms) first; fall back to OR (any term, bm25-ranked) if empty.
-        rows = self._run_match(util.to_fts_query(query, "AND"), sources, project, limit)
-        if rows:
-            return rows
-        return self._run_match(util.to_fts_query(query, "OR"), sources, project, limit)
+            rows = self._run_match(query, sources, project, limit, include_historical)
+        else:
+            # AND (all terms) first; fall back to OR (any term, bm25-ranked) if empty.
+            rows = self._run_match(util.to_fts_query(query, "AND"), sources, project, limit, include_historical)
+            if not rows:
+                rows = self._run_match(util.to_fts_query(query, "OR"), sources, project, limit, include_historical)
+        if record and rows:
+            self.record_access({r["doc_id"] for r in rows})
+        return rows
 
-    def _run_match(self, match, sources, project, limit) -> list[dict]:
+    def _run_match(self, match, sources, project, limit, include_historical=False) -> list[dict]:
         if not match.strip():
             return []
         where = ["fts MATCH ?"]
         params: list[Any] = [match]
+        if not include_historical:
+            where.append("d.active = 1")
         if sources:
             srcs = list(sources)
             where.append("fts.source IN (%s)" % ",".join("?" * len(srcs)))
@@ -283,12 +303,49 @@ class Store:
         doc["messages"] = [dict(m) for m in msgs]
         return doc
 
+    # -- access tracking & lifecycle (used by decay / synthesis) ------------
+
+    def record_access(self, doc_ids) -> None:
+        ids = list(doc_ids)
+        if not ids:
+            return
+        qmarks = ",".join("?" * len(ids))
+        self.conn.execute(
+            f"UPDATE documents SET accessed_utc = datetime('now'), active = 1 "
+            f"WHERE doc_id IN ({qmarks})",
+            ids,
+        )
+        self.conn.commit()
+
+    def set_active(self, doc_id: str, active: bool) -> None:
+        self.conn.execute(
+            "UPDATE documents SET active=? WHERE doc_id=?", (1 if active else 0, doc_id)
+        )
+        self.conn.commit()
+
+    def iter_documents(self, include_historical: bool = True) -> list[dict]:
+        sql = "SELECT * FROM documents"
+        if not include_historical:
+            sql += " WHERE active=1"
+        return [dict(r) for r in self.conn.execute(sql)]
+
+    def recent_documents(self, since_iso: str, *, by: str = "updated_utc") -> list[dict]:
+        col = "updated_utc" if by not in ("updated_utc", "created_utc", "accessed_utc") else by
+        return [
+            dict(r) for r in self.conn.execute(
+                f"SELECT * FROM documents WHERE {col} >= ? ORDER BY {col} DESC", (since_iso,)
+            )
+        ]
+
     def stats(self) -> dict:
         out: dict[str, Any] = {}
         out["documents"] = self.conn.execute(
             "SELECT COUNT(*) c FROM documents"
         ).fetchone()["c"]
         out["messages"] = self.conn.execute("SELECT COUNT(*) c FROM fts").fetchone()["c"]
+        out["archived"] = self.conn.execute(
+            "SELECT COUNT(*) c FROM documents WHERE active=0"
+        ).fetchone()["c"]
         out["by_source"] = {
             r["source"]: {"documents": r["docs"], "words": r["words"] or 0}
             for r in self.conn.execute(

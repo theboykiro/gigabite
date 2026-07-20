@@ -35,6 +35,14 @@ copy_if_absent "$REPO/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
 copy_if_absent "$REPO/scaffold/inbox-claude_ai.md"   "$KNOW_DIR/_inbox/claude_ai/README.md"
 copy_if_absent "$REPO/scaffold/inbox-granola.md"     "$KNOW_DIR/_inbox/granola/README.md"
 
+# SOPs the subagents load at runtime
+if [ -d "$REPO/scaffold/sops" ]; then
+  mkdir -p "$CORE_DIR/capability/sops"
+  for sop in "$REPO/scaffold/sops/"*.md; do
+    [ -e "$sop" ] && copy_if_absent "$sop" "$CORE_DIR/capability/sops/$(basename "$sop")"
+  done
+fi
+
 # ---------------------------------------------------------------------------
 say "2/5  Putting gigabite on your PATH"
 INSTALLED=""
@@ -62,20 +70,63 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "3/5  Installing Claude Code commands (user-level)"
+say "3/6  Installing Claude Code commands + subagents (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
-for f in search recall-status; do
+for f in gg search recall-status; do
+  [ -e "$REPO/claude-commands/$f.md" ] || continue
   sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/claude-commands/$f.md" > "$CMD_DIR/$f.md"
   ok "/$f"
 done
+if [ -d "$REPO/scaffold/agents" ]; then
+  AGENT_DIR="$HOME/.claude/agents"
+  mkdir -p "$AGENT_DIR"
+  for a in "$REPO/scaffold/agents/"*.md; do
+    [ -e "$a" ] && cp "$a" "$AGENT_DIR/$(basename "$a")" && ok "subagent $(basename "$a" .md)"
+  done
+fi
 
 # ---------------------------------------------------------------------------
-say "4/5  Building the initial index"
+say "4/6  Wiring the conversational layer (router protocol + ambient recall)"
+# Router constitution: append a managed block to ~/.claude/CLAUDE.md (never clobber).
+GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
+touch "$GLOBAL_CLAUDE"
+if grep -qF "gigabite:router:start" "$GLOBAL_CLAUDE" 2>/dev/null; then
+  note "router protocol already in ~/.claude/CLAUDE.md"
+else
+  printf '\n' >> "$GLOBAL_CLAUDE"; cat "$REPO/scaffold/CLAUDE.md" >> "$GLOBAL_CLAUDE"
+  ok "added router protocol to ~/.claude/CLAUDE.md"
+fi
+# Ambient recall hook: install script + register UserPromptSubmit in settings.json.
+HOOK_DIR="$HOME/.claude/gigabite"
+mkdir -p "$HOOK_DIR"
+sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/hooks/gg-recall.sh" > "$HOOK_DIR/gg-recall.sh"
+chmod +x "$HOOK_DIR/gg-recall.sh"
+if GIGABITE_HOOK="$HOOK_DIR/gg-recall.sh" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
+import json, os, sys
+path = sys.argv[1]; hook = os.environ["GIGABITE_HOOK"]
+try:
+    cfg = json.load(open(path))
+except Exception:
+    cfg = {}
+hooks = cfg.setdefault("hooks", {})
+ups = hooks.setdefault("UserPromptSubmit", [])
+blob = json.dumps(ups)
+if hook in blob:
+    print("exists"); sys.exit(0)
+ups.append({"hooks": [{"type": "command", "command": hook}]})
+json.dump(cfg, open(path, "w"), indent=2)
+print("added")
+PY
+then :; fi
+ok "ambient recall hook installed (UserPromptSubmit). Disable by removing it from ~/.claude/settings.json"
+
+# ---------------------------------------------------------------------------
+say "5/6  Building the initial index"
 "$BIN" ingest || warn "ingest reported issues (see above)"
 
 # ---------------------------------------------------------------------------
-say "5/5  Done"
+say "6/6  Done"
 "$BIN" status || true
 echo
 note "Search from the terminal:   gigabite search \"...\""

@@ -207,6 +207,133 @@ def cmd_claude_sync(args) -> int:
     return 0
 
 
+def cmd_route(args) -> int:
+    from .features import routing
+    store = _open()
+    prompt = " ".join(args.prompt)
+    result = routing.route(store, prompt, limit=args.limit)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    ctx = result["context"]
+    print(dim(f"context: {ctx['project'] or '(unscoped)'}"
+              + (f":{ctx['layer']}" if ctx['layer'] else "")
+              + f"  [{ctx['confidence']}] — {ctx['reason']}"))
+    hits = result["hits"]
+    if not hits:
+        print(dim("no prior context found"))
+        return 0
+    print(dim(f"\nrecalled {len(hits)} passage(s):"))
+    for h in hits:
+        label = config.SOURCE_LABELS.get(h["source"], h["source"])
+        date = (h.get("created_utc") or "")[:10] or "—"
+        proj = f" · {h['project']}" if h.get("project") else ""
+        meta = f"{label}{proj} · {date} · {h['doc_id']}"
+        print(f"  {bold(h['title'] or '(untitled)')}  {dim(meta)}")
+        print(f"    {' '.join((h.get('snippet') or '').split())}")
+    return 0
+
+
+def cmd_save(args) -> int:
+    from .features import save as savemod
+    text = sys.stdin.read() if args.stdin or (args.text == ["-"]) else " ".join(args.text)
+    if not text.strip():
+        print(yellow("nothing to save (empty text)."))
+        return 1
+    savemod.ensure_project(args.project)
+    path = savemod.save_note(text, args.project, layer=args.layer, title=args.title, ts=args.date)
+    # index it immediately so it's searchable now
+    store = _open()
+    from .sources import notes as notes_src
+    notes_src.ingest(store)
+    print(green(f"✓ saved & indexed: {path}"))
+    return 0
+
+
+def cmd_project(args) -> int:
+    from .features import save as savemod
+    if args.action == "add":
+        kws = [k.strip() for k in (args.keywords or "").split(",") if k.strip()]
+        lys = [l.strip() for l in (args.layers or "").split(",") if l.strip()]
+        p = savemod.ensure_project(args.name, keywords=kws or None, layers=lys or None)
+        print(green(f"✓ project ready: {p}"))
+        return 0
+    # list
+    projs = savemod.list_projects()
+    if not projs:
+        print(dim("no projects yet — `gigabite project add <name> --keywords a,b`"))
+        return 0
+    print(bold("projects"))
+    for p in projs:
+        print(f"  {bold(p['name'])}  {dim('layers: ' + (', '.join(p['layers']) or '—'))}")
+        if p["keywords"]:
+            print(dim(f"    keywords: {', '.join(p['keywords'])}"))
+    return 0
+
+
+def cmd_synthesize(args) -> int:
+    from .features import synthesis
+    store = _open()
+    if args.list:
+        for p in synthesis.list_proposals():
+            print(f"  {p}")
+        return 0
+    if args.print:
+        digest = synthesis.build_digest(store, since_days=args.since_days)
+        print(json.dumps(digest, indent=2, ensure_ascii=False) if args.json
+              else _render_digest(digest))
+        return 0
+    path = synthesis.write_proposal(store, since_days=args.since_days)
+    digest = synthesis.build_digest(store, since_days=args.since_days)
+    print(green(f"✓ proposal written: {path}"))
+    print(dim(f"  {digest.get('document_count', 0)} document(s) from the last "
+              f"{args.since_days} day(s). Review and apply accepted items yourself — "
+              f"nothing is written to core.md/knowledge automatically."))
+    return 0
+
+
+def _render_digest(d: dict) -> str:
+    lines = [bold(f"Digest — last {d.get('since_days')} day(s), "
+                  f"{d.get('document_count', 0)} document(s)")]
+    for g in d.get("groups", []):
+        lines.append(f"\n  {cyan(g.get('project') or '(unscoped)')}")
+        for doc in g.get("documents", []):
+            lines.append(f"    · {doc.get('title', '?')} {dim((doc.get('updated_utc') or '')[:10])}")
+            ex = " ".join((doc.get("excerpt") or "").split())[:160]
+            if ex:
+                lines.append(dim(f"      {ex}"))
+    return "\n".join(lines)
+
+
+def cmd_decay(args) -> int:
+    from .features import decay
+    store = _open()
+    if args.status:
+        s = decay.status(store)
+        print(bold("decay status"))
+        print(f"  active:   {s['active']}")
+        print(f"  archived: {s['archived']}")
+        if s.get("oldest_active"):
+            print(dim("  oldest active:"))
+            for d in s["oldest_active"]:
+                print(dim(f"    · {(d.get('last_touch') or '')[:10]}  {d.get('title','?')}"))
+        return 0
+    if args.restore:
+        ok = decay.restore(store, args.restore)
+        print(green(f"✓ restored {args.restore}") if ok else yellow(f"not found: {args.restore}"))
+        return 0 if ok else 1
+    dry = not args.apply
+    result = decay.run(store, window_days=args.window_days, dry_run=dry)
+    verb = "would archive" if dry else "archived"
+    print(bold(f"{verb} {result['count']} document(s) untouched for "
+               f">{args.window_days} days"))
+    for d in result["archived"][:20]:
+        print(dim(f"  · {(d.get('last_touch') or '')[:10]}  {d.get('title','?')}"))
+    if dry and result["count"]:
+        print(dim("\nrun with --apply to archive (non-destructive; re-access restores)."))
+    return 0
+
+
 def cmd_paths(args) -> int:
     config.ensure_dirs()
     print(bold("gigabite paths"))
@@ -266,6 +393,42 @@ def build_parser() -> argparse.ArgumentParser:
     pcs = sub.add_parser("claude-sync", help="pull all claude.ai chats (in/out of projects) via the stored token")
     pcs.add_argument("--force", action="store_true", help="re-fetch every conversation")
     pcs.set_defaults(func=cmd_claude_sync)
+
+    pv = sub.add_parser("save", help="persist a note into ~/.knowledge/{project}/{layer}/ (never the working dir)")
+    pv.add_argument("text", nargs="*", help="note text (or - / --stdin to read stdin)")
+    pv.add_argument("--project", "-p", required=True)
+    pv.add_argument("--layer", "-l")
+    pv.add_argument("--title", "-t")
+    pv.add_argument("--date")
+    pv.add_argument("--stdin", action="store_true")
+    pv.set_defaults(func=cmd_save)
+
+    pj = sub.add_parser("project", help="create or list projects (name + keywords drive context detection)")
+    pj.add_argument("action", choices=["add", "list"])
+    pj.add_argument("name", nargs="?")
+    pj.add_argument("--keywords")
+    pj.add_argument("--layers")
+    pj.set_defaults(func=cmd_project)
+
+    psy = sub.add_parser("synthesize", help="build a gated end-of-day proposal from recent activity")
+    psy.add_argument("--since-days", type=int, default=1)
+    psy.add_argument("--print", action="store_true", help="print the digest without writing a proposal")
+    psy.add_argument("--list", action="store_true", help="list existing proposals")
+    psy.add_argument("--json", action="store_true")
+    psy.set_defaults(func=cmd_synthesize)
+
+    pdc = sub.add_parser("decay", help="archive untouched documents (non-destructive; restore on access)")
+    pdc.add_argument("--apply", action="store_true", help="actually archive (default is a dry run)")
+    pdc.add_argument("--window-days", type=int, default=30)
+    pdc.add_argument("--status", action="store_true")
+    pdc.add_argument("--restore", metavar="DOC_ID")
+    pdc.set_defaults(func=cmd_decay)
+
+    prt = sub.add_parser("route", help="resolve context + recall relevant prior conversations (powers /gg)")
+    prt.add_argument("prompt", nargs="+")
+    prt.add_argument("--limit", type=int, default=6)
+    prt.add_argument("--json", action="store_true")
+    prt.set_defaults(func=cmd_route)
 
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)

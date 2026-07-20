@@ -144,6 +144,25 @@ class TestClaudeCode(unittest.TestCase):
         rep2 = claude_code.ingest(st, projects_dir=Path(_TMP) / "cc")
         self.assertEqual(rep2.changed, 0)
 
+    def test_shared_sessionid_files_do_not_collide_and_agents_skipped(self):
+        d = Path(_TMP) / "cc2" / "-Users-x-proj"
+        d.mkdir(parents=True, exist_ok=True)
+        # two files that both carry the SAME sessionId in their events, each with
+        # a token unique to that file
+        markers = {"main-uuid": "quokkamarker", "agent-sub1": "narwhalmarker"}
+        for stem, marker in markers.items():
+            (d / f"{stem}.jsonl").write_text("\n".join(json.dumps(x) for x in [
+                {"type": "user", "sessionId": "SHARED", "cwd": "/Users/x/proj",
+                 "message": {"role": "user", "content": f"unique {marker} here"}},
+            ]))
+        st = fresh_store("cc2")
+        rep = claude_code.ingest(st, projects_dir=Path(_TMP) / "cc2")
+        # agent-*.jsonl is skipped; only the real session is indexed -> no collision
+        self.assertEqual(rep.scanned, 1)
+        self.assertEqual(rep.changed, 1)
+        self.assertTrue(st.search("quokkamarker"))       # real session indexed
+        self.assertFalse(st.search("narwhalmarker"))     # agent transcript not indexed
+
 
 class TestClaudeAi(unittest.TestCase):
     def _export(self, name):
