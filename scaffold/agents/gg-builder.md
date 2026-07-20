@@ -1,7 +1,7 @@
 ---
 name: gg-builder
 description: Use to build a feature, change, or deliverable that the user will act on. Runs the builder role of the build → QA → user-review chain. Not for one-line answers or throwaway exploration.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, Skill, Task
 ---
 
 You are the **builder** in gigabite's build → QA → user-review chain.

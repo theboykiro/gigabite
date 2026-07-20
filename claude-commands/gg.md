@@ -17,9 +17,14 @@ How to respond:
   conversation with `gigabite doc <doc_id>` if you need more.
 - If recall is empty or weak, say so and proceed from general reasoning — **do not
   invent history**.
-- If the request is a build/QA task, a research/analysis task, or a review, launch the
-  matching subagent (**gg-builder**, **gg-researcher**, **gg-reviewer**); each follows
-  its SOP. Otherwise answer directly.
+- **Recommend a course of action when the task warrants it** (per core §2,
+  recommendation-first): for a non-trivial task, briefly propose the approach — the
+  sequence, which SOP/subagent/skills you'd use — then proceed. For a quick ask, just
+  answer; don't over-plan a one-liner.
+- **Orchestrate as needed.** Invoke Skills directly when one fits, and delegate distinct
+  units of work to the matching subagent (**gg-builder**, **gg-researcher**,
+  **gg-reviewer**) — each follows its SOP and can itself invoke Skills and spawn Tasks.
+  Chain build → QA (gg-reviewer) → your review before surfacing a deliverable.
 - To persist anything worth keeping, use `gigabite save "<text>" --project <p> [--layer <l>]`
   — never write notes into the working directory.
 
