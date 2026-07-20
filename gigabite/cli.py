@@ -16,7 +16,7 @@ import json
 import sys
 from typing import Optional
 
-from . import __version__, config, ingest as ingest_mod
+from . import __version__, config, ingest as ingest_mod, util
 from .store import Store, connect
 
 # ---- tiny ANSI helpers (auto-disabled when piped) --------------------------
@@ -297,6 +297,85 @@ def cmd_project(args) -> int:
     return 0
 
 
+def _parse_meeting_header(text: str) -> dict:
+    """Pull title/date from a Granola-style header at the top of a transcript.
+
+    Recognises lines like 'Meeting Title: …', 'Title: …', 'Date: Jul 20',
+    'Date: 2026-07-20'. Only scans the first ~12 lines. Dates without a year
+    assume the current year.
+    """
+    import re
+    from datetime import date as _date, datetime as _dt
+    out: dict = {}
+    head = "\n".join(text.splitlines()[:12])
+    m = re.search(r"^(?:meeting\s+)?title:\s*(.+)$", head, re.IGNORECASE | re.MULTILINE)
+    if m:
+        out["title"] = m.group(1).strip()[:120]
+    m = re.search(r"^date:\s*(.+)$", head, re.IGNORECASE | re.MULTILINE)
+    if m:
+        raw = m.group(1).strip()
+        iso = util.to_iso_utc(raw)
+        if iso[:4].isdigit():
+            out["date"] = iso[:10]
+        else:  # e.g. "Jul 20" — no year in the string
+            for fmt in ("%b %d", "%B %d", "%d %b", "%d %B"):
+                try:
+                    out["date"] = _dt.strptime(raw, fmt).replace(year=_date.today().year).date().isoformat()
+                    break
+                except ValueError:
+                    continue
+    return out
+
+
+def cmd_paste(args) -> int:
+    """File whatever's on the clipboard (or stdin) straight into the index.
+
+    Fast intake for Granola transcripts: copy in Granola, then run this.
+    """
+    import subprocess as _sp
+    from .features import routing, save as savemod
+    if args.stdin:
+        text = sys.stdin.read()
+    else:
+        try:
+            text = _sp.run(["pbpaste"], capture_output=True, text=True, timeout=10).stdout
+        except (FileNotFoundError, _sp.TimeoutExpired):
+            print(yellow("couldn't read the clipboard (pbpaste). Use --stdin instead."))
+            return 1
+    text = text.strip()
+    if not text:
+        print(yellow("clipboard/stdin is empty — copy the transcript first, then re-run."))
+        return 1
+
+    # Granola copies carry a header (Meeting Title:/Date:/Participants:) — read it.
+    hdr = _parse_meeting_header(text)
+    title = args.title or hdr.get("title") or text.splitlines()[0][:80]
+    date = args.date or hdr.get("date") or __import__("datetime").date.today().isoformat()
+    project = args.project
+    if project is None:  # auto-detect unless explicitly set (use "" / --project '' to force none)
+        project = routing.resolve_context(f"{title}\n{text[:500]}")["project"] or ""
+
+    if args.source == config.SOURCE_NOTE:
+        path = savemod.save_note(text, project or "misc", layer=args.layer, title=title, ts=date)
+    else:  # granola (default)
+        from . import config as C
+        C.ensure_dirs()
+        slug = savemod.slugify(title) or "meeting"
+        path = C.INBOX_GRANOLA / f"{date}-{slug}.md"
+        fm = [f"title: {title}", f"date: {date}"]
+        if project:
+            fm.append(f"project: {project}")
+        path.write_text("---\n" + "\n".join(fm) + "\n---\n\n" + text + "\n", encoding="utf-8")
+
+    store = _open()
+    ingest_mod.run(store)  # local ingest picks it up
+    print(green(f"✓ filed & indexed: {title}")
+          + dim(f"  [{config.SOURCE_LABELS.get(args.source, args.source)}"
+                + (f" · {project}" if project else "") + f" · {date}]"))
+    print(dim(f"  {path}"))
+    return 0
+
+
 def cmd_calendar(args) -> int:
     from .features import calendar as cal
     store = _open()
@@ -471,6 +550,16 @@ def build_parser() -> argparse.ArgumentParser:
     pj.add_argument("--keywords")
     pj.add_argument("--layers")
     pj.set_defaults(func=cmd_project)
+
+    ppa = sub.add_parser("paste", help="file clipboard contents (e.g. a copied Granola transcript) into the index")
+    ppa.add_argument("--title", "-t", help="title (default: first line of the text)")
+    ppa.add_argument("--date", "-d", help="YYYY-MM-DD (default: today)")
+    ppa.add_argument("--project", "-p", help="project tag (default: auto-detect; pass '' to force none)")
+    ppa.add_argument("--layer", "-l", help="layer, only for --source note")
+    ppa.add_argument("--source", choices=[config.SOURCE_GRANOLA, config.SOURCE_NOTE],
+                     default=config.SOURCE_GRANOLA)
+    ppa.add_argument("--stdin", action="store_true", help="read from stdin instead of the clipboard")
+    ppa.set_defaults(func=cmd_paste)
 
     pc = sub.add_parser("calendar", help="file meetings from a parsed screenshot + show agenda with prep")
     pc.add_argument("action", choices=["add", "agenda"])
