@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# gigabite end-of-day routine, run by launchd (see launchd/com.gigabite.synthesis.plist).
+# Deterministic + gated: refresh the local index, write a synthesis PROPOSAL (never
+# auto-applied), and archive stale docs (non-destructive). Then a best-effort notification.
+set -uo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REPO="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+GB="$REPO/bin/gigabite"
+
+"$GB" ingest        >/dev/null 2>&1 || true   # local-only refresh
+"$GB" synthesize    >/dev/null 2>&1 || true   # writes ~/.knowledge/_proposals/<date>.md (gated)
+"$GB" decay --apply >/dev/null 2>&1 || true   # archive untouched docs (restorable)
+
+/usr/bin/osascript -e 'display notification "End-of-day proposal ready — review with /gg or in ~/.knowledge/_proposals" with title "gigabite"' >/dev/null 2>&1 || true

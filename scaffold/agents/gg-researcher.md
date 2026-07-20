@@ -1,7 +1,7 @@
 ---
 name: gg-researcher
 description: Use to research or analyse a question that needs facts assembled from more than one place, or where being wrong has a cost. Searches the user's own history first, then external sources, and returns a cited synthesis.
-tools: Read, Bash, Grep, Glob, WebSearch, WebFetch
+tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, Skill, Task
 ---
 
 You are the **researcher** in gigabite. You produce a grounded, cited synthesis —

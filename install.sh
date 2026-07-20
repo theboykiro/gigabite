@@ -20,7 +20,7 @@ CORE_DIR="${GIGABITE_CORE_DIR:-$HOME/.core}"
 KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/.knowledge}"
 
 # ---------------------------------------------------------------------------
-say "1/6  Creating the local store layout"
+say "1/7  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
 mkdir -p "$CORE_DIR/capability" "$KNOW_DIR/_inbox/claude_ai" "$KNOW_DIR/_inbox/granola"
 ok "core:      $CORE_DIR"
@@ -44,7 +44,7 @@ if [ -d "$REPO/scaffold/sops" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-say "2/6  Putting gigabite on your PATH"
+say "2/7  Putting gigabite on your PATH"
 INSTALLED=""
 for d in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
   if mkdir -p "$d" 2>/dev/null && [ -w "$d" ]; then
@@ -70,7 +70,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "3/6  Installing Claude Code commands + subagents (user-level)"
+say "3/7  Installing Claude Code commands + subagents (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
 for f in gg search recall-status calendar granola; do
@@ -87,7 +87,7 @@ if [ -d "$REPO/scaffold/agents" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-say "4/6  Wiring the conversational layer (router protocol + ambient recall)"
+say "4/7  Wiring the conversational layer (router protocol + ambient recall)"
 # Router constitution: append a managed block to ~/.claude/CLAUDE.md (never clobber).
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 touch "$GLOBAL_CLAUDE"
@@ -139,11 +139,27 @@ case "$HOOK_STATUS" in
 esac
 
 # ---------------------------------------------------------------------------
-say "5/6  Building the initial index"
+say "5/7  Scheduling the gated end-of-day synthesis (launchd)"
+DAILY="$REPO/bin/gigabite-daily"; chmod +x "$DAILY"
+LOG="$HOME/Library/Logs/gigabite-synthesis.log"
+LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist"
+mkdir -p "$LA_DIR" "$(dirname "$LOG")"
+sed -e "s|__DAILY_BIN__|$DAILY|g" -e "s|__LOG__|$LOG|g" \
+    "$REPO/launchd/com.gigabite.synthesis.plist" > "$PLIST"
+launchctl bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
+if launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
+  ok "scheduled: gigabite synthesize + decay daily at 18:00 (gated; nothing auto-applies)"
+else
+  warn "installed the LaunchAgent plist but couldn't load it now; it will load at next login. ($PLIST)"
+fi
+note "disable with: launchctl bootout gui/$(id -u)/com.gigabite.synthesis"
+
+# ---------------------------------------------------------------------------
+say "6/7  Building the initial index"
 "$BIN" ingest || warn "ingest reported issues (see above)"
 
 # ---------------------------------------------------------------------------
-say "6/6  Done"
+say "7/7  Done"
 "$BIN" status || true
 echo
 note "Search from the terminal:   gigabite search \"...\""
