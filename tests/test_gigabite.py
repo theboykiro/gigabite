@@ -16,7 +16,7 @@ os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
 
 from gigabite import config, util  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
-from gigabite.sources import claude_ai, claude_code, granola, granola_live  # noqa: E402
+from gigabite.sources import claude_ai, claude_ai_live, claude_code, granola, granola_live  # noqa: E402
 
 
 def fresh_store(name) -> Store:
@@ -179,6 +179,66 @@ class TestClaudeAi(unittest.TestCase):
         rep = claude_ai.ingest(st, inbox=box)
         self.assertEqual(rep.changed, 1)
         self.assertTrue(st.search("budget"))
+
+
+class TestClaudeAiLive(unittest.TestCase):
+    """Exercise the live pull with the network stubbed out."""
+
+    FAKE = {
+        "/organizations": [{"uuid": "org1", "name": "Personal"}],
+        "/organizations/org1/projects": [{"uuid": "proj1", "name": "Acme"}],
+        "/organizations/org1/chat_conversations": [
+            {"uuid": "conv-free", "name": "Loose chat", "updated_at": "2026-06-01T00:00:00Z"},
+            {"uuid": "conv-proj", "name": "Acme chat", "updated_at": "2026-06-02T00:00:00Z",
+             "project_uuid": "proj1"},
+        ],
+    }
+    DETAIL = {
+        "conv-free": {"uuid": "conv-free", "name": "Loose chat",
+                      "chat_messages": [{"sender": "human", "text": "standalone question about widgets"}]},
+        "conv-proj": {"uuid": "conv-proj", "name": "Acme chat",
+                      "chat_messages": [{"sender": "assistant",
+                                         "content": [{"type": "text", "text": "project-scoped answer"}]}]},
+    }
+
+    def _fake_get(self, path, token):
+        if "/chat_conversations/" in path:
+            uuid = path.split("/chat_conversations/")[1].split("?")[0]
+            return self.DETAIL[uuid]
+        return self.FAKE[path]
+
+    def setUp(self):
+        self._orig = claude_ai_live._get
+        claude_ai_live._get = self._fake_get
+
+    def tearDown(self):
+        claude_ai_live._get = self._orig
+
+    def test_pulls_projectless_and_project_chats(self):
+        st = fresh_store("live")
+        rep = claude_ai_live.ingest(st, token="fake-token")
+        self.assertEqual(rep.changed, 2)
+
+        # projectless chat has no project; project chat is tagged with the project name
+        free = st.search("widgets")
+        self.assertTrue(free)
+        self.assertEqual(free[0]["project"], "")
+        proj = st.search("project-scoped")
+        self.assertTrue(proj)
+        self.assertEqual(proj[0]["project"], "Acme")
+
+        # second run is fully incremental (updated_at signatures unchanged)
+        rep2 = claude_ai_live.ingest(st, token="fake-token")
+        self.assertEqual(rep2.changed, 0)
+        self.assertEqual(rep2.skipped, 2)
+
+    def test_no_token_is_a_clean_noop(self):
+        st = fresh_store("live2")
+        claude_ai_live._get = self._orig      # ensure real path not hit
+        rep = claude_ai_live.ingest(st, token=None)   # explicit no token
+        self.assertEqual(rep.changed, 0)
+        self.assertEqual(rep.errors, [])
+        self.assertTrue(any("no claude.ai token" in n for n in rep.notes))
 
 
 class TestGranola(unittest.TestCase):

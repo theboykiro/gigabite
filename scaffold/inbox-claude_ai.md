@@ -1,10 +1,22 @@
-# Drop your Claude.ai export here
+# Claude.ai chats
 
-Browser chats can't be pulled programmatically, so this is the supported path.
+**Preferred: live pull (all chats, in & out of projects, kept fresh).**
 
-1. Go to **claude.ai → Settings → Privacy → Export data**. You'll get an email
-   with a `.zip` (or `.dms`) containing `conversations.json`.
+```bash
+gigabite claude-login      # store your claude.ai sessionKey in the keychain (secure prompt)
+gigabite claude-sync       # pull everything; incremental on every ingest afterwards
+```
+
+See CLAUDE_AI.md in the repo for details and caveats.
+
+---
+
+**Fallback: manual export** (if you'd rather not use a token).
+
+1. claude.ai → Settings → Privacy → Export data → you get a `.zip` with
+   `conversations.json`.
 2. Drop the `.zip` **or** the extracted `conversations.json` into this folder.
-3. Run `gigabite ingest` (or `/search` in Claude Code — it refreshes first).
+3. Run `gigabite ingest`.
 
-Re-dropping a newer export updates the index; unchanged files are skipped.
+Both paths write to the same index and de-duplicate by conversation id, so you
+can mix them. Re-dropping a newer export updates in place.

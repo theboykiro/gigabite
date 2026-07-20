@@ -45,7 +45,8 @@ def _open() -> Store:
 def cmd_ingest(args) -> int:
     store = _open()
     sources = [args.source] if args.source else None
-    reports = ingest_mod.run(store, sources=sources, force=args.force)
+    reports = ingest_mod.run(store, sources=sources, force=args.force,
+                             remote=not getattr(args, "no_remote", False))
     total_changed = 0
     for src, rep in reports.items():
         label = config.SOURCE_LABELS.get(src, src)
@@ -172,6 +173,40 @@ def cmd_granola_connect(args) -> int:
     return 0 if not rep.errors else 1
 
 
+def cmd_claude_login(args) -> int:
+    from .sources import claude_ai_live
+    print(bold("Store your claude.ai session token (stays on this machine)"))
+    print(dim(
+        "How to get it:\n"
+        "  1. Open claude.ai logged in → DevTools (⌥⌘I) → Application → Cookies\n"
+        "     → https://claude.ai → copy the value of `sessionKey` (starts sk-ant-sid…).\n"
+        "  2. Paste it at the secure prompt below. It is NOT shown, stored in a file,\n"
+        "     or visible to anyone — it goes straight into your macOS keychain.\n"))
+    rc = claude_ai_live.store_token_interactive()
+    if rc == 0:
+        print(green("\n✓ Token saved to keychain. Now run: ") + "gigabite claude-sync")
+        print(dim("If a keychain access prompt appears on first sync, choose \"Always Allow\"."))
+    else:
+        print(yellow("Token was not saved (prompt cancelled or failed)."))
+    return rc
+
+
+def cmd_claude_sync(args) -> int:
+    from .sources import claude_ai_live
+    store = _open()
+    print(dim("Pulling claude.ai conversations (projectless + inside projects)…"))
+    rep = claude_ai_live.ingest(store, force=args.force)
+    for note in rep.notes:
+        print(f"  {dim('· ' + note)}")
+    for err in rep.errors[:10]:
+        print(f"  {yellow('! ' + err)}")
+    if rep.errors and not rep.changed:
+        return 1
+    print(green(f"✓ claude.ai: {rep.changed} added/updated, {rep.skipped} unchanged, "
+                f"{rep.scanned} scanned."))
+    return 0
+
+
 def cmd_paths(args) -> int:
     config.ensure_dirs()
     print(bold("gigabite paths"))
@@ -196,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     pi = sub.add_parser("ingest", help="scan sources and update the index")
     pi.add_argument("--source", choices=config.ALL_SOURCES)
     pi.add_argument("--force", action="store_true", help="re-read everything, ignore sync state")
+    pi.add_argument("--no-remote", action="store_true", help="skip the live claude.ai pull (local only)")
     pi.set_defaults(func=cmd_ingest)
 
     ps = sub.add_parser("search", help="full-text search the index")
@@ -223,6 +259,13 @@ def build_parser() -> argparse.ArgumentParser:
     pg = sub.add_parser("granola-connect", help="EXPERIMENTAL: pull Granola notes live via keychain")
     pg.add_argument("--diagnose", action="store_true", help="test decryption only; index nothing")
     pg.set_defaults(func=cmd_granola_connect)
+
+    pl = sub.add_parser("claude-login", help="securely store your claude.ai session token in the keychain")
+    pl.set_defaults(func=cmd_claude_login)
+
+    pcs = sub.add_parser("claude-sync", help="pull all claude.ai chats (in/out of projects) via the stored token")
+    pcs.add_argument("--force", action="store_true", help="re-fetch every conversation")
+    pcs.set_defaults(func=cmd_claude_sync)
 
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)

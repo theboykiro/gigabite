@@ -55,8 +55,22 @@ From Claude Code, in any folder:
 | Source | How | Status |
 |---|---|---|
 | **Claude Code** | every session in `~/.claude/projects/`, automatically | ✅ working |
-| **Claude.ai** | drop your data export into `~/.knowledge/_inbox/claude_ai/` | ✅ working |
+| **Claude.ai** | live pull of all chats (in & out of projects) via your session token | ✅ working¹ |
+| **Claude.ai** (fallback) | drop a data export into `~/.knowledge/_inbox/claude_ai/` | ✅ working |
 | **Granola** | drop `.md`/`.txt`/`.json` exports into `~/.knowledge/_inbox/granola/` | ✅ working (manual) |
+
+**Live claude.ai** — one-time setup, then it refreshes on every `ingest`/`/search`:
+
+```bash
+gigabite claude-login      # paste your claude.ai sessionKey into the macOS keychain (secure prompt)
+gigabite claude-sync       # first pull of everything; incremental thereafter
+```
+
+Your token is stored by you in the keychain and read only at runtime — it never
+appears in chat, files, or shell history. See [`CLAUDE_AI.md`](CLAUDE_AI.md).
+
+¹ Uses claude.ai's internal (undocumented) endpoints — unofficial, may change, and
+automated access is a grey area under claude.ai's terms. It's your own data.
 
 Granola's local store is encrypted behind a macOS keychain key, so notes are
 supplied manually for now. A live/API path is stubbed for when you have API
