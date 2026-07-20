@@ -129,6 +129,26 @@ class TestStore(unittest.TestCase):
             st.search(q)  # must not raise
 
 
+class TestPasteHeader(unittest.TestCase):
+    def test_parses_granola_header(self):
+        from gigabite.cli import _parse_meeting_header
+        h = _parse_meeting_header(
+            "Meeting Title: Acme Mobile Retro\nDate: Jul 17\n"
+            "Meeting participants: Jane\n\nTranscript:\nThem: hi")
+        self.assertEqual(h["title"], "Acme Mobile Retro")
+        self.assertTrue(h["date"].endswith("-07-17"))
+
+    def test_parses_iso_date_and_plain_title(self):
+        from gigabite.cli import _parse_meeting_header
+        h = _parse_meeting_header("Title: Sync\nDate: 2026-05-01\nbody")
+        self.assertEqual(h["title"], "Sync")
+        self.assertEqual(h["date"], "2026-05-01")
+
+    def test_no_header_returns_empty(self):
+        from gigabite.cli import _parse_meeting_header
+        self.assertEqual(_parse_meeting_header("just some text\nmore text"), {})
+
+
 class TestClaudeCode(unittest.TestCase):
     def test_parse_jsonl_session(self):
         d = Path(_TMP) / "cc" / "-Users-x-proj"

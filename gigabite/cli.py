@@ -16,7 +16,7 @@ import json
 import sys
 from typing import Optional
 
-from . import __version__, config, ingest as ingest_mod
+from . import __version__, config, ingest as ingest_mod, util
 from .store import Store, connect
 
 # ---- tiny ANSI helpers (auto-disabled when piped) --------------------------
@@ -297,6 +297,36 @@ def cmd_project(args) -> int:
     return 0
 
 
+def _parse_meeting_header(text: str) -> dict:
+    """Pull title/date from a Granola-style header at the top of a transcript.
+
+    Recognises lines like 'Meeting Title: …', 'Title: …', 'Date: Jul 20',
+    'Date: 2026-07-20'. Only scans the first ~12 lines. Dates without a year
+    assume the current year.
+    """
+    import re
+    from datetime import date as _date, datetime as _dt
+    out: dict = {}
+    head = "\n".join(text.splitlines()[:12])
+    m = re.search(r"^(?:meeting\s+)?title:\s*(.+)$", head, re.IGNORECASE | re.MULTILINE)
+    if m:
+        out["title"] = m.group(1).strip()[:120]
+    m = re.search(r"^date:\s*(.+)$", head, re.IGNORECASE | re.MULTILINE)
+    if m:
+        raw = m.group(1).strip()
+        iso = util.to_iso_utc(raw)
+        if iso[:4].isdigit():
+            out["date"] = iso[:10]
+        else:  # e.g. "Jul 20" — no year in the string
+            for fmt in ("%b %d", "%B %d", "%d %b", "%d %B"):
+                try:
+                    out["date"] = _dt.strptime(raw, fmt).replace(year=_date.today().year).date().isoformat()
+                    break
+                except ValueError:
+                    continue
+    return out
+
+
 def cmd_paste(args) -> int:
     """File whatever's on the clipboard (or stdin) straight into the index.
 
@@ -317,8 +347,10 @@ def cmd_paste(args) -> int:
         print(yellow("clipboard/stdin is empty — copy the transcript first, then re-run."))
         return 1
 
-    title = args.title or text.splitlines()[0][:80]
-    date = args.date or __import__("datetime").date.today().isoformat()
+    # Granola copies carry a header (Meeting Title:/Date:/Participants:) — read it.
+    hdr = _parse_meeting_header(text)
+    title = args.title or hdr.get("title") or text.splitlines()[0][:80]
+    date = args.date or hdr.get("date") or __import__("datetime").date.today().isoformat()
     project = args.project
     if project is None:  # auto-detect unless explicitly set (use "" / --project '' to force none)
         project = routing.resolve_context(f"{title}\n{text[:500]}")["project"] or ""
