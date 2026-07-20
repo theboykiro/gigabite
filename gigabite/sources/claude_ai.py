@@ -106,15 +106,21 @@ def conversation_to_document(conv: dict, ref: str) -> Optional[Document]:
         first_user = next((m.text for m in messages if m.role == "user"), messages[0].text)
         title = first_user.splitlines()[0][:80]
 
+    # project tagging: the browser export stamps project_name; fall back to any
+    # project_uuid present (better than nothing) so project chats are grouped.
+    project = conv.get("project_name") or conv.get("project") or ""
+    if not project and conv.get("project_uuid"):
+        project = str(conv["project_uuid"])[:8]
     return Document(
         source=config.SOURCE_CLAUDE_AI,
         native_id=str(uuid),
         title=title.strip(),
-        project="",
+        project=project,
         created_utc=created,
         updated_utc=updated,
         ref=ref,
-        extra={"export": ref, "uuid": str(uuid)},
+        extra={"export": ref, "uuid": str(uuid),
+               **({"project_uuid": conv["project_uuid"]} if conv.get("project_uuid") else {})},
         messages=messages,
     )
 

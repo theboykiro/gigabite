@@ -114,12 +114,26 @@ def _get(path: str, token: str) -> object:
         with urllib.request.urlopen(req, timeout=20) as resp:
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read()[:400].decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        server = ""
+        try:
+            server = e.headers.get("server", "") or e.headers.get("Server", "")
+        except Exception:
+            pass
+        cf = "cloudflare" in (server + body).lower() or "just a moment" in body.lower() \
+            or "cf-ray" in body.lower() or "/cdn-cgi/" in body.lower()
+        tag = " [cloudflare bot-block]" if cf else ""
+        snippet = " ".join(body.split())[:180]
         if e.code in (401, 403):
             raise ClaudeAiError(
-                f"claude.ai returned {e.code} — your session token is missing, "
-                f"expired, or blocked. Refresh it with `gigabite claude-login`."
+                f"claude.ai {e.code}{tag} on {url.split('?')[0]} — "
+                f"server={server!r}; body: {snippet!r}"
             ) from None
-        raise ClaudeAiError(f"claude.ai HTTP {e.code} for {url.split('?')[0]}") from None
+        raise ClaudeAiError(f"claude.ai HTTP {e.code} for {url.split('?')[0]}: {snippet!r}") from None
     except urllib.error.URLError as e:
         raise ClaudeAiError(f"network error reaching claude.ai: {e.reason}") from None
 

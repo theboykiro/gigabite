@@ -45,8 +45,9 @@ def _open() -> Store:
 def cmd_ingest(args) -> int:
     store = _open()
     sources = [args.source] if args.source else None
+    # local-only by default; live claude.ai pull only with --remote
     reports = ingest_mod.run(store, sources=sources, force=args.force,
-                             remote=not getattr(args, "no_remote", False))
+                             remote=getattr(args, "remote", False))
     total_changed = 0
     for src, rep in reports.items():
         label = config.SOURCE_LABELS.get(src, src)
@@ -417,7 +418,8 @@ def build_parser() -> argparse.ArgumentParser:
     pi = sub.add_parser("ingest", help="scan sources and update the index")
     pi.add_argument("--source", choices=config.ALL_SOURCES)
     pi.add_argument("--force", action="store_true", help="re-read everything, ignore sync state")
-    pi.add_argument("--no-remote", action="store_true", help="skip the live claude.ai pull (local only)")
+    pi.add_argument("--remote", action="store_true", help="also run the live claude.ai pull (Cloudflare-gated; usually use the browser export)")
+    pi.add_argument("--no-remote", action="store_true", help=argparse.SUPPRESS)  # back-compat (default is already local-only)
     pi.set_defaults(func=cmd_ingest)
 
     ps = sub.add_parser("search", help="full-text search the index")

@@ -17,11 +17,12 @@ _INGESTERS = {
 
 
 def run(store: Store, sources: Optional[Iterable[str]] = None, force: bool = False,
-        remote: bool = True) -> dict[str, IngestReport]:
-    """Ingest local sources, then (optionally) the live claude.ai pull.
+        remote: bool = False) -> dict[str, IngestReport]:
+    """Ingest local sources, then (only with remote=True) the live claude.ai pull.
 
-    The live pull self-skips when no keychain token is set, so `remote=True`
-    is safe as a default — it only does network work once you've opted in.
+    Local-only by default: the live pull is opt-in (`gigabite claude-sync` or
+    `ingest --remote`) because claude.ai's API is Cloudflare-gated for non-browser
+    clients, so running it on every refresh would just add latency and noise.
     """
     selected = list(sources) if sources else list(_INGESTERS.keys())
     reports: dict[str, IngestReport] = {}
