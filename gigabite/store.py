@@ -69,6 +69,10 @@ def connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # WAL lets readers run anytime; busy_timeout makes a concurrent WRITER wait
+    # (up to 5s) for the lock instead of erroring — so using the tool while the
+    # scheduled daily job runs is safe.
+    conn.execute("PRAGMA busy_timeout=5000")
     init_schema(conn)
     return conn
 
