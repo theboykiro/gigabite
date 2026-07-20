@@ -1,17 +1,15 @@
 # gigabite
 
-One local search layer over everything you've discussed — your **Claude Code**
-sessions, your exported **Claude.ai** chats, and your **Granola** meeting notes —
-searchable from the terminal or from inside Claude Code, anywhere.
+A single, local **context router** for Claude, run through Claude Code. You talk
+to it like an assistant; every turn loads your operating protocol (`~/.core/core.md`),
+detects the project you're in, and recalls relevant context from everything you've
+discussed — **Claude Code** sessions, **Claude.ai** chats (in and out of projects),
+**Granola** meetings, your own **notes**, and **calendar** — then answers with that
+history loaded. It can also spawn SOP-driven subagents for build/research/review work.
 
 Pure Python standard library. No server, no embeddings, no cloud. Nothing leaves
-the device: the index is a local SQLite file, and content lives under `~/.knowledge/`,
-never in this repo.
-
-> This is the first working slice of the larger **Context Router** design in
-> [`initial-plan/`](initial-plan/): the always-loaded `core.md`, the `~/.knowledge/`
-> layout, and full-text recall across sources. Detection/routing, daily synthesis,
-> and decay are specced there and not built yet.
+the device: the index is a local SQLite file, content lives under `~/.knowledge/`,
+and only code is in this repo (see [`initial-plan/`](initial-plan/) for the design).
 
 ---
 
@@ -21,64 +19,78 @@ never in this repo.
 ./install.sh
 ```
 
-Idempotent and non-destructive. It creates the `~/.core` and `~/.knowledge` layout
-(without overwriting anything you already have), puts `gigabite` on your PATH,
-installs the `/search` and `/recall-status` Claude Code commands, and builds the
-initial index.
+Idempotent and non-destructive. Creates the `~/.core` and `~/.knowledge` layout
+(never overwriting your content), puts `gigabite` on your PATH, installs the Claude
+Code commands (`/gg`, `/search`, `/recall-status`, `/calendar`) and subagents,
+wires the router protocol + ambient recall hook, and builds the initial index.
 
 Requirements: macOS, Python 3.9+ (system Python is fine). Nothing to `pip install`.
 
-## Use
-
-From the terminal:
+### On a new machine
 
 ```bash
-gigabite search "enterprise pricing anchor"   # search everything
-gigabite search "budget" --source granola      # filter by source
-gigabite search "roadmap" --project acme        # filter by project
-gigabite ingest                                  # refresh the index (incremental)
-gigabite status                                  # what's indexed
-gigabite doc <doc_id>                            # open a full conversation
+git clone <your-repo-url> && cd giga-bite && ./install.sh
 ```
 
-From Claude Code, in any folder:
+Code comes from git; your content (`~/.core`, `~/.knowledge`) does not — it's local
+and rebuilt as you add sources. Re-run `./install.sh` any time to update.
+
+## Use
+
+**Talk to it (primary).** In Claude Code, just type — ambient recall injects your
+history into every turn. For an explicit routed answer:
 
 ```
-/search enterprise pricing anchor
-/recall-status
+/gg what's open on the acme traffic drop?      # loads core + recalls + answers
+/calendar                                          # after pasting a calendar screenshot
+/search <query>        /recall-status
 ```
 
-`/search` refreshes the index first, then Claude ranks and summarises the hits.
+**Terminal:**
+
+```bash
+gigabite search "enterprise pricing anchor"      # search everything
+gigabite search "budget" --source granola         # filter by source
+gigabite search "roadmap" --project acme --all  # scope to a project; --all incl. archived
+gigabite doc <doc_id>                              # open a full conversation
+gigabite save "Decided X because Y" -p acme -l delivery -t "Title"   # persist a note
+gigabite project add acme --keywords "acme, ej"                   # define a project
+gigabite calendar agenda --day today               # meetings + attached prep
+gigabite synthesize                                # gated end-of-day proposal
+gigabite decay --status                            # reference-frequency archiving
+gigabite ingest                                    # refresh the index (local, incremental)
+gigabite status
+```
 
 ## What gets indexed
 
-| Source | How | Status |
-|---|---|---|
-| **Claude Code** | every session in `~/.claude/projects/`, automatically | ✅ working |
-| **Claude.ai** | live pull of all chats (in & out of projects) via your session token | ✅ working¹ |
-| **Claude.ai** (fallback) | drop a data export into `~/.knowledge/_inbox/claude_ai/` | ✅ working |
-| **Granola** | drop `.md`/`.txt`/`.json` exports into `~/.knowledge/_inbox/granola/` | ✅ working (manual) |
+| Source | How |
+|---|---|
+| **Claude Code** | every session in `~/.claude/projects/`, automatically on `ingest` |
+| **Claude.ai** | run `scripts/claude-ai-safari-export.js` in the claude.ai console → drop the downloaded `conversations.json` into `~/.knowledge/_inbox/claude_ai/` → `gigabite ingest` |
+| **Granola** | export a meeting as Markdown → `~/.knowledge/_inbox/granola/` → `gigabite ingest` |
+| **Notes** | `gigabite save …` (routes to `~/.knowledge/{project}/{layer}/`) |
+| **Calendar** | paste a screenshot in Claude Code → `/calendar` |
 
-**Live claude.ai** — one-time setup, then it refreshes on every `ingest`/`/search`:
+**claude.ai** is pulled from *inside the browser* because its API is Cloudflare-gated
+for terminal clients — the in-page script carries your real session, and produces a
+`conversations.json` the importer understands (projectless + project chats, tagged).
+See [`CLAUDE_AI.md`](CLAUDE_AI.md). A keychain-token/API path exists (`claude-login`/
+`claude-sync`) but Cloudflare blocks it; the browser export is the working route.
 
-```bash
-gigabite claude-login      # paste your claude.ai sessionKey into the macOS keychain (secure prompt)
-gigabite claude-sync       # first pull of everything; incremental thereafter
-```
-
-Your token is stored by you in the keychain and read only at runtime — it never
-appears in chat, files, or shell history. See [`CLAUDE_AI.md`](CLAUDE_AI.md).
-
+<!-- legacy note retained below -->
+<!--
 ¹ Uses claude.ai's internal (undocumented) endpoints — unofficial, may change, and
 automated access is a grey area under claude.ai's terms. It's your own data.
+-->
 
 Granola's local store is encrypted behind a macOS keychain key, so notes are
-supplied manually for now. A live/API path is stubbed for when you have API
-access — see [`GRANOLA.md`](GRANOLA.md).
+supplied manually (export → inbox). A public-API path is documented for when you
+have API access — see [`GRANOLA.md`](GRANOLA.md).
 
-Adding a source is just dropping a file and running `gigabite ingest` (or `/search`,
-which refreshes first). Re-dropping a newer export updates in place; unchanged files
-are skipped.
+Adding a source is dropping a file and running `gigabite ingest`. Re-dropping a
+newer export updates in place; unchanged files are skipped. Untouched documents
+decay to an archive after 30 days (non-destructive; a matching search restores them).
 
 ## How it works
 
