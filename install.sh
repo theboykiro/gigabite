@@ -73,7 +73,7 @@ fi
 say "3/6  Installing Claude Code commands + subagents (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
-for f in gg search recall-status; do
+for f in gg search recall-status calendar; do
   [ -e "$REPO/claude-commands/$f.md" ] || continue
   sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/claude-commands/$f.md" > "$CMD_DIR/$f.md"
   ok "/$f"
