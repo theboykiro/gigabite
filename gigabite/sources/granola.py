@@ -3,7 +3,7 @@
 Granola v6 encrypts its entire local store (granola.db + *.enc) behind a
 keychain-gated key, so notes cannot be read from disk without your one-time
 authorization (see granola_live.py and GRANOLA.md). This module is the
-guaranteed, secret-free path: drop exports into ~/.knowledge/_inbox/granola/.
+guaranteed, secret-free path: drop exports into ~/Knowledge/_sources/granola/.
 
 Accepts:
   - .md / .txt  — one file per meeting (title from YAML frontmatter, first

@@ -18,6 +18,7 @@ import sys
 from typing import Optional
 
 from . import __version__, config, ingest as ingest_mod, util
+from .features import relocate
 from .store import Store, connect
 
 # ---- tiny ANSI helpers (auto-disabled when piped) --------------------------
@@ -161,7 +162,7 @@ def cmd_doc(args) -> int:
 
 
 def cmd_file(args) -> int:
-    """File whatever's sitting in the Inbox/ drop folder into ~/.knowledge."""
+    """File whatever's sitting in the Inbox/ drop folder into ~/Knowledge."""
     from .features import inbox
     config.ensure_dirs()
     rep = inbox.file_inbox(dry_run=args.dry_run)
@@ -529,12 +530,43 @@ def cmd_paths(args) -> int:
     print(f"  core:      {config.CORE_DIR}")
     print(f"  knowledge: {config.KNOWLEDGE_DIR}")
     print(f"  index db:  {config.DB_PATH}")
-    print(f"  inbox:     {config.INBOX_DIR}")
+    print(f"  raw exports: {config.SOURCES_DIR}")
     print(dim("    · Claude.ai export → ") + str(config.INBOX_CLAUDE_AI))
     print(dim("    · Granola export   → ") + str(config.INBOX_GRANOLA))
     print(f"  drop here: {config.INBOX_DROP_DIR}")
     print(dim("    · anything else (notes, docs) → then run `gigabite file`"))
     return 0
+
+
+def cmd_relocate(args) -> int:
+    """Move a pre-existing ~/Knowledge to the visible ~/Knowledge layout."""
+    p = relocate.plan()
+    print(bold("relocate knowledge base"))
+    for line in relocate.describe(p):
+        print(line)
+
+    if not p.actionable:
+        print(dim("\nnothing to do — the layout is already current."))
+        return 0
+    if p.warnings:
+        print("\nrefusing to continue while the warnings above stand.")
+        return 1
+    if args.dry_run:
+        print(dim("\ndry run — nothing was moved. Re-run without --dry-run to apply."))
+        return 0
+
+    for line in relocate.apply(p):
+        print(f"  {line}")
+    config.ensure_dirs()
+
+    # The index stores absolute paths in `ref` and keys its incremental sync on
+    # them, so it goes stale the moment the files move. Everything it holds is
+    # derived from those files, so the honest response is to rebuild rather than
+    # rewrite paths in place.
+    print(dim("\nindex paths are now stale; rebuilding…"))
+    rc = cmd_reindex(argparse.Namespace())
+    print(f"\nknowledge base is now at {bold(str(config.KNOWLEDGE_DIR))}")
+    return rc
 
 
 # ---------------------------------------------------------------------------
@@ -573,13 +605,21 @@ def build_parser() -> argparse.ArgumentParser:
     pd.add_argument("--json", action="store_true")
     pd.set_defaults(func=cmd_doc)
 
-    pfl = sub.add_parser("file", help="file everything dropped in Inbox/ into ~/.knowledge")
+    pfl = sub.add_parser("file", help="file everything dropped in Inbox/ into ~/Knowledge")
     pfl.add_argument("--dry-run", action="store_true",
                      help="report what would happen; write and move nothing")
     pfl.set_defaults(func=cmd_file)
 
     pr = sub.add_parser("reindex", help="clear and rebuild the index")
     pr.set_defaults(func=cmd_reindex)
+
+    prl = sub.add_parser(
+        "relocate",
+        help="move a legacy hidden ~/Knowledge to the visible ~/Knowledge layout",
+    )
+    prl.add_argument("--dry-run", action="store_true",
+                     help="show what would move, change nothing")
+    prl.set_defaults(func=cmd_relocate)
 
     pg = sub.add_parser("granola-connect", help="EXPERIMENTAL: pull Granola notes live via keychain")
     pg.add_argument("--diagnose", action="store_true", help="test decryption only; index nothing")
@@ -592,7 +632,7 @@ def build_parser() -> argparse.ArgumentParser:
     pcs.add_argument("--force", action="store_true", help="re-fetch every conversation")
     pcs.set_defaults(func=cmd_claude_sync)
 
-    pv = sub.add_parser("save", help="persist a note into ~/.knowledge/{project}/{layer}/ (never the working dir)")
+    pv = sub.add_parser("save", help="persist a note into ~/Knowledge/{project}/{layer}/ (never the working dir)")
     pv.add_argument("text", nargs="*", help="note text (or - / --stdin to read stdin)")
     pv.add_argument("--project", "-p", required=True)
     pv.add_argument("--layer", "-l")

@@ -1,78 +1,114 @@
-# Context Router — Feature Overview
+# Features
 
-*Working title — name TBD.*
+This document is an overview of what gigabite does, written for someone deciding
+whether a capability already exists before building it. It describes the system in
+four groups — the context stack, the ways knowledge gets in, the loops that maintain
+it, and the security posture — and closes with what has been deliberately left out.
+Each capability is stated here in terms of what it gives you; `ARCHITECTURE.md` has
+the mechanism behind any of them.
 
-## Who it's for
+## Who it is for
 
-A single operator running multiple parallel projects with high context load — someone
-who works the same way across every project (one consistent operating style) but needs
-cleanly separated project knowledge. Project-agnostic by design: project names, domains,
-and context are data the system loads, never anything hard-coded.
+A single operator running several parallel projects under a high context load:
+someone who works the same way across every project but needs the project knowledge
+itself cleanly separated. The system is project-agnostic by design. Project names,
+domains, and content are data that it loads, never anything hard-coded, which is why
+the repository can stay free of client material while the tool is entirely specific
+to your work.
 
-## How it works
+## The context stack
 
-Everything runs through **Claude Code** — one interface. On each task it loads context in
-three layers:
+Everything runs through **one interface**, Claude Code. There is no second
+application and no browser to switch to, which matters less for convenience than for
+consistency: one entry point means one place where the protocol is loaded and one
+place where recall happens.
 
-1. **Core protocol** — always loaded, project-agnostic. *How you work.*
-2. **Project context** — detected per task, cleanly isolated. *What you're working on.*
-3. **Conversation context** — the live turn. *The question in front of you.*
+On each task the system assembles a **three-layer context stack**. The core protocol
+is always loaded and is project-agnostic — it is how you work. Project context is
+detected per task and cleanly isolated — it is what you are working on. Conversation
+context is the live turn — it is the question in front of you. The core stays fixed
+while the other two shift with the task.
 
-The core stays fixed; layers 2–3 shift with what you're doing. Content lives local
-(iCloud backup); only code reaches GitHub.
+The **core protocol** itself is a single `core.md`, loaded whole on every session,
+carrying your operating style, decision principles, and tone. It is identical across
+all projects on purpose.
 
----
+**Context detection** resolves which project and which nested layer a task belongs to,
+from an explicit `@project` marker, from continuity with the current thread, or from
+keyword matching against each project's metadata. It asks only when the ambiguity
+genuinely matters; otherwise it loads and proceeds.
 
-## Features
+**Nested context layers** let a single project hold distinct sub-contexts — delivery
+against strategy, or a separate initiative running inside the same account — that load
+independently rather than blending into one undifferentiated pile.
 
-### Core & context
+## Getting knowledge in and keeping it separate
 
-**1. Single interface** — everything runs through Claude Code. One entry point, no
-browser/app switching.
+The **knowledge base is separate from the working directory**, and this is the feature
+that prevents the most damaging class of error. Code goes to whichever folder Claude
+Code is pointed at; knowledge routes to the fixed central store at `~/Knowledge`,
+based on detected context, so nothing is ever misfiled into the wrong project because
+of which repository happened to be open.
 
-**2. Three-layer context stack** — core protocol (always loaded) → project context
-(detected per task) → conversation context (live turn).
+**An obvious drop folder** at `~/Knowledge/Inbox` handles capture with no AI involved
+at all. Drag in a `.md`, `.txt`, `.vtt`, or `.json` file, run `gigabite file`, and it
+is read, routed to a project, saved as a note, and the original moved aside as a
+safety net. It works when you are offline or out of credits, which is the point.
 
-**3. Core protocol** — single `core.md`, loaded whole every session. Your operating
-style, decision principles, tone. Consistent across all projects.
+**Meeting notes** arrive either through that drop folder or through `/granola`, which
+files the transcript on your clipboard without it ever passing through the chat.
+Either way the meeting is filed into the relevant project's `meetings/` layer,
+alongside anything you wrote by hand.
 
-**4. Context detection** — resolves which project *and* which nested layer from explicit
-markers, conversation continuity, or keywords. Asks only if genuinely ambiguous.
+**Conversation history** is captured from both Claude surfaces. Claude Code sessions
+are read automatically from `~/.claude/projects/` on every ingest; claude.ai chats,
+inside projects and out, arrive as a browser export and are de-duplicated by
+conversation id so re-exporting is safe.
 
-**5. Nested context layers** — a single project can hold distinct sub-contexts (e.g.
-delivery vs. strategy vs. a separate initiative inside the same account) that load
-independently.
+**Calendar awareness** comes from a pasted screenshot, because the calendar sits in a
+managed environment with no AI access. The meetings are parsed out, mapped to
+projects, filed as searchable documents, and matched with recalled prep for the
+meeting ahead.
 
-### Knowledge & inputs
+**Search across all of it** is a single full-text index with title-weighted ranking,
+an AND pass that falls back to OR, and a deliberate rank penalty on your own session
+transcripts, which otherwise match your questions perfectly while answering nothing.
 
-**6. Knowledge base separate from working directory** — code goes to the Claude Code
-working folder; knowledge routes to a fixed central store based on detected context, so
-nothing gets misfiled into the wrong project.
+## Keeping it maintained
 
-**7. Granola meeting notes ingestion** — paste (guaranteed) or API pull (unconfirmed);
-auto-detects context and files notes to the right place.
+**Daily synthesis** runs at day's end, reviews the documents that changed, and writes
+a proposal into `~/Knowledge/_proposals/`: a per-project digest with checklists for
+proposed knowledge updates and proposed changes to the core protocol. Nothing is
+applied without your approval, and the module that writes it cannot write anywhere
+else.
 
-**8. Calendar awareness** — pasted screenshot parsed to map meetings → context, pre-loads
-prep for the next meeting.
+**Reference-frequency decay** archives documents you have not touched inside a thirty-
+day window. Archived is not deleted: the rows stay in the index, remain searchable on
+request, and are restored automatically the moment a search matches them. Active
+context therefore stays a function of what you actually use.
 
-### Maintenance & automation
+**Reusable SOPs** are modular, versioned operating procedures loaded by role. They
+drive agent chains such as build → QA → user-review, and they are what the `gg-builder`,
+`gg-reviewer`, and `gg-researcher` subagents load before they start work.
 
-**9. Daily synthesis** — scheduled end-of-day review of conversations + notes, extracts
-what changed, proposes updates to knowledge base and core protocol, gated by your
-approval.
+## Security posture
 
-**10. Reusable SOPs** — modular, versioned operating procedures loaded by role; drives
-agent chains (e.g. build → QA → user-review).
+Content is local and iCloud-backed, and only code reaches GitHub. Credentials live in
+the macOS keychain and are retrieved at runtime. Every stored note carries an explicit
+egress marker, so sharing is always a deliberate per-item act. Any step that would
+send text off the device is expected to check its payload for confidential content
+first, at the point of egress.
 
-**11. Reference-frequency decay** — files not accessed in a set window (14d start) move
-to historical, stay searchable, restore on re-access. Keeps active context lean.
+## What is deliberately absent
 
-### Security
+**External tool access** — an open call to act on outside systems — is shelved. It was
+flagged as legally and contractually fraught in the operating environment, so it is
+not built and not stubbed.
 
-**12. Security model** — content local + iCloud only, code-only to GitHub, credentials in
-OS keychain, egress-check before any off-device search.
-
----
-
-## Shelved
-**External tool access / open call** — flagged legally fraught in the operating environment. Out of scope.
+More broadly, the absences are as deliberate as the features. There is no server, no
+embedding model, no cloud component, and no third-party dependency; the entire tool is
+Python standard library over a local SQLite file. Every one of those is a thing that
+cannot break, cannot leak, and cannot stop working when a subscription lapses. When
+weighing a new feature, that list is the standard it has to clear: if it requires a
+service, a credential, or the operator's ongoing diligence, it needs a much stronger
+justification than convenience.

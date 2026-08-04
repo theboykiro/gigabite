@@ -11,20 +11,23 @@ dist/
 # macOS
 .DS_Store
 
-# Local stores live OUTSIDE the repo (~/.core, ~/.knowledge) by design.
+# Local stores live OUTSIDE the repo (~/.core, ~/Knowledge) by design.
 # These patterns are belt-and-suspenders in case anything is ever created in-tree.
 .core/
 .knowledge/
+/Knowledge/
 *.db
 *.db-wal
 *.db-shm
 *.sqlite
 *.sqlite3
 
-# The drop folder is real content (meeting notes, client docs) staged in-tree.
-# Ignore everything in it; keep only the instructions.
-/Inbox/*
-!/Inbox/README.md
+# The drop folder used to be staged in-tree, because the knowledge base was
+# hidden at ~/.knowledge and this was the only place a human could find. It now
+# lives at ~/Knowledge/Inbox, next to the content it feeds, so no client file is
+# ever one `git add` away from being committed. Kept ignored in case an old
+# checkout still has one.
+/Inbox/
 
 # Any accidental content / exports / secrets
 *.enc

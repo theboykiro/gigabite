@@ -1,7 +1,7 @@
 """Save knowledge into the central store — never into the working directory.
 
 This module is the *only* correct way to persist a note or project meta. It
-always resolves paths under ``config.KNOWLEDGE_DIR`` (``~/.knowledge``),
+always resolves paths under ``config.KNOWLEDGE_DIR`` (``~/Knowledge``),
 independent of the caller's current working directory. That is the rule from
 ARCHITECTURE §4: code goes to the working dir, knowledge goes to the fixed
 central store. Route knowledge writes here and they can never be misfiled into
@@ -9,7 +9,7 @@ whatever repo Claude Code happens to be pointed at.
 
 Layout produced (ARCHITECTURE §2.2):
 
-    ~/.knowledge/
+    ~/Knowledge/
       {project}/
         _project.md              per-project meta (keywords, layers, background)
         {layer}/                 nested context layer
@@ -89,7 +89,7 @@ def ensure_project(
     keywords: Optional[List[str]] = None,
     layers: Optional[List[str]] = None,
 ) -> Path:
-    """Create ``~/.knowledge/{project}/`` and a _project.md if absent.
+    """Create ``~/Knowledge/{project}/`` and a _project.md if absent.
 
     Idempotent: an existing _project.md is left untouched. Returns the project dir.
     """
@@ -156,7 +156,7 @@ def save_note(
     ts: Optional[str] = None,
     meta: Optional[Dict[str, object]] = None,
 ) -> Path:
-    """Write a markdown note under ``~/.knowledge/{project}/[{layer}/]``.
+    """Write a markdown note under ``~/Knowledge/{project}/[{layer}/]``.
 
     The path is ALWAYS resolved under ``config.KNOWLEDGE_DIR``, regardless of the
     caller's working directory — this is the routing guarantee (ARCHITECTURE §4).
@@ -206,7 +206,7 @@ def _split_csv(value: str) -> List[str]:
 
 
 def list_projects() -> List[dict]:
-    """Scan ``~/.knowledge`` for ``{project}/_project.md`` and parse their meta.
+    """Scan ``~/Knowledge`` for ``{project}/_project.md`` and parse their meta.
 
     Returns ``[{name, keywords: [...], layers: [...], path}]``, sorted by name.
     Reserved top-level folders (leading '_' or '.') are skipped.

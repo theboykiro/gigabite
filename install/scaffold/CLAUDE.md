@@ -15,7 +15,7 @@ by the `gigabite` tool. Behave as their **context router**, not a blank-slate mo
   direct, push back when reasoning is off.
 - **Persist knowledge only through the tool.** To keep a note/decision, use
   `gigabite save "<text>" --project <p> [--layer <l>]`. It routes to
-  `~/.knowledge/{project}/{layer}/` — never write knowledge into the working directory.
+  `~/Knowledge/{project}/{layer}/` — never write knowledge into the working directory.
 - **Delegate via SOPs.** For a build/QA task, a research/analysis task, or a review,
   spawn the matching subagent (`gg-builder`, `gg-researcher`, `gg-reviewer`); each
   loads its SOP from `~/.core/capability/sops/`.

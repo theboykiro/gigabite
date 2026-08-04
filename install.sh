@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # gigabite installer — idempotent, additive, non-destructive.
-#   • creates ~/.core and ~/.knowledge layout (copies templates only if absent)
+#   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
 #   • installs /search and /recall-status Claude Code commands (user-level)
 #   • builds the initial index
@@ -17,12 +17,12 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 
 CORE_DIR="${GIGABITE_CORE_DIR:-$HOME/.core}"
-KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/.knowledge}"
+KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}"
 
 # ---------------------------------------------------------------------------
 say "1/7  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
-mkdir -p "$CORE_DIR/capability" "$KNOW_DIR/_inbox/claude_ai" "$KNOW_DIR/_inbox/granola"
+mkdir -p "$CORE_DIR/capability" "$KNOW_DIR/_sources/claude_ai" "$KNOW_DIR/_sources/granola" "$KNOW_DIR/Inbox" "$KNOW_DIR/_archive"
 ok "core:      $CORE_DIR"
 ok "knowledge: $KNOW_DIR"
 
@@ -32,8 +32,9 @@ copy_if_absent() { # src dest
 copy_if_absent "$REPO/install/scaffold/core.md"              "$CORE_DIR/core.md"
 copy_if_absent "$REPO/install/scaffold/capability-README.md" "$CORE_DIR/capability/README.md"
 copy_if_absent "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
-copy_if_absent "$REPO/install/scaffold/inbox-claude_ai.md"   "$KNOW_DIR/_inbox/claude_ai/README.md"
-copy_if_absent "$REPO/install/scaffold/inbox-granola.md"     "$KNOW_DIR/_inbox/granola/README.md"
+copy_if_absent "$REPO/install/scaffold/inbox-claude_ai.md"   "$KNOW_DIR/_sources/claude_ai/README.md"
+copy_if_absent "$REPO/install/scaffold/inbox-granola.md"     "$KNOW_DIR/_sources/granola/README.md"
+copy_if_absent "$REPO/install/scaffold/inbox-README.md"      "$KNOW_DIR/Inbox/README.md"
 
 # SOPs the subagents load at runtime
 if [ -d "$REPO/install/scaffold/sops" ]; then
@@ -164,5 +165,5 @@ say "7/7  Done"
 echo
 note "Search from the terminal:   gigabite search \"...\""
 note "Search from Claude Code:     /search ...   (works from any folder)"
-note "Add Claude.ai chats:         drop your export in $KNOW_DIR/_inbox/claude_ai/"
-note "Add Granola notes:           see $KNOW_DIR/_inbox/granola/README.md"
+note "Add Claude.ai chats:         drop your export in $KNOW_DIR/_sources/claude_ai/"
+note "Add Granola notes:           see $KNOW_DIR/_sources/granola/README.md"

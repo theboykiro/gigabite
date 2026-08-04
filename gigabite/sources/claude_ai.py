@@ -2,7 +2,7 @@
 
 Anthropic's data export is a .zip (or an unpacked folder) containing
 `conversations.json`: a list of conversations, each with `chat_messages`.
-Drop the .zip or conversations.json into ~/.knowledge/_inbox/claude_ai/ and
+Drop the .zip or conversations.json into ~/Knowledge/_sources/claude_ai/ and
 run ingest. Browser chats can't be pulled programmatically, so this is the
 supported path.
 

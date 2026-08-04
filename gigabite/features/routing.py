@@ -6,7 +6,7 @@ turn can be answered *with* the user's own history loaded, not from a blank slat
 
 Resolution priority:
   1. explicit marker   @project  or  @project:layer      -> wins outright
-  2. keyword match     against `keywords:` in each ~/.knowledge/{project}/_project.md
+  2. keyword match     against `keywords:` in each ~/Knowledge/{project}/_project.md
   3. ambiguous         -> no project; search runs unscoped
 
 This module reads the project metadata files directly (it does not depend on the
@@ -26,7 +26,7 @@ _FRONT = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 
 
 def _scan_projects() -> list[dict]:
-    """Read ~/.knowledge/{project}/_project.md keyword sets. Cheap, no deps."""
+    """Read ~/Knowledge/{project}/_project.md keyword sets. Cheap, no deps."""
     out: list[dict] = []
     root = config.KNOWLEDGE_DIR
     if not root.exists():

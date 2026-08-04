@@ -4,7 +4,7 @@
 *Local only — lives in `~/.core/`, backed up to iCloud, never pushed anywhere.*
 
 This file governs **how** the system works regardless of what you're working on.
-Project knowledge (the **what**) lives in `~/.knowledge/` and loads per task.
+Project knowledge (the **what**) lives in `~/Knowledge/` and loads per task.
 
 > Sections marked **[FILL]** are yours to complete — they encode how *you* operate
 > and can't be inferred. Everything else is a working default you can edit freely.
@@ -63,7 +63,7 @@ How you want calls made when they're ambiguous. Examples to replace with your ow
   ask, or park it somewhere explicitly marked for triage. A confidently misfiled
   note is worse than an unfiled one.
 - **Knowledge is written only through the tool** (`gigabite save`, or the Inbox),
-  so every path resolves under `~/.knowledge/` whatever the working directory.
+  so every path resolves under `~/Knowledge/` whatever the working directory.
 - **Before any bulk move, back up and check nothing else is writing.**
 
 ## 6. How agents get spun up  **[FILL]**

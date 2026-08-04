@@ -1,14 +1,16 @@
 """Ingest saved notes from the central knowledge base.
 
 Notes are markdown files written by ``features.save.save_note`` (or by hand)
-under ``~/.knowledge/{project}/[{layer}/]``. This ingester scans that tree and
+under ``~/Knowledge/{project}/[{layer}/]``. This ingester scans that tree and
 indexes each note so it turns up in search alongside Claude Code / Claude.ai /
 Granola content.
 
 What counts as a note:
   - any ``*.md`` under ``{project}/[{layer}/]``
-  - EXCLUDING reserved top-level folders (leading '_' e.g. _inbox / _historical /
+  - EXCLUDING reserved top-level folders (leading '_' e.g. _sources / _archive /
     _proposals, or leading '.')
+  - EXCLUDING the drop folder, which is named ``Inbox`` and so has no leading
+    underscore to disqualify it (see ``_excluded_dirs``)
   - EXCLUDING README.md and _project.md (meta, not knowledge)
   - EXCLUDING any path segment starting with '_' or '.'
 
@@ -39,11 +41,36 @@ def _hidden(name: str) -> bool:
     return name.startswith(("_", "."))
 
 
+def _excluded_dirs() -> set:
+    """Top-level folders inside the knowledge base that are not projects.
+
+    Reserved folders are recognised by their leading '_' or '.', but the drop
+    folder is deliberately named ``Inbox`` so a human can find it, and that means
+    it would otherwise look exactly like a project called "Inbox" — every file
+    waiting to be filed would be indexed twice, once in the drop box and again
+    after filing. It is excluded by resolved path rather than by name, since it
+    is configurable and need not sit inside the knowledge base at all.
+    """
+    out = set()
+    for d in (config.INBOX_DROP_DIR,):
+        try:
+            out.add(Path(d).resolve())
+        except OSError:
+            continue
+    return out
+
+
 def _iter_note_files(root: Path) -> Iterator[Path]:
     """Yield note files under each project dir, skipping reserved names."""
+    excluded = _excluded_dirs()
     for project_dir in sorted(root.iterdir()):
         if not project_dir.is_dir() or _hidden(project_dir.name):
             continue
+        try:
+            if project_dir.resolve() in excluded:
+                continue
+        except OSError:
+            pass
         for path in sorted(project_dir.rglob("*.md")):
             rel_parts = path.relative_to(project_dir).parts
             # any hidden/reserved segment (dir or file) disqualifies the file

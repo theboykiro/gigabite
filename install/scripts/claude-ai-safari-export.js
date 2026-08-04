@@ -12,7 +12,7 @@
 //   4. Paste this whole file, press Enter. If pasting is blocked, type
 //      `allow pasting` first, Enter, then paste.
 //   5. It downloads conversations.json to ~/Downloads. Then in a terminal:
-//        mv ~/Downloads/conversations.json ~/.knowledge/_inbox/claude_ai/
+//        mv ~/Downloads/conversations.json ~/Knowledge/_sources/claude_ai/
 //        gigabite ingest
 //
 (async () => {

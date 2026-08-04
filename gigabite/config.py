@@ -2,19 +2,34 @@
 
 Everything content-bearing lives under the home directory, never in the repo:
 
-    ~/.core/         operating protocol (core.md) + reusable capability
-    ~/.knowledge/    project knowledge, ingested content, the search index, inboxes
+    ~/.core/       operating protocol (core.md) + reusable capability
+    ~/Knowledge/   project knowledge, ingested content, the search index, inboxes
 
-The one exception is the drop folder (``Inbox/`` in the repo): a *staging* area
-you can see without a file manager that shows hidden folders. It holds nothing
-permanently — ``features.inbox`` files what lands there into ~/.knowledge and
-moves the original aside. It is gitignored except for its README.
+``~/Knowledge`` is deliberately visible. It was ``~/.knowledge`` for most of this
+project's life, and the leading dot hid the entire knowledge base from Finder —
+the owner of the content could not browse, review or trust it without knowing to
+unhide system folders. A store you cannot look at is one you cannot verify, so
+the dot is gone. It also means the drop folder no longer has to live in the repo
+to be findable: it is now ``~/Knowledge/Inbox``, next to everything it feeds.
 
-Locations can be overridden with environment variables (useful for tests):
+Layout::
+
+    ~/Knowledge/
+        README.md          how the whole thing is organised
+        Inbox/             drop files here; filed on the next `gigabite file`
+        <project>/         one folder per project, optionally split into layers
+        _sources/          raw exports, machine-readable rather than browsable
+        _archive/          decayed knowledge kept for retrieval, not for reading
+        _proposals/        synthesis output awaiting approval
+        .index/            the SQLite index (derived; rebuildable at any time)
+
+Folders whose name starts with '_' or '.' are reserved and are never treated as
+projects. Locations can be overridden with environment variables, which is how
+the tests avoid touching real content::
 
     GIGABITE_CORE_DIR         -> ~/.core
-    GIGABITE_KNOWLEDGE_DIR    -> ~/.knowledge
-    GIGABITE_INBOX_DROP_DIR   -> <repo root>/Inbox
+    GIGABITE_KNOWLEDGE_DIR    -> ~/Knowledge
+    GIGABITE_INBOX_DROP_DIR   -> ~/Knowledge/Inbox
 """
 
 from __future__ import annotations
@@ -33,25 +48,33 @@ def _env_path(var: str, default: Path) -> Path:
 
 # --- top-level stores -------------------------------------------------------
 CORE_DIR = _env_path("GIGABITE_CORE_DIR", HOME / ".core")
-KNOWLEDGE_DIR = _env_path("GIGABITE_KNOWLEDGE_DIR", HOME / ".knowledge")
+KNOWLEDGE_DIR = _env_path("GIGABITE_KNOWLEDGE_DIR", HOME / "Knowledge")
 
 # --- within the knowledge base ---------------------------------------------
 INDEX_DIR = KNOWLEDGE_DIR / ".index"
 DB_PATH = INDEX_DIR / "gigabite.db"
 
-# Drop-file inboxes. Anything placed here is picked up on the next ingest.
-INBOX_DIR = KNOWLEDGE_DIR / "_inbox"
-INBOX_CLAUDE_AI = INBOX_DIR / "claude_ai"   # Anthropic data export (conversations.json / .zip)
-INBOX_GRANOLA = INBOX_DIR / "granola"       # Granola markdown/JSON exports or pasted notes
+# Raw exports: the machine-readable originals a source was ingested from. Kept
+# out of the project folders because they are not meant to be read by a human —
+# separating them is what lets every remaining top-level folder be a project.
+SOURCES_DIR = KNOWLEDGE_DIR / "_sources"
+INBOX_CLAUDE_AI = SOURCES_DIR / "claude_ai"  # Anthropic data export (conversations.json / .zip)
+INBOX_GRANOLA = SOURCES_DIR / "granola"      # Granola exports not yet filed to a project
 
-# --- the visible drop folder (staging only, never storage) ------------------
-# One obvious place to drop meeting notes / documents with zero AI involvement.
-# `gigabite file` (and every ingest) routes what's here into ~/.knowledge via
-# features.save.save_note, then moves the original into Inbox/_filed/<date>/.
-INBOX_DROP_DIR = _env_path("GIGABITE_INBOX_DROP_DIR", REPO_ROOT / "Inbox")
+# Retained for anything still referring to the old name for the raw-export area.
+INBOX_DIR = SOURCES_DIR
 
-# Where decayed / historical knowledge would move (reserved; see ARCHITECTURE §6).
-HISTORICAL_DIR = KNOWLEDGE_DIR / "_historical"
+# --- the drop folder (staging only, never storage) --------------------------
+# One obvious place to drop meeting notes and documents, with no AI involved.
+# `gigabite file` (and every ingest) routes what lands here into the project
+# folders via features.save.save_note, then moves the original into
+# Inbox/_filed/<date>/. It sits inside the knowledge base rather than in the
+# repo, so that dropping a client file can never stage it into git.
+INBOX_DROP_DIR = _env_path("GIGABITE_INBOX_DROP_DIR", KNOWLEDGE_DIR / "Inbox")
+
+# Where decayed knowledge moves: still indexed and retrievable, just no longer
+# in the way (see ARCHITECTURE §6).
+HISTORICAL_DIR = KNOWLEDGE_DIR / "_archive"
 
 CORE_FILE = CORE_DIR / "core.md"
 
@@ -83,7 +106,7 @@ def ensure_dirs() -> None:
         CORE_DIR,
         KNOWLEDGE_DIR,
         INDEX_DIR,
-        INBOX_DIR,
+        SOURCES_DIR,
         INBOX_CLAUDE_AI,
         INBOX_GRANOLA,
         INBOX_DROP_DIR,

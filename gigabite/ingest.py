@@ -55,7 +55,7 @@ def run(store: Store, sources: Optional[Iterable[str]] = None, force: bool = Fal
     reports: dict[str, IngestReport] = {}
 
     # File the Inbox/ drop folder BEFORE the note ingester, so anything dropped is
-    # both filed into ~/.knowledge and indexed in this same pass.
+    # both filed into ~/Knowledge and indexed in this same pass.
     filing = _file_inbox(store) if config.SOURCE_NOTE in selected else None
 
     for src in selected:

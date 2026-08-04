@@ -1,6 +1,6 @@
 """The drop folder — file anything into the knowledge base with zero AI involved.
 
-Before this, the only inboxes were ``~/.knowledge/_inbox/{claude_ai,granola}``:
+Before this, the only inboxes were ``~/Knowledge/_sources/{claude_ai,granola}``:
 underscore-prefixed, inside a hidden home directory, and source-specific. Nobody
 finds that on a bad day, least of all with no AI credits left. So there is now
 one obvious folder — ``Inbox/`` in the repo root — you can drag a file into from
