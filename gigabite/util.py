@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
 
@@ -70,6 +71,148 @@ def coalesce_blocks(content: Any) -> str:
 
 def word_count(s: str) -> int:
     return len(re.findall(r"\w+", s or ""))
+
+
+# ---------------------------------------------------------------------------
+# passages
+# ---------------------------------------------------------------------------
+
+# Retrieval unit size, in words. Everything indexed is normalised to roughly this
+# size regardless of which source it came from.
+#
+# The problem this solves: sources arrive at wildly different granularity. A
+# Granola meeting was one row of ~6,900 words; a Claude Code transcript was 191
+# rows averaging ~145 words. BM25 divides by document length, so the meeting was
+# penalised for being long while the transcript's short rows scored well — and
+# the two were then compared as though they were the same kind of thing. Meetings
+# and notes were not losing on relevance, they were losing on row shape.
+#
+# Both directions therefore need fixing: long messages are split, and runs of
+# short ones are merged. TARGET is the size we aim for; MAX is the hard ceiling
+# before a single message is broken up. Measured with tools/eval_recall.py — see
+# the PR for the sweep. Larger passages retrieve multi-term queries better
+# (co-occurring terms stay in one row) but blunt precision; smaller passages do
+# the reverse.
+PASSAGE_TARGET_WORDS = 180
+PASSAGE_MAX_WORDS = 320
+
+_PARA_SPLIT = re.compile(r"\n\s*\n")
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _split_long(text: str, target: int, hard_max: int) -> list[str]:
+    """Break one over-long text into ~target-word pieces on natural boundaries.
+
+    Prefers paragraph breaks, falls back to sentence breaks, and only chops
+    mid-sentence when a single sentence is itself larger than the ceiling (which
+    happens with transcripts that carry no punctuation).
+    """
+    units = [u for u in _PARA_SPLIT.split(text) if u.strip()]
+    if not units:
+        return []
+
+    # Re-split any paragraph that is on its own too large.
+    refined: list[str] = []
+    for unit in units:
+        if word_count(unit) <= hard_max:
+            refined.append(unit)
+            continue
+        for sent in _SENT_SPLIT.split(unit):
+            if not sent.strip():
+                continue
+            if word_count(sent) <= hard_max:
+                refined.append(sent)
+                continue
+            words = sent.split()
+            for i in range(0, len(words), target):
+                refined.append(" ".join(words[i:i + target]))
+
+    out: list[str] = []
+    buf: list[str] = []
+    buf_words = 0
+    for unit in refined:
+        n = word_count(unit)
+        if buf and buf_words + n > target:
+            out.append("\n\n".join(buf))
+            buf, buf_words = [], 0
+        buf.append(unit)
+        buf_words += n
+    if buf:
+        out.append("\n\n".join(buf))
+    return out
+
+
+@dataclass
+class Passage:
+    """One retrieval unit: text of roughly PASSAGE_TARGET_WORDS, plus provenance."""
+    seq: int            # passage ordinal within the document
+    role: str           # role of the first message it covers
+    text: str
+    ts_utc: str = ""
+    first_msg: int = 0  # seq of the first message contributing to this passage
+    last_msg: int = 0   # seq of the last
+
+
+def passages(
+    messages: Iterable,
+    target: int = PASSAGE_TARGET_WORDS,
+    hard_max: int = PASSAGE_MAX_WORDS,
+) -> list[Passage]:
+    """Normalise a document's messages into evenly sized retrieval passages.
+
+    Accepts anything with ``.seq``, ``.role``, ``.text`` and ``.ts_utc``.
+
+    Short adjacent messages are merged and long ones are split, so a meeting note
+    and a chat transcript end up as comparable rows. Passages never span
+    documents, and no text is dropped or duplicated: concatenating the passages
+    in order reproduces the document. Message order is preserved, so the verbatim
+    record stays reconstructable from the separate ``messages`` table.
+    """
+    out: list[Passage] = []
+    buf: list[str] = []
+    buf_words = 0
+    buf_role = ""
+    buf_ts = ""
+    buf_first = 0
+    buf_last = 0
+
+    def flush() -> None:
+        nonlocal buf, buf_words, buf_role, buf_ts, buf_first, buf_last
+        if not buf:
+            return
+        text = "\n".join(buf).strip()
+        if text:
+            out.append(Passage(seq=len(out), role=buf_role, text=text, ts_utc=buf_ts,
+                               first_msg=buf_first, last_msg=buf_last))
+        buf, buf_words = [], 0
+        buf_role, buf_ts = "", ""
+
+    for m in messages:
+        text = (m.text or "").strip()
+        if not text:
+            continue
+        n = word_count(text)
+
+        if n > hard_max:
+            # A single oversized message: close whatever is buffered, then emit
+            # this message as its own run of passages so a 7,000-word meeting
+            # becomes many comparable rows instead of one unrankable slab.
+            flush()
+            for piece in _split_long(text, target, hard_max):
+                out.append(Passage(seq=len(out), role=m.role, text=piece,
+                                   ts_utc=m.ts_utc, first_msg=m.seq, last_msg=m.seq))
+            continue
+
+        if buf and buf_words + n > target:
+            flush()
+        if not buf:
+            buf_role, buf_ts, buf_first = m.role, m.ts_utc, m.seq
+        buf.append(text)
+        buf_words += n
+        buf_last = m.seq
+
+    flush()
+    return out
 
 
 # ---------------------------------------------------------------------------

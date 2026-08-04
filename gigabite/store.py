@@ -19,7 +19,7 @@ from typing import Any, Iterable, Optional
 
 from . import config, util
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Ranking penalty applied to the user's own Claude Code transcripts.
 #
@@ -35,12 +35,34 @@ SCHEMA_VERSION = 1
 # transcript still wins when it is the only real match (e.g. "what did we decide
 # in that session"), which is why this is a penalty and not a filter.
 #
-# 0.30 was chosen by measuring, not guessing. Across six realistic queries against
-# a real index, claude_code took the top slot on 5/6 at 1.0 (i.e. unpenalised),
-# 3/6 at 0.55, and 1/6 at 0.30 — the survivor being "what was decided about
-# prioritisation", where a session transcript is a legitimate best answer. Re-run
-# that comparison before changing this number.
-TRANSCRIPT_RANK_PENALTY = 0.30
+# Treat this as a tie-breaker, not a fix. An earlier calibration note claimed
+# 1/6 queries kept a transcript on top at 0.30; re-measuring later showed 5/6,
+# because the corpus had grown and nobody had re-run it. Sweeping from 1.0 down
+# to 0.15 barely moved the result — the lever was close to exhausted, which is
+# what prompted fixing the row-shape problem in ``util.passages`` instead.
+#
+# With passages in place the value was swept again over 228 known-item queries
+# (tools/eval_recall.py). The result argued for *less* penalty, not more:
+#
+#   penalty   top-1   recall@5   MRR     transcripts beating source material
+#     1.00    89.9%     96.5%    0.927                 2.9%
+#     0.70    91.7%     96.1%    0.936                 0.0%
+#     0.30    91.7%     95.6%    0.935                 0.0%
+#     0.10    91.7%     95.6%    0.934                 0.0%
+#
+# 0.70 is the knee: it removes every case of a transcript displacing source
+# material, while suppressing transcripts less than 0.30 did and so retrieving
+# them better when they genuinely are the answer. Below 0.70 nothing improves —
+# the extra suppression only costs recall. Re-run the sweep before changing it.
+TRANSCRIPT_RANK_PENALTY = 0.70
+
+# How many passages any single document may contribute to one result page.
+#
+# Without a cap, one long document can occupy every slot: 'inbox drop folder'
+# returned three hits that were all the same session, which is three views of one
+# answer where the user wanted three answers. Two lets a genuinely rich source
+# show its best pair of passages without crowding out the field.
+MAX_HITS_PER_DOC = 2
 
 
 @dataclass
@@ -135,6 +157,19 @@ def init_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (source, key)
         );
 
+        -- The verbatim conversation. FTS holds passages (see util.passages),
+        -- which merge and split messages for even retrieval units; this table
+        -- keeps the real messages so `show`, decay and synthesis can reproduce a
+        -- document exactly as it was written.
+        CREATE TABLE IF NOT EXISTS messages (
+            doc_id TEXT NOT NULL,
+            seq    INTEGER NOT NULL,
+            role   TEXT,
+            ts_utc TEXT,
+            text   TEXT,
+            PRIMARY KEY (doc_id, seq)
+        );
+
         CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
             text,
             title,
@@ -160,12 +195,31 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Add columns introduced after v1 to a pre-existing documents table."""
+    """Bring a pre-existing database up to the current schema."""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)")}
     if "accessed_utc" not in cols:
         conn.execute("ALTER TABLE documents ADD COLUMN accessed_utc TEXT")
     if "active" not in cols:
         conn.execute("ALTER TABLE documents ADD COLUMN active INTEGER DEFAULT 1")
+
+    row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    version = int(row["value"]) if row and str(row["value"]).isdigit() else 1
+
+    if version < 2:
+        # v1 stored one FTS row per message; v2 stores passages and keeps the
+        # verbatim messages separately. The rows cannot be converted in place, so
+        # clear the derived data and the ingest signatures — the next ingest
+        # rebuilds everything from the files on disk, which remain the source of
+        # truth. Documents rows are kept so access/decay history survives.
+        conn.execute("DELETE FROM fts")
+        conn.execute("DELETE FROM messages")
+        conn.execute("DELETE FROM sync_state")
+        conn.execute("UPDATE documents SET content_hash = NULL")
+        conn.execute(
+            "INSERT INTO meta(key,value) VALUES('schema_version',?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(SCHEMA_VERSION),),
+        )
     conn.commit()
 
 
@@ -209,22 +263,33 @@ class Store:
                 len(doc.messages), wc,
             ),
         )
+        # The verbatim record, used to reproduce the document.
+        self.conn.executemany(
+            "INSERT INTO messages (doc_id, seq, role, ts_utc, text) VALUES (?,?,?,?,?)",
+            [
+                (doc.doc_id, m.seq, m.role, m.ts_utc, m.text)
+                for m in doc.messages
+                if m.text and m.text.strip()
+            ],
+        )
+        # The retrieval index, normalised to even passages so documents from
+        # different sources compete on the same terms. See util.passages.
         self.conn.executemany(
             """INSERT INTO fts (text, title, doc_id, source, project, role, ts_utc, seq)
                VALUES (?,?,?,?,?,?,?,?)""",
             [
                 (
-                    m.text, doc.title, doc.doc_id, doc.source, doc.project,
-                    m.role, m.ts_utc, m.seq,
+                    p.text, doc.title, doc.doc_id, doc.source, doc.project,
+                    p.role, p.ts_utc, p.seq,
                 )
-                for m in doc.messages
-                if m.text and m.text.strip()
+                for p in util.passages(doc.messages)
             ],
         )
         return True
 
     def _delete_rows(self, doc_id: str) -> None:
         self.conn.execute("DELETE FROM fts WHERE doc_id=?", (doc_id,))
+        self.conn.execute("DELETE FROM messages WHERE doc_id=?", (doc_id,))
         self.conn.execute("DELETE FROM documents WHERE doc_id=?", (doc_id,))
 
     def delete_document(self, doc_id: str) -> None:
@@ -266,21 +331,79 @@ class Store:
         if raw:
             rows = self._run_match(query, sources, project, limit, include_historical)
         else:
-            # AND (all terms) first; fall back to OR (any term, bm25-ranked) if empty.
-            rows = self._run_match(util.to_fts_query(query, "AND"), sources, project, limit, include_historical)
+            # "All terms" is a claim about the *document*, not about one passage.
+            #
+            # Before passages existed, a note was a single row, so requiring every
+            # term in one row and requiring them in one document were the same
+            # thing. Once documents are split for ranking they stop being the
+            # same, and the strict reading gets it wrong: remembering four things
+            # from one meeting would find nothing, because the four terms are
+            # spread across four passages. Measured, that cost 9.9 points of
+            # top-1 on bag-of-terms queries and 14.3 on Granola meetings.
+            #
+            # So the term requirement is applied at document level to pick the
+            # candidates, while ranking still happens at passage level so the
+            # best passage is what surfaces. Falls back to any-term when nothing
+            # contains the lot.
+            docs = self._docs_with_all_terms(query, sources, project, include_historical)
+            or_match = util.to_fts_query(query, "OR")
+            rows = self._run_match(or_match, sources, project, limit,
+                                   include_historical, only_docs=docs)
             if not rows:
-                rows = self._run_match(util.to_fts_query(query, "OR"), sources, project, limit, include_historical)
+                rows = self._run_match(or_match, sources, project, limit,
+                                       include_historical)
         if record and rows:
             self.record_access({r["doc_id"] for r in rows})
         return rows
 
-    def _run_match(self, match, sources, project, limit, include_historical=False) -> list[dict]:
+    def _docs_with_all_terms(self, query, sources, project,
+                             include_historical=False) -> Optional[set]:
+        """Documents containing every (non-stop-word) term, anywhere within them.
+
+        Returns None when the question does not apply — an empty query, or a
+        single term, where the any-term pass is already equivalent — so callers
+        can skip the filter rather than treat it as 'no matches'.
+        """
+        tokens = util.fts_tokens(query)
+        kept = [t for t in tokens if util._bare(t) not in util._STOPWORDS]
+        tokens = kept or tokens
+        if len(tokens) < 2:
+            return None
+
+        common: Optional[set] = None
+        for tok in tokens:
+            where = ["fts MATCH ?"]
+            params: list[Any] = [tok]
+            if not include_historical:
+                where.append("d.active = 1")
+            if sources:
+                srcs = list(sources)
+                where.append("fts.source IN (%s)" % ",".join("?" * len(srcs)))
+                params.extend(srcs)
+            if project:
+                where.append("fts.project = ?")
+                params.append(project)
+            sql = ("SELECT DISTINCT fts.doc_id AS doc_id FROM fts "
+                   "JOIN documents d ON d.doc_id = fts.doc_id "
+                   f"WHERE {' AND '.join(where)}")
+            ids = {r["doc_id"] for r in self.conn.execute(sql, params)}
+            common = ids if common is None else (common & ids)
+            if not common:
+                return None      # nothing has all of them; let the caller widen
+        return common or None
+
+    def _run_match(self, match, sources, project, limit, include_historical=False,
+                   only_docs=None) -> list[dict]:
         if not match.strip():
             return []
         where = ["fts MATCH ?"]
         where_params: list[Any] = [match]
         if not include_historical:
             where.append("d.active = 1")
+        if only_docs is not None:
+            ids = list(only_docs)
+            where.append("fts.doc_id IN (%s)" % ",".join("?" * len(ids)))
+            where_params.extend(ids)
         if sources:
             srcs = list(sources)
             where.append("fts.source IN (%s)" % ",".join("?" * len(srcs)))
@@ -294,8 +417,55 @@ class Store:
         params: list[Any] = [config.SOURCE_CLAUDE_CODE, TRANSCRIPT_RANK_PENALTY]
         params.extend(where_params)
 
-        # bm25 column weights: text=1.0, title=5.0 (title hits rank higher)
-        sql = f"""
+        # bm25 column weights: text=1.0, title=5.0 (title hits rank higher).
+        #
+        # Two passes, because SQLite refuses to evaluate an FTS auxiliary function
+        # such as snippet() in a query that also uses a window function.
+        #
+        # Pass one ranks and applies the per-document cap. Capping has to happen
+        # after scoring but before the LIMIT: otherwise a document with many
+        # strong passages consumes the whole page before any other document is
+        # considered, which is what made 'inbox drop folder' return three hits
+        # from the same session. Doing it in SQL rather than by over-fetching and
+        # trimming in Python keeps it exact — a transcript can match hundreds of
+        # passages, and any fixed over-fetch would eventually be swamped by one.
+        # Three levels, and the nesting is forced: SQLite will not evaluate an FTS
+        # auxiliary function (bm25, snippet) in any query that also uses a window
+        # function. So bm25 is computed in the innermost plain SELECT, and
+        # ROW_NUMBER runs one level out over ordinary columns.
+        rank_sql = f"""
+            SELECT doc_id, seq, score FROM (
+                SELECT doc_id, seq, score,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY doc_id ORDER BY score
+                       ) AS rank_in_doc
+                FROM (
+                    SELECT
+                        fts.doc_id AS doc_id,
+                        fts.seq    AS seq,
+                        bm25(fts, 1.0, 5.0)
+                            * CASE WHEN fts.source = ? THEN ? ELSE 1.0 END AS score
+                    FROM fts
+                    JOIN documents d ON d.doc_id = fts.doc_id
+                    WHERE {" AND ".join(where)}
+                )
+            )
+            WHERE rank_in_doc <= ?
+            ORDER BY score
+            LIMIT ?
+        """
+        ranked = self.conn.execute(
+            rank_sql, [*params, MAX_HITS_PER_DOC, limit]
+        ).fetchall()
+        if not ranked:
+            return []
+
+        # Pass two hydrates just those passages, with snippets. The MATCH is
+        # repeated so snippet() has the query context it needs to highlight.
+        scores = {(r["doc_id"], r["seq"]): r["score"] for r in ranked}
+        pairs = list(scores.keys())
+        placeholders = ",".join("(?,?)" for _ in pairs)
+        hydrate_sql = f"""
             SELECT
                 fts.doc_id AS doc_id,
                 fts.source AS source,
@@ -307,18 +477,26 @@ class Store:
                 d.created_utc AS created_utc,
                 d.updated_utc AS updated_utc,
                 d.ref      AS ref,
-                snippet(fts, 0, '«', '»', ' … ', 12) AS snippet,
-                bm25(fts, 1.0, 5.0)
-                    * CASE WHEN fts.source = ? THEN ? ELSE 1.0 END AS score
+                snippet(fts, 0, '«', '»', ' … ', 12) AS snippet
             FROM fts
             JOIN documents d ON d.doc_id = fts.doc_id
             WHERE {" AND ".join(where)}
-            ORDER BY score
-            LIMIT ?
+              AND (fts.doc_id, fts.seq) IN (VALUES {placeholders})
         """
-        params.append(limit)
-        rows = self.conn.execute(sql, params).fetchall()
-        return [dict(r) for r in rows]
+        flat: list[Any] = []
+        for doc_id, seq in pairs:
+            flat.extend((doc_id, seq))
+        # No penalty params here: this pass only fetches, the scores come from
+        # pass one, so the leading placeholders are the WHERE clause's.
+        hydrated = self.conn.execute(hydrate_sql, [*where_params, *flat]).fetchall()
+
+        out = []
+        for r in hydrated:
+            d = dict(r)
+            d["score"] = scores[(d["doc_id"], d["seq"])]
+            out.append(d)
+        out.sort(key=lambda d: d["score"])
+        return out
 
     def get_document(self, doc_id: str) -> Optional[dict]:
         row = self.conn.execute(
@@ -327,8 +505,10 @@ class Store:
         if not row:
             return None
         doc = dict(row)
+        # From `messages`, not `fts`: FTS rows are passages, which merge and split
+        # the originals for retrieval. Callers here want the conversation as written.
         msgs = self.conn.execute(
-            "SELECT seq, role, ts_utc, text FROM fts WHERE doc_id=? ORDER BY seq",
+            "SELECT seq, role, ts_utc, text FROM messages WHERE doc_id=? ORDER BY seq",
             (doc_id,),
         ).fetchall()
         doc["messages"] = [dict(m) for m in msgs]
@@ -373,7 +553,9 @@ class Store:
         out["documents"] = self.conn.execute(
             "SELECT COUNT(*) c FROM documents"
         ).fetchone()["c"]
-        out["messages"] = self.conn.execute("SELECT COUNT(*) c FROM fts").fetchone()["c"]
+        out["messages"] = self.conn.execute("SELECT COUNT(*) c FROM messages").fetchone()["c"]
+        # Retrieval units, which differ from messages once passages are built.
+        out["passages"] = self.conn.execute("SELECT COUNT(*) c FROM fts").fetchone()["c"]
         out["archived"] = self.conn.execute(
             "SELECT COUNT(*) c FROM documents WHERE active=0"
         ).fetchone()["c"]
