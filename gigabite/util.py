@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 # ---------------------------------------------------------------------------
@@ -77,7 +77,17 @@ def word_count(s: str) -> int:
 # ---------------------------------------------------------------------------
 
 def to_iso_utc(value: Any) -> str:
-    """Best-effort normalise a timestamp to ISO-8601 UTC. Returns '' on failure."""
+    """Best-effort normalise a timestamp to ISO-8601 UTC.
+
+    Returns '' only for genuinely empty input or an unusable epoch number. A
+    string that cannot be parsed is returned **unchanged** (see the end of this
+    function) — losing it entirely would be worse, because callers put this value
+    in filenames and `short_date('')` renders as '—'.
+
+    So the contract is: the result is ISO-8601 when parsing succeeded, and
+    otherwise whatever you passed in. Callers that need a real date must check,
+    not assume. `short_date` only truncates ISO-shaped values for this reason.
+    """
     if value is None or value == "":
         return ""
     if isinstance(value, (int, float)):
@@ -110,19 +120,70 @@ def _iso(s: str):
         return None
 
 
+# Formats carrying an explicit year. Day-first precedes month-first deliberately:
+# these sources are UK-authored, so '03/08/2026' means 3 August. Previously
+# '%m/%d/%Y' was tried first, which silently read it as 8 March — but only for
+# days 1-12, since 13+ fails month-first and fell through to day-first. The same
+# format therefore meant different things depending on the number, undetectably.
+# '%m/%d/%Y' is kept last so an unambiguous US-style date still parses.
+_DATE_FORMATS = (
+    "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+    "%d/%m/%Y", "%d/%m/%y",
+    "%d %b %Y", "%b %d %Y", "%d %B %Y", "%B %d %Y",
+    "%d %b, %Y", "%b %d, %Y", "%d %B, %Y", "%B %d, %Y",
+    "%m/%d/%Y",
+)
+
+# Year-less formats — Granola writes meeting dates like 'Jul 29' / '3 Aug'.
+_DATE_FORMATS_NO_YEAR = ("%d %b", "%b %d", "%d %B", "%B %d")
+
+
+def _infer_year(dt: datetime, today=None) -> datetime:
+    """Attach a year to a year-less date, assuming it is recent past.
+
+    'Jul 29' on a meeting note means the 29 July that already happened, not next
+    year's. Use the current year unless that lands in the future, in which case
+    the date belongs to last year. One day of tolerance absorbs timezone skew.
+    """
+    today = today or datetime.now(timezone.utc).date()
+    for year in (today.year, today.year - 1):
+        try:
+            candidate = dt.replace(year=year)
+        except ValueError:      # 29 Feb in a non-leap year
+            continue
+        if candidate.date() <= today + timedelta(days=1):
+            return candidate
+    return dt
+
+
 def _loose(s: str):
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
+    for fmt in _DATE_FORMATS:
         try:
             return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    for fmt in _DATE_FORMATS_NO_YEAR:
+        try:
+            return _infer_year(datetime.strptime(s, fmt))
         except ValueError:
             continue
     return None
 
 
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
 def short_date(iso: str) -> str:
+    """YYYY-MM-DD from an ISO timestamp. '—' when empty.
+
+    Only truncates values that really are ISO-shaped. Slicing unconditionally
+    turned an unparsed 'Jul 29 2026' into 'Jul 29 202' — a corrupted string in a
+    filename. An unparseable value is now returned whole: still wrong, but
+    visibly wrong rather than silently mangled.
+    """
     if not iso:
         return "—"
-    return iso[:10]
+    return iso[:10] if _ISO_DATE.match(iso) else iso
 
 
 # ---------------------------------------------------------------------------
