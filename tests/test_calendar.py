@@ -3,7 +3,7 @@
 import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
 
 _TMP = tempfile.mkdtemp(prefix="gigabite-cal-")
@@ -33,8 +33,11 @@ class TestCalendar(unittest.TestCase):
             messages=[Message(0, "note", "acme enterprise pricing anchored to seats")]))
 
         # agenda(day="today") is asserted below, so the meetings must BE today —
-        # a hardcoded date makes this test a time bomb.
-        today = date.today().isoformat()
+        # a hardcoded date makes this test a time bomb. It must also be *UTC*
+        # today, because that is the clock agenda() compares against: with a
+        # local date this failed nightly between 00:00 and 03:00 in UTC+3, where
+        # date.today() has already rolled over but UTC has not.
+        today = datetime.now(timezone.utc).date().isoformat()
         ids = cal.add_meetings(st, [
             {"title": "Acme pricing sync", "start": f"{today}T15:00",
              "attendees": ["Alice", "Bob"], "location": "Zoom"},
