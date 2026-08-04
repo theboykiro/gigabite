@@ -12,5 +12,5 @@ Both the notes and the transcript are indexed. Front-matter (`title:`, `date:`,
 
 ## B. Live pull (experimental)
 `gigabite granola-connect` reads the Granola keychain key (you approve a one-time
-macOS prompt) and tries to decrypt the local cache. See GRANOLA.md in the repo for
+macOS prompt) and tries to decrypt the local cache. See docs/GRANOLA.md in the repo for
 status and caveats. If it can't decrypt, fall back to A.

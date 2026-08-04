@@ -29,16 +29,16 @@ ok "knowledge: $KNOW_DIR"
 copy_if_absent() { # src dest
   if [ -e "$2" ]; then note "kept existing $(basename "$2")"; else cp "$1" "$2"; ok "seeded $(basename "$2")"; fi
 }
-copy_if_absent "$REPO/scaffold/core.md"              "$CORE_DIR/core.md"
-copy_if_absent "$REPO/scaffold/capability-README.md" "$CORE_DIR/capability/README.md"
-copy_if_absent "$REPO/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
-copy_if_absent "$REPO/scaffold/inbox-claude_ai.md"   "$KNOW_DIR/_inbox/claude_ai/README.md"
-copy_if_absent "$REPO/scaffold/inbox-granola.md"     "$KNOW_DIR/_inbox/granola/README.md"
+copy_if_absent "$REPO/install/scaffold/core.md"              "$CORE_DIR/core.md"
+copy_if_absent "$REPO/install/scaffold/capability-README.md" "$CORE_DIR/capability/README.md"
+copy_if_absent "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
+copy_if_absent "$REPO/install/scaffold/inbox-claude_ai.md"   "$KNOW_DIR/_inbox/claude_ai/README.md"
+copy_if_absent "$REPO/install/scaffold/inbox-granola.md"     "$KNOW_DIR/_inbox/granola/README.md"
 
 # SOPs the subagents load at runtime
-if [ -d "$REPO/scaffold/sops" ]; then
+if [ -d "$REPO/install/scaffold/sops" ]; then
   mkdir -p "$CORE_DIR/capability/sops"
-  for sop in "$REPO/scaffold/sops/"*.md; do
+  for sop in "$REPO/install/scaffold/sops/"*.md; do
     [ -e "$sop" ] && copy_if_absent "$sop" "$CORE_DIR/capability/sops/$(basename "$sop")"
   done
 fi
@@ -74,14 +74,14 @@ say "3/7  Installing Claude Code commands + subagents (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
 for f in gg search recall-status calendar granola; do
-  [ -e "$REPO/claude-commands/$f.md" ] || continue
-  sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/claude-commands/$f.md" > "$CMD_DIR/$f.md"
+  [ -e "$REPO/install/claude-commands/$f.md" ] || continue
+  sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/install/claude-commands/$f.md" > "$CMD_DIR/$f.md"
   ok "/$f"
 done
-if [ -d "$REPO/scaffold/agents" ]; then
+if [ -d "$REPO/install/scaffold/agents" ]; then
   AGENT_DIR="$HOME/.claude/agents"
   mkdir -p "$AGENT_DIR"
-  for a in "$REPO/scaffold/agents/"*.md; do
+  for a in "$REPO/install/scaffold/agents/"*.md; do
     [ -e "$a" ] && cp "$a" "$AGENT_DIR/$(basename "$a")" && ok "subagent $(basename "$a" .md)"
   done
 fi
@@ -94,13 +94,13 @@ touch "$GLOBAL_CLAUDE"
 if grep -qF "gigabite:router:start" "$GLOBAL_CLAUDE" 2>/dev/null; then
   note "router protocol already in ~/.claude/CLAUDE.md"
 else
-  printf '\n' >> "$GLOBAL_CLAUDE"; cat "$REPO/scaffold/CLAUDE.md" >> "$GLOBAL_CLAUDE"
+  printf '\n' >> "$GLOBAL_CLAUDE"; cat "$REPO/install/scaffold/CLAUDE.md" >> "$GLOBAL_CLAUDE"
   ok "added router protocol to ~/.claude/CLAUDE.md"
 fi
 # Ambient recall hook: install script + register UserPromptSubmit in settings.json.
 HOOK_DIR="$HOME/.claude/gigabite"
 mkdir -p "$HOOK_DIR"
-sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/hooks/gg-recall.sh" > "$HOOK_DIR/gg-recall.sh"
+sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/install/hooks/gg-recall.sh" > "$HOOK_DIR/gg-recall.sh"
 chmod +x "$HOOK_DIR/gg-recall.sh"
 HOOK_STATUS=$(GIGABITE_HOOK="$HOOK_DIR/gg-recall.sh" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
 import json, os, sys, shutil
@@ -145,7 +145,7 @@ LOG="$HOME/Library/Logs/gigabite-synthesis.log"
 LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist"
 mkdir -p "$LA_DIR" "$(dirname "$LOG")"
 sed -e "s|__DAILY_BIN__|$DAILY|g" -e "s|__LOG__|$LOG|g" \
-    "$REPO/launchd/com.gigabite.synthesis.plist" > "$PLIST"
+    "$REPO/install/launchd/com.gigabite.synthesis.plist" > "$PLIST"
 launchctl bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
 if launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
   ok "scheduled: gigabite synthesize + decay daily at 18:00 (gated; nothing auto-applies)"

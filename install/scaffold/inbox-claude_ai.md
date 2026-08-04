@@ -7,7 +7,7 @@ gigabite claude-login      # store your claude.ai sessionKey in the keychain (se
 gigabite claude-sync       # pull everything; incremental on every ingest afterwards
 ```
 
-See CLAUDE_AI.md in the repo for details and caveats.
+See docs/CLAUDE_AI.md in the repo for details and caveats.
 
 ---
 

@@ -21,7 +21,7 @@ iCloud-backed, never pushed to GitHub or any web surface.
 - **Claude.ai** — whatever you drop into `_inbox/claude_ai/` (browser chats can't be
   pulled programmatically; export them from claude.ai → Settings → Privacy → Export).
 - **Granola** — exports dropped into `_inbox/granola/`, or a live pull via
-  `gigabite granola-connect` (experimental — see GRANOLA.md in the repo).
+  `gigabite granola-connect` (experimental — see docs/GRANOLA.md in the repo).
 
 ## Everyday use
 
