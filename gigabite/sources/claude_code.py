@@ -13,7 +13,7 @@ from typing import Optional
 
 from .. import config, util
 from ..store import Document, Message, Store
-from . import IngestReport
+from . import IngestReport, project_alias
 
 # event types that carry conversational text
 _CONTENT_TYPES = {"user", "assistant", "attachment"}
@@ -25,9 +25,16 @@ def _signature(path: Path) -> str:
 
 
 def _project_from_cwd(cwd: str) -> str:
+    """Derive a project from the session's working directory, then alias it.
+
+    A directory basename is not a project name: this repo lives in `giga-bite/`
+    but the project is `gigabite`, so without the alias step your Claude Code
+    sessions land under a second, near-identical project and `--project gigabite`
+    silently misses them. See ``sources.project_alias``.
+    """
     if not cwd:
         return ""
-    return Path(cwd).name or cwd
+    return project_alias(Path(cwd).name or cwd)
 
 
 def _attachment_text(ev: dict) -> str:
