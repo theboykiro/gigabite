@@ -51,11 +51,28 @@ How you want calls made when they're ambiguous. Examples to replace with your ow
 - Before any web search or external call, strip/anonymise project names and internals,
   or refuse. Enforce at the point of egress.
 - Credentials come from the OS keychain at runtime, never from files or the repo.
+- **The repo is an egress boundary too.** Only code goes to GitHub. Client names,
+  stakeholders and internals never enter it — including in examples, comments and
+  test fixtures. Use a neutral placeholder.
 
-## 5. How agents get spun up  **[FILL]**
+## 5. Knowledge routing
+
+- **Never derive a project from the working directory.** A folder name is not a
+  project. Deriving one is how client knowledge gets filed under a tool's name.
+- **Ambiguous context is quarantined, never guessed.** If the project isn't clear,
+  ask, or park it somewhere explicitly marked for triage. A confidently misfiled
+  note is worse than an unfiled one.
+- **Knowledge is written only through the tool** (`gigabite save`, or the Inbox),
+  so every path resolves under `~/.knowledge/` whatever the working directory.
+- **Before any bulk move, back up and check nothing else is writing.**
+
+## 6. How agents get spun up  **[FILL]**
 
 - When to delegate to a sub-agent vs. do it inline.
 - Which SOP a spawned agent loads for its role (SOPs are modular; see `~/.core/capability/`).
+- **A subagent's "done" is a claim, not evidence.** Verify delegated work against
+  the real artefact before relaying it — an agent reporting success while doing the
+  opposite is a real failure mode, not a hypothetical one.
 
 ---
 
