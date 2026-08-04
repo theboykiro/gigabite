@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .. import config, util
 
@@ -64,7 +64,7 @@ def _safe_folder(name: str, kind: str = "name") -> str:
 # ---------------------------------------------------------------------------
 
 def _project_meta(project: str, keywords: List[str], layers: List[str]) -> str:
-    """Render a filled _project.md (mirrors scaffold/_project.md structure)."""
+    """Render a filled _project.md (mirrors install/scaffold/_project.md structure)."""
     return (
         "---\n"
         f"project: {project}\n"
@@ -128,18 +128,43 @@ def _unique_path(directory: Path, base: str) -> Path:
     return candidate
 
 
+_FM_RESERVED = ("title", "date", "project", "layer")
+
+
+def _extra_frontmatter(meta: Optional[Dict[str, object]]) -> str:
+    """Render caller-supplied frontmatter lines (provenance, egress markers, …).
+
+    Reserved keys (title/date/project/layer) are dropped so extras can never
+    rewrite the fields the notes ingester routes on. Values are forced onto one
+    line — a stray newline would otherwise close the frontmatter block early.
+    """
+    lines: List[str] = []
+    for key, value in (meta or {}).items():
+        slug = slugify(str(key)).replace("-", "_")
+        if not slug or slug in _FM_RESERVED or value in (None, ""):
+            continue
+        flat = " ".join(str(value).split())
+        lines.append(f"{slug}: {flat}\n")
+    return "".join(lines)
+
+
 def save_note(
     text: str,
     project: str,
     layer: Optional[str] = None,
     title: Optional[str] = None,
     ts: Optional[str] = None,
+    meta: Optional[Dict[str, object]] = None,
 ) -> Path:
     """Write a markdown note under ``~/.knowledge/{project}/[{layer}/]``.
 
     The path is ALWAYS resolved under ``config.KNOWLEDGE_DIR``, regardless of the
     caller's working directory — this is the routing guarantee (ARCHITECTURE §4).
     Creates directories as needed and returns the written file path.
+
+    *meta* adds extra frontmatter fields after the standard four (e.g.
+    ``origin:`` provenance, ``share:`` egress marker). Optional and additive —
+    omit it and the note is byte-identical to before.
     """
     folder = _safe_folder(project, "project")
     dest = config.KNOWLEDGE_DIR / folder
@@ -164,6 +189,7 @@ def save_note(
         f"date: {date}\n"
         f"project: {project}\n"
         f"layer: {layer_name}\n"
+        f"{_extra_frontmatter(meta)}"
         "---\n\n"
         f"{body}\n"
     )

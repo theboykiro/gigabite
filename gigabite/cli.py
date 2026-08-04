@@ -4,6 +4,7 @@
     gigabite search QUERY [--source S] [--project P] [--limit N] [--context C] [--raw] [--json]
     gigabite status [--json]
     gigabite doc DOC_ID [--json]
+    gigabite file [--dry-run]
     gigabite reindex
     gigabite granola-connect [--diagnose]
     gigabite paths
@@ -157,6 +158,38 @@ def cmd_doc(args) -> int:
         print(m["text"])
         print()
     return 0
+
+
+def cmd_file(args) -> int:
+    """File whatever's sitting in the Inbox/ drop folder into ~/.knowledge."""
+    from .features import inbox
+    config.ensure_dirs()
+    rep = inbox.file_inbox(dry_run=args.dry_run)
+    print(bold("Inbox ") + dim(rep["root"])
+          + (yellow("   (dry run — nothing written or moved)") if rep["dry_run"] else ""))
+    if not rep["scanned"]:
+        print(dim(f"  nothing to file — drop a .md/.txt/.vtt/.json file in there, "
+                  f"then re-run `gigabite file`"))
+        return 0
+
+    for e in rep["filed"]:
+        where = e["project"] + (f":{e['layer']}" if e["layer"] else "")
+        print(f"  {green('✓')} {e['origin']} → {bold(where)}")
+        if e["note"]:
+            print(dim(f"      note:     {e['note']}"))
+            print(dim(f"      original: {e['filed_to']}"))
+    for e in rep["triaged"]:
+        print(f"  {yellow('?')} {e['origin']} → {bold('_needs-triage')}  {dim(e['reason'])}")
+    for err in rep["errors"]:
+        print(f"  {yellow('! ' + err)}")
+
+    print(dim(f"\n{len(rep['filed'])} filed, {len(rep['triaged'])} need triage, "
+              f"{len(rep['errors'])} error(s) — {rep['scanned']} scanned."))
+    if rep["filed"] and not rep["dry_run"]:
+        from .sources import notes as notes_src
+        notes_src.ingest(_open())          # make the new notes searchable now
+        print(dim("indexed."))
+    return 0 if not rep["errors"] else 1
 
 
 def cmd_reindex(args) -> int:
@@ -473,6 +506,23 @@ def cmd_decay(args) -> int:
     return 0
 
 
+def cmd_core(args) -> int:
+    """Print the operating protocol (~/.core/core.md) on stdout.
+
+    This exists so the /gg command can load the protocol through the gigabite
+    binary it is already allowed to run. Shelling out to `cat ~/.core/core.md`
+    does not work: Claude Code only permits reads inside the session's working
+    directory, so the whole command substitution fails and the turn silently
+    loses its protocol *and* its recall.
+    """
+    path = config.CORE_FILE
+    if not path.exists():
+        print(f"(no operating protocol at {path} — run ./install.sh)")
+        return 1
+    print(path.read_text(encoding="utf-8", errors="replace"), end="")
+    return 0
+
+
 def cmd_paths(args) -> int:
     config.ensure_dirs()
     print(bold("gigabite paths"))
@@ -482,6 +532,8 @@ def cmd_paths(args) -> int:
     print(f"  inbox:     {config.INBOX_DIR}")
     print(dim("    · Claude.ai export → ") + str(config.INBOX_CLAUDE_AI))
     print(dim("    · Granola export   → ") + str(config.INBOX_GRANOLA))
+    print(f"  drop here: {config.INBOX_DROP_DIR}")
+    print(dim("    · anything else (notes, docs) → then run `gigabite file`"))
     return 0
 
 
@@ -520,6 +572,11 @@ def build_parser() -> argparse.ArgumentParser:
     pd.add_argument("doc_id")
     pd.add_argument("--json", action="store_true")
     pd.set_defaults(func=cmd_doc)
+
+    pfl = sub.add_parser("file", help="file everything dropped in Inbox/ into ~/.knowledge")
+    pfl.add_argument("--dry-run", action="store_true",
+                     help="report what would happen; write and move nothing")
+    pfl.set_defaults(func=cmd_file)
 
     pr = sub.add_parser("reindex", help="clear and rebuild the index")
     pr.set_defaults(func=cmd_reindex)
@@ -587,6 +644,9 @@ def build_parser() -> argparse.ArgumentParser:
     prt.add_argument("--limit", type=int, default=6)
     prt.add_argument("--json", action="store_true")
     prt.set_defaults(func=cmd_route)
+
+    pco = sub.add_parser("core", help="print the operating protocol (~/.core/core.md)")
+    pco.set_defaults(func=cmd_core)
 
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)
