@@ -21,7 +21,7 @@ from typing import Iterable, Optional
 
 from .. import config, util
 from ..store import Document, Message, Store
-from . import IngestReport
+from . import IngestReport, project_alias
 
 
 def _signature(path: Path) -> str:
@@ -58,19 +58,10 @@ def _load_conversations(path: Path) -> list:
 def _alias(project: str) -> str:
     """Map a claude.ai project label to your canonical short name.
 
-    Aliases live in ~/.knowledge/_aliases.json, e.g.
-        {"Acme Product Manager": "acme"}
-    so grouping survives future browser refreshes. Missing file -> no-op.
+    Thin wrapper kept for readability at the call site; the shared implementation
+    lives in ``sources.project_alias`` because Claude Code needs it too.
     """
-    if not project:
-        return project
-    path = config.KNOWLEDGE_DIR / "_aliases.json"
-    try:
-        import json as _json
-        aliases = _json.loads(path.read_text(encoding="utf-8"))
-        return aliases.get(project, project)
-    except Exception:
-        return project
+    return project_alias(project)
 
 
 def _msg_role(m: dict) -> str:

@@ -21,6 +21,11 @@ dist/
 *.sqlite
 *.sqlite3
 
+# The drop folder is real content (meeting notes, client docs) staged in-tree.
+# Ignore everything in it; keep only the instructions.
+/Inbox/*
+!/Inbox/README.md
+
 # Any accidental content / exports / secrets
 *.enc
 conversations.json
@@ -31,7 +36,7 @@ secrets*
 *.pem
 
 # ...but DO keep the scaffold templates (they contain no real content)
-!scaffold/core.md
+!install/scaffold/core.md
 
 # Claude Code machine-local settings
 .claude/settings.local.json

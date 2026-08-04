@@ -9,7 +9,7 @@ history loaded. It can also spawn SOP-driven subagents for build/research/review
 
 Pure Python standard library. No server, no embeddings, no cloud. Nothing leaves
 the device: the index is a local SQLite file, content lives under `~/.knowledge/`,
-and only code is in this repo (see [`initial-plan/`](initial-plan/) for the design).
+and only code is in this repo (see [`docs/`](docs/) for the design).
 
 ---
 
@@ -41,7 +41,7 @@ and rebuilt as you add sources. Re-run `./install.sh` any time to update.
 history into every turn. For an explicit routed answer:
 
 ```
-/gg what's open on the acme traffic drop?      # loads core + recalls + answers
+/gg what's open on the acme traffic drop?         # loads core + recalls + answers
 /calendar                                          # after pasting a calendar screenshot
 /search <query>        /recall-status
 ```
@@ -51,10 +51,10 @@ history into every turn. For an explicit routed answer:
 ```bash
 gigabite search "enterprise pricing anchor"      # search everything
 gigabite search "budget" --source granola         # filter by source
-gigabite search "roadmap" --project acme --all  # scope to a project; --all incl. archived
+gigabite search "roadmap" --project acme --all     # scope to a project; --all incl. archived
 gigabite doc <doc_id>                              # open a full conversation
-gigabite save "Decided X because Y" -p acme -l delivery -t "Title"   # persist a note
-gigabite project add acme --keywords "acme, ej"                   # define a project
+gigabite save "Decided X because Y" -p acme -l delivery -t "Title"      # persist a note
+gigabite project add acme --keywords "acme, acme corp"                  # define a project
 gigabite calendar agenda --day today               # meetings + attached prep
 gigabite synthesize                                # gated end-of-day proposal
 gigabite decay --status                            # reference-frequency archiving
@@ -67,7 +67,7 @@ gigabite status
 | Source | How |
 |---|---|
 | **Claude Code** | every session in `~/.claude/projects/`, automatically on `ingest` |
-| **Claude.ai** | run `scripts/claude-ai-safari-export.js` in the claude.ai console → drop the downloaded `conversations.json` into `~/.knowledge/_inbox/claude_ai/` → `gigabite ingest` |
+| **Claude.ai** | run `install/scripts/claude-ai-safari-export.js` in the claude.ai console → drop the downloaded `conversations.json` into `~/.knowledge/_inbox/claude_ai/` → `gigabite ingest` |
 | **Granola** | export a meeting as Markdown → `~/.knowledge/_inbox/granola/` → `gigabite ingest` |
 | **Notes** | `gigabite save …` (routes to `~/.knowledge/{project}/{layer}/`) |
 | **Calendar** | paste a screenshot in Claude Code → `/calendar` |
@@ -75,7 +75,7 @@ gigabite status
 **claude.ai** is pulled from *inside the browser* because its API is Cloudflare-gated
 for terminal clients — the in-page script carries your real session, and produces a
 `conversations.json` the importer understands (projectless + project chats, tagged).
-See [`CLAUDE_AI.md`](CLAUDE_AI.md). A keychain-token/API path exists (`claude-login`/
+See [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md). A keychain-token/API path exists (`claude-login`/
 `claude-sync`) but Cloudflare blocks it; the browser export is the working route.
 
 <!-- legacy note retained below -->
@@ -86,7 +86,7 @@ automated access is a grey area under claude.ai's terms. It's your own data.
 
 Granola's local store is encrypted behind a macOS keychain key, so notes are
 supplied manually (export → inbox). A public-API path is documented for when you
-have API access — see [`GRANOLA.md`](GRANOLA.md).
+have API access — see [`docs/GRANOLA.md`](docs/GRANOLA.md).
 
 Adding a source is dropping a file and running `gigabite ingest`. Re-dropping a
 newer export updates in place; unchanged files are skipped. Untouched documents
@@ -102,21 +102,34 @@ decay to an archive after 30 days (non-destructive; a matching search restores t
 - **Storage** — code here; content in `~/.knowledge/`; the operating protocol in
   `~/.core/core.md`; secrets (if ever) in the OS keychain. Only code is meant for GitHub.
 
+Eight things at the top level, grouped by what they're *for*: read it, run it,
+drop things in it, the code, the docs, the machine integration, the tests.
+
 ```
-gigabite/
-  config.py          paths & constants (overridable via env)
-  store.py           SQLite + FTS5 index, upsert & search
-  util.py            text extraction, time parsing, FTS query safety
-  ingest.py          orchestrates sources
+README.md            start here
+install.sh           one-shot installer (idempotent, non-destructive)
+Inbox/               ← DROP FILES HERE. Filed on the next `gigabite file` or ingest
+bin/gigabite         self-locating launcher — this is what ends up on your PATH
+gigabite/            the package
+  config.py            paths & constants (overridable via env)
+  store.py             SQLite + FTS5 index, upsert & search
+  util.py              text extraction, time parsing, FTS query safety
+  ingest.py            orchestrates sources + the Inbox filing pass
+  cli.py               the `gigabite` command
+  features/            save · routing · inbox · calendar · synthesis · decay · sops
   sources/
-    claude_code.py   ~/.claude/projects/**/*.jsonl
-    claude_ai.py     Anthropic data export (.zip / conversations.json)
-    granola.py       inbox .md/.txt/.json  (the manual path)
-    granola_live.py  experimental keychain-decrypt connector (dormant)
-  cli.py             the `gigabite` command
-bin/gigabite         self-locating launcher
-claude-commands/     /search, /recall-status  (installed to ~/.claude/commands)
-scaffold/            templates copied into ~/.core and ~/.knowledge on install
+    claude_code.py     ~/.claude/projects/**/*.jsonl
+    claude_ai.py        browser export (.zip / conversations.json)
+    granola.py          inbox .md/.txt/.json  (the manual path)
+    granola_live.py     experimental keychain-decrypt connector (dormant)
+    notes.py            ~/.knowledge/{project}/[{layer}/]*.md
+docs/                design & reference — start with PHILOSOPHY.md
+install/             everything install.sh copies onto the machine
+  claude-commands/     /gg, /search, /calendar  → ~/.claude/commands
+  hooks/               ambient-recall hook      → ~/.claude/gigabite
+  scaffold/            templates → ~/.core, ~/.knowledge, ~/.claude/agents
+  launchd/             the scheduled daily synthesis job
+  scripts/             claude.ai in-browser export helper
 tests/               `python3 -m unittest discover -s tests`
 ```
 
@@ -132,4 +145,4 @@ No network, no home-directory writes (tests redirect the stores to a temp dir).
 
 Only code belongs in git. Content (`~/.core`, `~/.knowledge`) is local and
 iCloud-backed. Consider a real versioned backup for the knowledge base too — see
-the note in [`initial-plan/ARCHITECTURE.md`](initial-plan/ARCHITECTURE.md).
+the note in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

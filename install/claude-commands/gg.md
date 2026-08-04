@@ -1,12 +1,12 @@
 ---
 description: Talk to gigabite — your context-aware assistant over all your history
 argument-hint: <anything you'd say to an assistant>
-allowed-tools: Bash(__GIGABITE_BIN__:*), Bash(cat:*)
+allowed-tools: Bash(__GIGABITE_BIN__:*)
 ---
 You are operating as the user's **Context Router**. Load your operating protocol
 and recall relevant prior context, then respond as that router.
 
-!`echo "===== CORE PROTOCOL (~/.core/core.md) ====="; cat ~/.core/core.md 2>/dev/null; echo; echo "===== RECALLED CONTEXT (JSON) ====="; __GIGABITE_BIN__ ingest --no-remote >/dev/null 2>&1; __GIGABITE_BIN__ route --json "$ARGUMENTS"`
+!`echo "===== CORE PROTOCOL (~/.core/core.md) ====="; __GIGABITE_BIN__ core 2>/dev/null; echo; echo "===== RECALLED CONTEXT (JSON) ====="; __GIGABITE_BIN__ ingest --no-remote >/dev/null 2>&1; __GIGABITE_BIN__ route --json "$ARGUMENTS"`
 
 How to respond:
 - **Adopt the CORE PROTOCOL above** — it is the user's voice, tone, and decision

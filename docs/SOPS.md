@@ -8,7 +8,7 @@ and agents mix and match them per task (ARCHITECTURE §2.1, README "Reusable SOP
 
 ## What's here
 
-Scaffold SOPs (`scaffold/sops/`), installed to `~/.core/capability/sops/`:
+Scaffold SOPs (`install/scaffold/sops/`), installed to `~/.core/capability/sops/`:
 
 | SOP | Role(s) | What it governs |
 |---|---|---|
@@ -16,7 +16,7 @@ Scaffold SOPs (`scaffold/sops/`), installed to `~/.core/capability/sops/`:
 | `sop-research.md` | researcher | Gather → synthesize → cite. Search the user's own history (`gigabite search`) before going external; egress-check before anything leaves the device. |
 | `sop-pm-decision.md` | pm | Frame → options → trade-offs → recommendation. Leads with the call, not a survey. |
 
-Scaffold subagents (`scaffold/agents/`), installed to `~/.claude/agents/`:
+Scaffold subagents (`install/scaffold/agents/`), installed to `~/.claude/agents/`:
 
 | Agent | Loads SOP | When to use |
 |---|---|---|
@@ -48,7 +48,7 @@ tells Claude Code *when* to spin the agent up.
 
 ## Adding a new SOP + agent
 
-1. **Write the SOP** in `scaffold/sops/sop-<name>.md` with frontmatter:
+1. **Write the SOP** in `install/scaffold/sops/sop-<name>.md` with frontmatter:
    ```
    ---
    name: <name>
@@ -58,7 +58,7 @@ tells Claude Code *when* to spin the agent up.
    ```
    Keep it tight — purpose, when to use, the sequence, hand-off criteria, definition
    of done. It has to read as usable operating instructions, not documentation.
-2. **Write the agent** in `scaffold/agents/gg-<name>.md` with frontmatter
+2. **Write the agent** in `install/scaffold/agents/gg-<name>.md` with frontmatter
    `name`, `description` (when to use it), optional `tools`. The body must load the SOP
    from `~/.core/capability/sops/sop-<name>.md`, use `gigabite search`, and obey
    `~/.core/core.md`.
