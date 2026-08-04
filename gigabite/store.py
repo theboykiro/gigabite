@@ -21,6 +21,27 @@ from . import config, util
 
 SCHEMA_VERSION = 1
 
+# Ranking penalty applied to the user's own Claude Code transcripts.
+#
+# A transcript of you asking about X is not evidence about X. It quotes your
+# question verbatim — and any tool output that answered it, including every term
+# that was searched — so it is a dense, near-perfect match for exactly the
+# question you are about to ask again, and it buries the source material that
+# actually answers it. Left alone this gets steadily worse, because the pile of
+# transcripts only grows.
+#
+# bm25 scores are negative and more negative ranks higher, so multiplying by a
+# factor below 1 moves a row toward zero: ranked lower, never excluded. A
+# transcript still wins when it is the only real match (e.g. "what did we decide
+# in that session"), which is why this is a penalty and not a filter.
+#
+# 0.30 was chosen by measuring, not guessing. Across six realistic queries against
+# a real index, claude_code took the top slot on 5/6 at 1.0 (i.e. unpenalised),
+# 3/6 at 0.55, and 1/6 at 0.30 — the survivor being "what was decided about
+# prioritisation", where a session transcript is a legitimate best answer. Re-run
+# that comparison before changing this number.
+TRANSCRIPT_RANK_PENALTY = 0.30
+
 
 @dataclass
 class Message:
@@ -257,16 +278,21 @@ class Store:
         if not match.strip():
             return []
         where = ["fts MATCH ?"]
-        params: list[Any] = [match]
+        where_params: list[Any] = [match]
         if not include_historical:
             where.append("d.active = 1")
         if sources:
             srcs = list(sources)
             where.append("fts.source IN (%s)" % ",".join("?" * len(srcs)))
-            params.extend(srcs)
+            where_params.extend(srcs)
         if project:
             where.append("fts.project = ?")
-            params.append(project)
+            where_params.append(project)
+
+        # Params bind in order of appearance, and the penalty sits in SELECT,
+        # which precedes WHERE.
+        params: list[Any] = [config.SOURCE_CLAUDE_CODE, TRANSCRIPT_RANK_PENALTY]
+        params.extend(where_params)
 
         # bm25 column weights: text=1.0, title=5.0 (title hits rank higher)
         sql = f"""
@@ -282,7 +308,8 @@ class Store:
                 d.updated_utc AS updated_utc,
                 d.ref      AS ref,
                 snippet(fts, 0, '«', '»', ' … ', 12) AS snippet,
-                bm25(fts, 1.0, 5.0) AS score
+                bm25(fts, 1.0, 5.0)
+                    * CASE WHEN fts.source = ? THEN ? ELSE 1.0 END AS score
             FROM fts
             JOIN documents d ON d.doc_id = fts.doc_id
             WHERE {" AND ".join(where)}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 # ---------------------------------------------------------------------------
 # ids
@@ -204,14 +204,50 @@ def fts_tokens(raw: str) -> list[str]:
     return tokens
 
 
-def to_fts_query(raw: str, op: str = "AND") -> str:
+# Words that carry no retrieval signal but were being treated as *required* terms.
+# "what did jane say" became '"what" "did" "jane" "say"', which under FTS5's
+# implicit AND demanded all four words appear in the same message. Source material
+# rarely contains "what"/"did"/"say" together — but a transcript of the user asking
+# the question always does, so questions matched their own asking and nothing else.
+_STOPWORDS = frozenset("""
+a about after all also am an and any are as at be because been before being but by
+can could did do does doing done for from further had has have having he her here
+hers him his how i if in into is it its just me more most my no nor not of off on
+once only or other our ours out over own same she should so some such than that the
+their theirs them then there these they this those through to too under until up
+very was we were what when where which while who whom why will with would you your
+yours
+""".split())
+
+_QUOTED = re.compile(r'^"(.*?)"\*?$')
+
+
+def _bare(token: str) -> str:
+    """The word inside a quoted (possibly prefix-starred) FTS token."""
+    m = _QUOTED.match(token)
+    return (m.group(1) if m else token).lower()
+
+
+def to_fts_query(raw: str, op: str = "AND", *, drop_stopwords: Optional[bool] = None) -> str:
     """Turn a natural-language query into a safe FTS5 MATCH expression.
 
     op='AND' -> every term must appear (implicit AND, tokens space-joined).
     op='OR'  -> any term may appear (ranked by bm25 so full matches rise).
     Never raises a MATCH syntax error; use --raw for raw boolean operators.
+
+    Stop words are dropped from the AND form by default, since requiring them is
+    what made a phrased question fail to retrieve the material that answers it.
+    They are kept for OR, where an extra term only adds candidates and cannot
+    exclude anything. If a query is *entirely* stop words ("what did they say")
+    the filter is skipped rather than producing an empty match.
     """
     tokens = fts_tokens(raw)
+    if drop_stopwords is None:
+        drop_stopwords = op.upper() != "OR"
+    if drop_stopwords:
+        kept = [t for t in tokens if _bare(t) not in _STOPWORDS]
+        if kept:                      # never let filtering empty the query
+            tokens = kept
     joiner = " OR " if op.upper() == "OR" else " "
     return joiner.join(tokens)
 
