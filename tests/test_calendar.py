@@ -3,6 +3,7 @@
 import os
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 _TMP = tempfile.mkdtemp(prefix="gigabite-cal-")
@@ -31,10 +32,13 @@ class TestCalendar(unittest.TestCase):
             source="note", native_id="n1", title="Acme pricing", project="acme",
             messages=[Message(0, "note", "acme enterprise pricing anchored to seats")]))
 
+        # agenda(day="today") is asserted below, so the meetings must BE today —
+        # a hardcoded date makes this test a time bomb.
+        today = date.today().isoformat()
         ids = cal.add_meetings(st, [
-            {"title": "Acme pricing sync", "start": "2026-07-20T15:00",
+            {"title": "Acme pricing sync", "start": f"{today}T15:00",
              "attendees": ["Alice", "Bob"], "location": "Zoom"},
-            {"title": "Dentist", "start": "2026-07-20T09:00"},
+            {"title": "Dentist", "start": f"{today}T09:00"},
         ])
         self.assertEqual(len(ids), 2)
 
