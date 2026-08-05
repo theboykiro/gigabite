@@ -135,16 +135,16 @@ def conversation_to_document(conv: dict, ref: str) -> Optional[Document]:
     )
 
 
-def _export_files(inbox: Path) -> Iterable[Path]:
+def _export_files(imports: Path) -> Iterable[Path]:
     for pat in ("*.zip", "*.json"):
-        yield from sorted(inbox.glob(pat))
+        yield from sorted(imports.glob(pat))
 
 
-def ingest(store: Store, inbox: Optional[Path] = None, force: bool = False) -> IngestReport:
+def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) -> IngestReport:
     report = IngestReport(source=config.SOURCE_CLAUDE_AI)
-    box = Path(inbox) if inbox else config.INBOX_CLAUDE_AI
+    box = Path(imports) if imports else config.SOURCES_CLAUDE_AI
     if not box.exists():
-        report.notes.append(f"no Claude.ai inbox at {box}")
+        report.notes.append(f"no claude.ai export at {box}")
         return report
 
     files = list(_export_files(box))

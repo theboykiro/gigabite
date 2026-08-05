@@ -34,7 +34,7 @@ and the misfiling is only discovered when a search comes back empty for somethin
 distinctly remember writing. Preventing it structurally, rather than by remembering to
 be careful, is the whole point of the rule.
 
-## How `save_note` enforces it
+## How `features.save` enforces it
 
 `gigabite/features/save.py` is the *only* correct way to persist knowledge. Every path
 it produces is resolved under `config.KNOWLEDGE_DIR` and built from the detected
@@ -45,20 +45,24 @@ central store.
 Project and layer names are each sanitised into a single safe folder name by
 `slugify` and `_safe_folder`, which strip `/`, `\`, and `..` outright. A name that
 survives sanitisation cannot contain a path separator, so no project or layer name —
-however it was derived, including from a filename in the drop folder — can traverse
-out of the knowledge base.
+however it was derived, including from the filename of something you handed over —
+can traverse out of the knowledge base.
 
-Three functions make up the surface. `ensure_project(project, keywords, layers)`
+Four functions make up the surface. `ensure_project(project, keywords, layers)`
 creates `{project}/` and seeds a `_project.md` from the template, and is idempotent:
 existing metadata is never clobbered. `save_note(text, project, layer, title, ts,
 meta)` writes the note and returns its path, with `meta` adding extra frontmatter such
-as `origin:` provenance and the `share:` egress marker. `list_projects()` enumerates
+as `origin:` provenance and the `share:` egress marker. `save_file(src, …)` copies an
+existing file — a screenshot, a PDF, a `.vtt` — in byte-for-byte under the same
+`{project}/{layer}/` rule, because refusing a file you cannot extract text from means
+losing it, and a screenshot is content. `list_projects()` enumerates
 `{project}/_project.md` for context detection.
 
-Everything else that writes knowledge goes through those. The drop-folder filing pass
-calls `save_note`, the `gigabite save` command calls `save_note`, and the calendar
-module calls it for meeting records. There is no second path, and adding one would be
-the way this guarantee gets broken.
+Everything else that writes knowledge goes through those. `features.intake` calls
+them for anything handed over, `gigabite save` calls `save_note`, `features.materialize`
+calls it for each rendered document, and the calendar module calls it for meeting
+records. The invariant is that knowledge is only ever written by `features.save`;
+there is no second path, and adding one would be the way this guarantee gets broken.
 
 ## The layout that results
 
@@ -68,11 +72,14 @@ the way this guarantee gets broken.
     _project.md                 project meta: name, keywords (for detection), layers
     {layer}/                    a nested context layer, e.g. meetings, delivery
       {YYYY-MM-DD-slug}.md      a saved note
+      screenshot.png            a stored file, kept as it is
     {YYYY-MM-DD-slug}.md        a note with no layer sits at the project root
-  Inbox/                        the drop folder — staging, never storage
-  _sources/ _archive/ _proposals/ .index/
-                                reserved (leading '_' or '.'), skipped by the notes ingester
+  {loose-file}                  project unresolved: visible, indexed, one drag from filed
+  .gigabite/                    index, imports, archive, proposals, aliases — not content
 ```
+
+Every top-level folder is a project. That is the whole convention, and it replaced a
+set of reserved `_` names that had to be explained to anyone who opened the folder.
 
 Notes are named for their date and a slug of their title, so the folder sorts
 chronologically in any file browser without needing the tool. Collisions get a `-2`,
@@ -80,12 +87,19 @@ chronologically in any file browser without needing the tool. Collisions get a `
 
 ## Indexing
 
-`gigabite/sources/notes.py` closes the loop. It scans `~/Knowledge` and indexes every
-`*.md` found under `{project}/[{layer}/]`, skipping reserved top-level folders — those
-with a leading `_` or `.` — along with any path segment that starts the same way, and
-the two meta files `README.md` and `_project.md`. The document's project is the top
-folder and its layer is the directory path between the project folder and the file, so
-the layout above is also the metadata: nothing has to be declared twice.
+`gigabite/sources/notes.py` closes the loop, and the store is also the intake surface:
+a file placed anywhere under a project folder is indexed *where it sits* on the next
+ingest, and moving it to another project later moves its project with it, because the
+folder is the metadata. There is no staging area and no filing step to remember.
+
+It indexes everything it finds under `{project}/[{layer}/]`, with narrow exceptions:
+anything beginning with `.` (which is where all the machinery lives), the top-level
+folder names an older layout used for the same machinery, files beginning with `_`,
+`README.md`, and `_project.md`. Files that are not text are kept and indexed by
+filename, type, size and date, with an explicit note that their contents were not
+read — there is no OCR and nothing is inferred about an image. Loose files at the
+knowledge root are indexed with an empty project, which is the honest record for
+content whose home is not yet known.
 
 Ingest is incremental, tracked by an `mtime:size` signature per file, so a re-run only
 reads what changed. That also means a note you write by hand in a project folder is
@@ -93,9 +107,9 @@ indexed on the next ingest exactly like one the tool wrote, with no registration
 
 ## In short
 
-One rule, one enforcement point, one layout. Knowledge is written only through
-`save_note`, `save_note` resolves only under `~/Knowledge`, and the folder structure it
-produces is the same structure the indexer reads back. As long as every new feature
-that persists knowledge goes through that function, contexts cannot mix — and any
-feature that bypasses it has silently opted out of the guarantee, whether or not it
-looks like it works.
+One rule, one enforcement point, one layout. Knowledge is written only by
+`features.save`, `features.save` resolves only under `~/Knowledge`, and the folder
+structure it produces is the same structure the indexer reads back. As long as every
+new feature that persists knowledge goes through that module, contexts cannot mix —
+and any feature that bypasses it has silently opted out of the guarantee, whether or
+not it looks like it works.

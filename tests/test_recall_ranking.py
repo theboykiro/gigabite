@@ -152,5 +152,35 @@ class TestPhrasedQuestionFindsTheSource(_IndexBase):
         self.assertEqual(ranked[0], config.SOURCE_NOTE)
 
 
+class TestRouteContext(_IndexBase):
+    """`route` powers /gg and the ambient recall hook, and had no test at all.
+
+    A pasted shell prompt carries `@Janes-MacBook-Pro`, which was accepted as an
+    explicit project marker. Recall then scoped the search to a project that holds
+    nothing, and reported the laptop back to the user as the detected context.
+    """
+
+    def setUp(self):
+        super().setUp()
+        (config.KNOWLEDGE_DIR / "acme").mkdir(parents=True, exist_ok=True)
+        (config.KNOWLEDGE_DIR / "acme" / "_project.md").write_text(
+            "---\nproject: acme\nkeywords: pricing, anchor\nlayers: \n---\n",
+            encoding="utf-8")
+
+    def test_marker_for_a_nonexistent_project_is_not_the_context(self):
+        from gigabite.features import routing
+        out = routing.route(self.st, "janedoe@Janes-MacBook-Pro pricing anchor")
+        self.assertNotEqual(out["context"]["project"], "Janes-MacBook-Pro")
+        # falls through to keywords, which name the project that does exist
+        self.assertEqual(out["context"]["project"], "acme")
+        self.assertTrue(out["hits"], "recall returned nothing")
+
+    def test_marker_for_a_real_project_still_wins(self):
+        from gigabite.features import routing
+        out = routing.route(self.st, "@acme what was the pricing anchor")
+        self.assertEqual(out["context"]["project"], "acme")
+        self.assertEqual(out["context"]["confidence"], "explicit")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

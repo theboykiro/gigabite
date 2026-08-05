@@ -16,7 +16,7 @@ from .. import config
 def project_alias(project: str) -> str:
     """Map a source's own project label onto your canonical short name.
 
-    Aliases live in ``~/Knowledge/_aliases.json``, e.g.::
+    Aliases live in ``~/Knowledge/.gigabite/aliases.json``, e.g.::
 
         {"Acme Product Manager": "acme", "giga-bite": "gigabite"}
 
@@ -29,7 +29,7 @@ def project_alias(project: str) -> str:
     """
     if not project:
         return project
-    path = config.KNOWLEDGE_DIR / "_aliases.json"
+    path = config.ALIASES_FILE
     try:
         aliases = json.loads(path.read_text(encoding="utf-8"))
         return aliases.get(project, project)

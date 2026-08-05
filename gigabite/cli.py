@@ -4,9 +4,9 @@
     gigabite search QUERY [--source S] [--project P] [--limit N] [--context C] [--raw] [--json]
     gigabite status [--json]
     gigabite doc DOC_ID [--json]
-    gigabite file [--dry-run]
+    gigabite add PATH [--project P] [--layer L] [--move]
+    gigabite materialize [--dry-run] [--source S] [--layer L] [--limit N]
     gigabite reindex
-    gigabite granola-connect [--diagnose]
     gigabite paths
 """
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Optional
 
 from . import __version__, config, ingest as ingest_mod, util
@@ -161,36 +162,80 @@ def cmd_doc(args) -> int:
     return 0
 
 
-def cmd_file(args) -> int:
-    """File whatever's sitting in the Inbox/ drop folder into ~/Knowledge."""
-    from .features import inbox
+def cmd_add(args) -> int:
+    """Store a file — a screenshot, a PDF, a transcript — in ~/Knowledge."""
+    from .features import intake
     config.ensure_dirs()
-    rep = inbox.file_inbox(dry_run=args.dry_run)
-    print(bold("Inbox ") + dim(rep["root"])
-          + (yellow("   (dry run — nothing written or moved)") if rep["dry_run"] else ""))
-    if not rep["scanned"]:
-        print(dim(f"  nothing to file — drop a .md/.txt/.vtt/.json file in there, "
-                  f"then re-run `gigabite file`"))
-        return 0
+    src = Path(args.path).expanduser()
+    if not src.is_file():
+        print(yellow(f"not a file: {src}"))
+        return 1
+    try:
+        path, project, triaged = intake.place_file(
+            src, project=args.project or "", layer=args.layer or "", move=args.move)
+    except (OSError, ValueError) as e:
+        print(yellow(f"couldn't store {src.name}: {e}"))
+        return 1
 
-    for e in rep["filed"]:
-        where = e["project"] + (f":{e['layer']}" if e["layer"] else "")
-        print(f"  {green('✓')} {e['origin']} → {bold(where)}")
-        if e["note"]:
-            print(dim(f"      note:     {e['note']}"))
-            print(dim(f"      original: {e['filed_to']}"))
-    for e in rep["triaged"]:
-        print(f"  {yellow('?')} {e['origin']} → {bold('_needs-triage')}  {dim(e['reason'])}")
-    for err in rep["errors"]:
-        print(f"  {yellow('! ' + err)}")
+    where = "unfiled" if triaged else project + (
+        f" · {args.layer}" if args.layer else "")
+    print(green(f"✓ stored: {path.name}") + dim(f"  [{where}]"))
+    print(dim(f"  {path}"))
+    if triaged:
+        print(dim("  no project matched its name, so it is at the top of "
+                  "~/Knowledge — drag it into a project folder, or re-run "
+                  "with --project."))
+    ingest_mod.run(_open(), sources=[config.SOURCE_NOTE])
+    print(dim("indexed."))
+    return 0
 
-    print(dim(f"\n{len(rep['filed'])} filed, {len(rep['triaged'])} need triage, "
-              f"{len(rep['errors'])} error(s) — {rep['scanned']} scanned."))
-    if rep["filed"] and not rep["dry_run"]:
-        from .sources import notes as notes_src
-        notes_src.ingest(_open())          # make the new notes searchable now
+
+def cmd_materialize(args) -> int:
+    """Write every indexed document out as a readable file in ~/Knowledge."""
+    from .features import materialize as mat
+    config.ensure_dirs()
+    store = _open()
+    plan, retired = mat.run(store, source=args.source, project=args.project,
+                            layer=args.layer, limit=args.limit,
+                            dry_run=args.dry_run, retire=not args.keep_sources,
+                            include_unfiled=args.include_unfiled)
+
+    print(bold("materialize ") + dim(str(config.KNOWLEDGE_DIR))
+          + (yellow("   (dry run — nothing written or moved)") if args.dry_run else ""))
+    for item in plan.actionable:
+        where = item.project + (f" · {item.layer}" if item.layer else "")
+        mark = yellow("?") if item.triaged else green("✓")
+        print(f"  {mark} {item.date}  {item.title[:56]:<56} → {bold(where)}")
+        if item.path:
+            print(dim(f"      {item.path}"))
+
+    reasons: dict = {}
+    for item in plan.skipped:
+        key = item.skip.split(" →")[0]
+        reasons[key] = reasons.get(key, 0) + 1
+    for reason, n in sorted(reasons.items()):
+        print(dim(f"  · {n} skipped: {reason}"))
+    unresolved = [i for i in plan.skipped if i.skip == mat.UNRESOLVED]
+    if unresolved:
+        print(yellow(f"\n  {len(unresolved)} document(s) have no project and were "
+                     f"left alone rather than guessed at:"))
+        for item in unresolved[:12]:
+            print(dim(f"      {item.date}  {item.title[:64]}"))
+        if len(unresolved) > 12:
+            print(dim(f"      … and {len(unresolved) - 12} more"))
+
+    moved = [e for e in retired if e["moved_to"]]
+    for e in moved:
+        print(dim(f"  · retired original {Path(e['path']).name} → {e['moved_to']}"))
+
+    triaged = sum(1 for i in plan.actionable if i.triaged)
+    print(dim(f"\n{len(plan.actionable)} materialized ({triaged} left unfiled at "
+              f"the knowledge root), {len(plan.skipped)} skipped, "
+              f"{len(moved)} original(s) retired."))
+    if not args.dry_run and plan.actionable:
+        ingest_mod.run(store, sources=[config.SOURCE_NOTE])
         print(dim("indexed."))
-    return 0 if not rep["errors"] else 1
+    return 0
 
 
 def cmd_reindex(args) -> int:
@@ -202,22 +247,6 @@ def cmd_reindex(args) -> int:
                 p.unlink()
     print(dim("index cleared; rebuilding…"))
     return cmd_ingest(argparse.Namespace(source=None, force=True))
-
-
-def cmd_granola_connect(args) -> int:
-    from .sources import granola_live
-    print(bold("Granola live connect ") + yellow("(experimental)"))
-    print(dim("This reads the Granola key from your keychain — approve the macOS prompt.\n"
-              "If it can't decrypt, use the export path in GRANOLA.md.\n"))
-    store = _open()
-    rep = granola_live.connect(store, diagnose_only=args.diagnose)
-    for note in rep.notes:
-        print(f"  {dim('· ' + note)}")
-    for err in rep.errors:
-        print(f"  {yellow('! ' + err)}")
-    if rep.changed:
-        print(green(f"\n✓ Indexed {rep.changed} Granola meeting(s)."))
-    return 0 if not rep.errors else 1
 
 
 def cmd_claude_login(args) -> int:
@@ -362,12 +391,15 @@ def _parse_meeting_header(text: str) -> dict:
 
 
 def cmd_paste(args) -> int:
-    """File whatever's on the clipboard (or stdin) straight into the index.
+    """Save whatever's on the clipboard (or stdin) into ~/Knowledge.
 
-    Fast intake for Granola transcripts: copy in Granola, then run this.
+    Fast intake for Granola transcripts: copy in Granola, then run this. It lands
+    in exactly the place a file dragged into a project folder would — there is one
+    destination, so "where did my meeting go?" has one answer however you handed
+    it over.
     """
     import subprocess as _sp
-    from .features import routing, save as savemod
+    from .features import intake
     if args.stdin:
         text = sys.stdin.read()
     else:
@@ -384,29 +416,28 @@ def cmd_paste(args) -> int:
     # Granola copies carry a header (Meeting Title:/Date:/Participants:) — read it.
     hdr = _parse_meeting_header(text)
     title = args.title or hdr.get("title") or text.splitlines()[0][:80]
-    date = args.date or hdr.get("date") or __import__("datetime").date.today().isoformat()
-    project = args.project
-    if project is None:  # auto-detect unless explicitly set (use "" / --project '' to force none)
-        project = routing.resolve_context(f"{title}\n{text[:500]}")["project"] or ""
+    day = args.date or hdr.get("date") or __import__("datetime").date.today().isoformat()
 
-    if args.source == config.SOURCE_NOTE:
-        path = savemod.save_note(text, project or "misc", layer=args.layer, title=title, ts=date)
-    else:  # granola (default)
-        from . import config as C
-        C.ensure_dirs()
-        slug = savemod.slugify(title) or "meeting"
-        path = C.INBOX_GRANOLA / f"{date}-{slug}.md"
-        fm = [f"title: {title}", f"date: {date}"]
-        if project:
-            fm.append(f"project: {project}")
-        path.write_text("---\n" + "\n".join(fm) + "\n---\n\n" + text + "\n", encoding="utf-8")
+    # A project is only ever *forced* here. Left off, routing detects it, so there
+    # is one routing decision for every intake route rather than several that can
+    # disagree.
+    project = (args.project or "").strip()
+    config.ensure_dirs()
+
+    path, resolved, unfiled = intake.place_text(
+        text, title=title, day=day, project=project, layer=args.layer or "",
+        source=args.source, origin="pasted from the clipboard")
 
     store = _open()
-    ingest_mod.run(store)  # local ingest picks it up
-    print(green(f"✓ filed & indexed: {title}")
-          + dim(f"  [{config.SOURCE_LABELS.get(args.source, args.source)}"
-                + (f" · {project}" if project else "") + f" · {date}]"))
+    ingest_mod.run(store, sources=[config.SOURCE_NOTE])   # index what was just written
+
+    where = "unfiled" if unfiled else resolved + (
+        f" · {args.layer}" if args.layer else "")
+    print(green(f"✓ saved & indexed: {title}") + dim(f"  [{where} · {day}]"))
     print(dim(f"  {path}"))
+    if unfiled:
+        print(dim("  no project matched it, so it is at the top of ~/Knowledge — "
+                  "drag it into a project folder, or re-run with --project."))
     return 0
 
 
@@ -529,13 +560,19 @@ def cmd_paths(args) -> int:
     print(bold("gigabite paths"))
     print(f"  core:      {config.CORE_DIR}")
     print(f"  knowledge: {config.KNOWLEDGE_DIR}")
-    print(f"  index db:  {config.DB_PATH}")
-    print(f"  raw exports: {config.SOURCES_DIR}")
-    print(dim("    · Claude.ai export → ") + str(config.INBOX_CLAUDE_AI))
-    print(dim("    · Granola export   → ") + str(config.INBOX_GRANOLA))
-    print(f"  drop here: {config.INBOX_DROP_DIR}")
-    print(dim("    · anything else (notes, docs) → then run `gigabite file`"))
+    print(dim("    · one folder per project; a project's subfolders are its layers"))
+    print(dim("    · put a file anywhere under it — it is indexed where it sits"))
+    projects = [p["name"] for p in _projects_for_paths()]
+    print(dim("    · projects: " + (", ".join(projects) if projects else "none yet")))
+    print(f"  machinery: {config.MACHINE_DIR}")
+    print(dim("    · hidden, and nothing in it needs opening: index, raw imports,"))
+    print(dim("      archive, proposals, routing aliases"))
     return 0
+
+
+def _projects_for_paths() -> list:
+    from .features import save as savemod
+    return savemod.list_projects()
 
 
 def cmd_relocate(args) -> int:
@@ -605,25 +642,41 @@ def build_parser() -> argparse.ArgumentParser:
     pd.add_argument("--json", action="store_true")
     pd.set_defaults(func=cmd_doc)
 
-    pfl = sub.add_parser("file", help="file everything dropped in Inbox/ into ~/Knowledge")
-    pfl.add_argument("--dry-run", action="store_true",
+    pad = sub.add_parser("add", help="store a file (screenshot, PDF, transcript) in ~/Knowledge")
+    pad.add_argument("path", help="the file to store")
+    pad.add_argument("--project", "-p", help="force a project (default: detected from the name)")
+    pad.add_argument("--layer", "-l", help="force a layer, e.g. attachments")
+    pad.add_argument("--move", action="store_true",
+                     help="move the original instead of copying it")
+    pad.set_defaults(func=cmd_add)
+
+    pmz = sub.add_parser("materialize",
+                         help="write every indexed conversation out as a readable file")
+    pmz.add_argument("--dry-run", action="store_true",
                      help="report what would happen; write and move nothing")
-    pfl.set_defaults(func=cmd_file)
+    pmz.add_argument("--source", choices=config.ALL_SOURCES, help="only this source")
+    pmz.add_argument("--project", "-p",
+                     help="place everything in this run under one project "
+                          "(use when you know where they belong and routing can't tell)")
+    pmz.add_argument("--layer", help="layer to file them under (default: per source)")
+    pmz.add_argument("--include-unfiled", action="store_true",
+                     help="also write documents with no resolvable project, "
+                          "loose at the top of ~/Knowledge")
+    pmz.add_argument("--limit", type=int, help="stop after N documents")
+    pmz.add_argument("--keep-sources", action="store_true",
+                     help="leave raw imports in place even once they are readable files")
+    pmz.set_defaults(func=cmd_materialize)
 
     pr = sub.add_parser("reindex", help="clear and rebuild the index")
     pr.set_defaults(func=cmd_reindex)
 
     prl = sub.add_parser(
         "relocate",
-        help="move a legacy hidden ~/Knowledge to the visible ~/Knowledge layout",
+        help="bring an older ~/Knowledge layout up to date (one folder, machinery hidden)",
     )
     prl.add_argument("--dry-run", action="store_true",
                      help="show what would move, change nothing")
     prl.set_defaults(func=cmd_relocate)
-
-    pg = sub.add_parser("granola-connect", help="EXPERIMENTAL: pull Granola notes live via keychain")
-    pg.add_argument("--diagnose", action="store_true", help="test decryption only; index nothing")
-    pg.set_defaults(func=cmd_granola_connect)
 
     pl = sub.add_parser("claude-login", help="securely store your claude.ai session token in the keychain")
     pl.set_defaults(func=cmd_claude_login)
@@ -648,13 +701,14 @@ def build_parser() -> argparse.ArgumentParser:
     pj.add_argument("--layers")
     pj.set_defaults(func=cmd_project)
 
-    ppa = sub.add_parser("paste", help="file clipboard contents (e.g. a copied Granola transcript) into the index")
-    ppa.add_argument("--title", "-t", help="title (default: first line of the text)")
-    ppa.add_argument("--date", "-d", help="YYYY-MM-DD (default: today)")
-    ppa.add_argument("--project", "-p", help="project tag (default: auto-detect; pass '' to force none)")
-    ppa.add_argument("--layer", "-l", help="layer, only for --source note")
+    ppa = sub.add_parser("paste", help="save clipboard contents (e.g. a copied Granola transcript) into ~/Knowledge")
+    ppa.add_argument("--title", "-t", help="title (default: the transcript header, else the first line)")
+    ppa.add_argument("--date", "-d", help="YYYY-MM-DD (default: the transcript header, else today)")
+    ppa.add_argument("--project", "-p", help="force a project (default: auto-detected)")
+    ppa.add_argument("--layer", "-l", help="force a layer, e.g. meetings (needs --project)")
     ppa.add_argument("--source", choices=[config.SOURCE_GRANOLA, config.SOURCE_NOTE],
-                     default=config.SOURCE_GRANOLA)
+                     default=config.SOURCE_GRANOLA,
+                     help="what the text is, recorded as provenance on the note")
     ppa.add_argument("--stdin", action="store_true", help="read from stdin instead of the clipboard")
     ppa.set_defaults(func=cmd_paste)
 

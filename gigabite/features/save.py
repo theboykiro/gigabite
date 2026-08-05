@@ -1,11 +1,23 @@
 """Save knowledge into the central store — never into the working directory.
 
-This module is the *only* correct way to persist a note or project meta. It
+This module is the *only* correct way to persist content or project meta. It
 always resolves paths under ``config.KNOWLEDGE_DIR`` (``~/Knowledge``),
 independent of the caller's current working directory. That is the rule from
 ARCHITECTURE §4: code goes to the working dir, knowledge goes to the fixed
 central store. Route knowledge writes here and they can never be misfiled into
 whatever repo Claude Code happens to be pointed at.
+
+Two writers, because there are two kinds of content:
+
+  * ``save_note(text, …)``  — text becomes a markdown note with frontmatter.
+  * ``save_file(src, …)``   — an existing file (a screenshot, a PDF, a .vtt) is
+    copied in byte-for-byte under the same ``{project}/{layer}/`` rule.
+
+``save_file`` exists because refusing a file you cannot extract text from means
+losing it. A screenshot pasted into a conversation is content; the honest
+handling is to keep the file and index only what is actually known about it
+(name, date, size, type), which is what ``sources.notes`` does. Guessing at its
+contents would be worse than admitting they are unread.
 
 Layout produced (ARCHITECTURE §2.2):
 
@@ -14,12 +26,14 @@ Layout produced (ARCHITECTURE §2.2):
         _project.md              per-project meta (keywords, layers, background)
         {layer}/                 nested context layer
           {YYYY-MM-DD-slug}.md   a saved note
+          screenshot.png         a stored file, kept as-is
         {YYYY-MM-DD-slug}.md     a note with no layer -> project root
 """
 
 from __future__ import annotations
 
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -128,6 +142,31 @@ def _unique_path(directory: Path, base: str) -> Path:
     return candidate
 
 
+def _dest_dir(project: str, layer: Optional[str]) -> tuple:
+    """Resolve ``{project}/[{layer}/]`` under the knowledge base.
+
+    Returns ``(directory, layer_name)``. This is the single point where a project
+    and layer become a path, shared by ``save_note`` and ``save_file``, so both
+    writers are covered by the same guarantee and the same sanitisation.
+
+    ``config.UNFILED_PROJECT`` means the project was not resolved, and resolves to
+    the knowledge root: the file is visible, named after itself, and one drag away
+    from being filed, without a folder being invented to hold the tool's
+    uncertainty. It is matched *before* sanitisation, because ``slugify`` would
+    turn it into an ordinary project folder — exactly the misfiling it exists to
+    prevent. It takes no layer: nothing about unrouted content is known well
+    enough to nest it.
+    """
+    if project == config.UNFILED_PROJECT:
+        return config.KNOWLEDGE_DIR, ""
+    dest = config.KNOWLEDGE_DIR / _safe_folder(project, "project")
+    layer_name = ""
+    if layer:
+        layer_name = _safe_folder(layer, "layer")
+        dest = dest / layer_name
+    return dest, layer_name
+
+
 _FM_RESERVED = ("title", "date", "project", "layer")
 
 
@@ -165,14 +204,11 @@ def save_note(
     *meta* adds extra frontmatter fields after the standard four (e.g.
     ``origin:`` provenance, ``share:`` egress marker). Optional and additive —
     omit it and the note is byte-identical to before.
-    """
-    folder = _safe_folder(project, "project")
-    dest = config.KNOWLEDGE_DIR / folder
 
-    layer_name = ""
-    if layer:
-        layer_name = _safe_folder(layer, "layer")
-        dest = dest / layer_name
+    Pass ``project=config.UNFILED_PROJECT`` when the project genuinely is not
+    known; see ``_dest_dir``.
+    """
+    dest, layer_name = _dest_dir(project, layer)
     dest.mkdir(parents=True, exist_ok=True)
 
     created = util.to_iso_utc(ts) if ts else datetime.now(timezone.utc).isoformat()
@@ -187,7 +223,7 @@ def save_note(
         "---\n"
         f"title: {heading}\n"
         f"date: {date}\n"
-        f"project: {project}\n"
+        f"project: {'' if project == config.UNFILED_PROJECT else project}\n"
         f"layer: {layer_name}\n"
         f"{_extra_frontmatter(meta)}"
         "---\n\n"
@@ -195,6 +231,64 @@ def save_note(
     )
     path.write_text(content, encoding="utf-8")
     return path
+
+
+# ---------------------------------------------------------------------------
+# files that are not text (screenshots, PDFs, anything at all)
+# ---------------------------------------------------------------------------
+
+def _unique_named(directory: Path, name: str) -> Path:
+    """A non-colliding *name* in *directory* (append -2, -3, … before the suffix).
+
+    Mirrors ``_unique_path`` but preserves an arbitrary extension. Nothing in
+    this module ever overwrites an existing file.
+    """
+    stem, suffix = Path(name).stem, Path(name).suffix
+    candidate = directory / name
+    n = 2
+    while candidate.exists():
+        candidate = directory / f"{stem}-{n}{suffix}"
+        n += 1
+    return candidate
+
+
+def save_file(
+    src: Path,
+    project: str,
+    layer: Optional[str] = None,
+    name: Optional[str] = None,
+    move: bool = False,
+) -> Path:
+    """Store *src* under ``~/Knowledge/{project}/[{layer}/]`` unchanged.
+
+    Same routing guarantee as ``save_note``: the destination is always resolved
+    under ``config.KNOWLEDGE_DIR`` from the sanitised project and layer, never
+    from the caller's working directory. The bytes are copied verbatim — this is
+    for content that is not text, so there is nothing to render.
+
+    Never overwrites: a colliding name gets a ``-2`` suffix. *move* relocates the
+    original instead of copying it, which is only for a file already inside the
+    knowledge base; content arriving from outside is copied so the caller's copy
+    survives a mistake.
+    """
+    src = Path(src)
+    if not src.is_file():
+        raise FileNotFoundError(f"not a file: {src}")
+
+    dest_dir, _ = _dest_dir(project, layer)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # The stored name is sanitised the same way a note's is, so a filename can no
+    # more escape the knowledge base than a project name can.
+    raw = name or src.name
+    stem = slugify(Path(raw).stem) or "file"
+    dest = _unique_named(dest_dir, f"{stem}{Path(raw).suffix.lower()}")
+
+    if move:
+        shutil.move(str(src), str(dest))
+    else:
+        shutil.copy2(str(src), str(dest))
+    return dest
 
 
 # ---------------------------------------------------------------------------

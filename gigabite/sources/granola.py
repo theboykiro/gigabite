@@ -1,9 +1,8 @@
 """Ingest Granola meeting notes.
 
-Granola v6 encrypts its entire local store (granola.db + *.enc) behind a
-keychain-gated key, so notes cannot be read from disk without your one-time
-authorization (see granola_live.py and GRANOLA.md). This module is the
-guaranteed, secret-free path: drop exports into ~/Knowledge/_sources/granola/.
+Granola meetings arrive because you hand them over — an export, or a transcript
+copied to the clipboard (`gigabite paste`). Nothing here reads Granola's own
+store or its keychain. This module parses what you supply.
 
 Accepts:
   - .md / .txt  — one file per meeting (title from YAML frontmatter, first
@@ -185,15 +184,14 @@ def _signature(path: Path) -> str:
     return f"{int(st.st_mtime)}:{st.st_size}"
 
 
-def ingest(store: Store, inbox: Optional[Path] = None, force: bool = False) -> IngestReport:
+def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) -> IngestReport:
     report = IngestReport(source=config.SOURCE_GRANOLA)
-    box = Path(inbox) if inbox else config.INBOX_GRANOLA
+    box = Path(imports) if imports else config.SOURCES_GRANOLA
     if not box.exists():
-        report.notes.append(f"no Granola inbox at {box}")
-        return report
+        return report        # no imports folder is normal, not a problem
 
     def _reserved(path: Path) -> bool:
-        # skip if any path segment (relative to the inbox) is hidden/reserved,
+        # skip if any path segment (relative to the imports dir) is hidden/reserved,
         # not just the filename — matches the notes source's behaviour
         rel = path.relative_to(box)
         return any(part.startswith((".", "_")) for part in rel.parts)
@@ -201,14 +199,13 @@ def ingest(store: Store, inbox: Optional[Path] = None, force: bool = False) -> I
     files = [
         p for p in sorted(box.rglob("*"))
         if p.suffix.lower() in (".md", ".txt", ".json")
-        and p.name.lower() != "readme.md"          # skip the inbox instructions
+        and p.name.lower() != "readme.md"
         and not _reserved(p)
     ]
     if not files:
-        report.notes.append(
-            f"no Granola exports yet — drop .md/.txt/.json into {box} "
-            f"(or run `gigabite granola-connect` to pull live)"
-        )
+        # Not a problem, and not worth reporting: meetings normally arrive via
+        # `gigabite paste` or as files dropped into a project folder, both of
+        # which land in the knowledge base rather than here.
         return report
 
     for path in files:

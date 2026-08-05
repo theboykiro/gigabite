@@ -1,8 +1,9 @@
-"""Relocating a legacy ~/.knowledge to the visible ~/Knowledge layout.
+"""Bringing an older ~/Knowledge layout up to date.
 
 This code moves the only copy of real content, so the tests lean on the
-properties that matter: nothing is deleted, nothing is overwritten, running it
-twice is harmless, and an ambiguous situation stops rather than guesses.
+properties that matter: nothing that holds content is deleted, nothing is
+overwritten, running it twice is harmless, and an ambiguous situation stops
+rather than guesses.
 """
 
 import sys
@@ -31,6 +32,9 @@ class TestRelocate(unittest.TestCase):
         (self.legacy / "_inbox" / "granola" / "m.md").write_text("# meeting")
         (self.legacy / "_historical").mkdir()
         (self.legacy / "_historical" / "old.md").write_text("# old")
+        (self.legacy / "_proposals").mkdir()
+        (self.legacy / "_proposals" / "2026-07-20.md").write_text("# proposal")
+        (self.legacy / "_aliases.json").write_text('{"gigabyte": "gigabite"}')
         self.repo_inbox.mkdir(parents=True)
         (self.repo_inbox / "README.md").write_text("committed guide")
         (self.repo_inbox / "dropped.md").write_text("# dropped")
@@ -38,6 +42,9 @@ class TestRelocate(unittest.TestCase):
     def _plan(self):
         return relocate.plan(legacy=self.legacy, target=self.target,
                              repo_inbox=self.repo_inbox)
+
+    def _machine(self, *parts):
+        return self.target.joinpath(config.MACHINE_DIRNAME, *parts)
 
     def test_plan_changes_nothing_on_disk(self):
         before = sorted(p.relative_to(self.root).as_posix()
@@ -47,24 +54,60 @@ class TestRelocate(unittest.TestCase):
                        for p in self.root.rglob("*"))
         self.assertEqual(before, after)
 
-    def test_moves_everything_to_the_visible_layout(self):
+    def test_projects_stay_where_they_are(self):
         relocate.apply(self._plan())
         self.assertFalse(self.legacy.exists())
         self.assertTrue((self.target / "acme" / "meetings" / "sync.md").exists())
-        self.assertTrue((self.target / "_sources" / "granola" / "m.md").exists())
-        self.assertTrue((self.target / "_archive" / "old.md").exists())
-        self.assertTrue((self.target / "Inbox" / "dropped.md").exists())
+
+    def test_all_machinery_moves_into_one_hidden_folder(self):
+        relocate.apply(self._plan())
+        self.assertTrue(self._machine("imports", "granola", "m.md").exists())
+        self.assertTrue(self._machine("archive", "old.md").exists())
+        self.assertTrue(self._machine("proposals", "2026-07-20.md").exists())
+        self.assertTrue(self._machine("aliases.json").exists())
+
+    def test_nothing_but_projects_and_readme_is_visible_afterwards(self):
+        relocate.apply(self._plan())
+        visible = sorted(q.name for q in self.target.iterdir()
+                         if not q.name.startswith("."))
+        # 'acme' is the project; 'dropped.md' was never filed and so has no
+        # project — it sits at the root, visible, for the user to place.
+        self.assertEqual(visible, ["acme", "dropped.md"])
 
     def test_no_content_is_lost(self):
         before = {p.name for p in self.legacy.rglob("*") if p.is_file()}
         relocate.apply(self._plan())
         after = {p.name for p in self.target.rglob("*") if p.is_file()}
+        # aliases.json is renamed on the way in; everything else keeps its name.
+        before.discard("_aliases.json")
         self.assertTrue(before.issubset(after), f"lost: {before - after}")
+        self.assertTrue(self._machine("aliases.json").exists())
 
-    def test_committed_readme_stays_in_the_repo(self):
+    def test_unfiled_drop_lands_at_the_knowledge_root(self):
+        relocate.apply(self._plan())
+        self.assertTrue((self.target / "dropped.md").exists())
+
+    def test_already_filed_originals_are_kept_but_not_indexable(self):
+        filed = self.target / "Inbox" / "_filed" / "2026-08-05"
+        filed.mkdir(parents=True)
+        (filed / "note.md").write_text("# already filed elsewhere")
+        relocate.apply(self._plan())
+        kept = self._machine("originals", "inbox", "_filed", "2026-08-05", "note.md")
+        self.assertTrue(kept.exists(), "the original must be preserved")
+        self.assertFalse((self.target / "note.md").exists(),
+                         "a note already filed must not come back as content")
+
+    def test_committed_repo_readme_is_never_deleted(self):
         relocate.apply(self._plan())
         self.assertTrue((self.repo_inbox / "README.md").exists())
-        self.assertFalse((self.target / "Inbox" / "README.md").exists())
+
+    def test_obsolete_drop_folder_readme_is_removed(self):
+        drop = self.target / "Inbox"
+        drop.mkdir(parents=True)
+        (drop / "README.md").write_text("drop files here — no longer true")
+        relocate.apply(self._plan())
+        self.assertFalse((drop / "README.md").exists())
+        self.assertFalse(drop.exists(), "the emptied drop folder should be gone")
 
     def test_running_twice_is_harmless(self):
         first = relocate.apply(self._plan())
@@ -84,12 +127,11 @@ class TestRelocate(unittest.TestCase):
         # and the legacy content is untouched
         self.assertTrue((self.legacy / "acme" / "meetings" / "sync.md").exists())
 
-    def test_existing_drop_file_is_not_overwritten(self):
-        (self.target / "Inbox").mkdir(parents=True)
-        (self.target / "Inbox" / "dropped.md").write_text("newer version")
+    def test_existing_file_is_not_overwritten(self):
+        (self.target / "dropped.md").parent.mkdir(parents=True, exist_ok=True)
+        (self.target / "dropped.md").write_text("newer version")
         relocate.apply(self._plan())
-        self.assertEqual((self.target / "Inbox" / "dropped.md").read_text(),
-                         "newer version")
+        self.assertEqual((self.target / "dropped.md").read_text(), "newer version")
         self.assertTrue((self.repo_inbox / "dropped.md").exists(),
                         "the un-moved original must remain")
 
@@ -100,30 +142,37 @@ class TestRelocate(unittest.TestCase):
         self.assertFalse(any(s.what == "knowledge base" and s.actionable
                              for s in p.steps))
 
+    def test_the_knowledge_root_is_never_pruned(self):
+        import shutil
+        shutil.rmtree(self.legacy)
+        shutil.rmtree(self.repo_inbox)
+        self.target.mkdir(parents=True, exist_ok=True)
+        relocate.apply(self._plan())
+        self.assertTrue(self.target.exists())
 
-class TestDropFolderIsNotAProject(unittest.TestCase):
-    """The drop box is called 'Inbox', so it has no underscore to disqualify it."""
 
-    def test_notes_ingester_skips_the_drop_folder(self):
+class TestLegacyFoldersAreNotIndexed(unittest.TestCase):
+    """An un-migrated store must not be indexed out of its old machinery folders."""
+
+    def test_notes_ingester_skips_legacy_system_folders(self):
         from gigabite.sources import notes
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name) / "Knowledge"
         (root / "acme").mkdir(parents=True)
         (root / "acme" / "real.md").write_text("# a real note")
-        (root / "Inbox").mkdir()
-        (root / "Inbox" / "waiting.md").write_text("# not filed yet")
+        for legacy in ("Inbox", "_sources", "_archive", "_proposals"):
+            (root / legacy).mkdir()
+            (root / legacy / "stray.md").write_text(f"# in {legacy}")
+        (root / config.MACHINE_DIRNAME / "imports").mkdir(parents=True)
+        (root / config.MACHINE_DIRNAME / "imports" / "raw.md").write_text("# raw")
 
-        old_root, old_drop = config.KNOWLEDGE_DIR, config.INBOX_DROP_DIR
-        config.KNOWLEDGE_DIR, config.INBOX_DROP_DIR = root, root / "Inbox"
-        try:
-            found = {p.name for p in notes._iter_note_files(root)}
-        finally:
-            config.KNOWLEDGE_DIR, config.INBOX_DROP_DIR = old_root, old_drop
-
+        found = {p.name for p in notes._iter_content_files(root)}
         self.assertIn("real.md", found)
-        self.assertNotIn("waiting.md", found,
-                         "a file awaiting filing must not be indexed from the drop box")
+        self.assertNotIn("stray.md", found,
+                         "content in a legacy machinery folder must not be indexed")
+        self.assertNotIn("raw.md", found,
+                         "nothing inside .gigabite/ is content")
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ only after a human accepts them.
 
 Approval is manual and non-negotiable. This module NEVER writes to `core.md`
 or to the knowledge base. Its only output is a proposal under
-`~/Knowledge/_proposals/YYYY-MM-DD.md`. Nothing in that file is applied to the
+`~/Knowledge/.gigabite/proposals/YYYY-MM-DD.md`. Nothing in that file is applied to the
 operating system until the user (or a `/gg` session) reviews it and applies the
 accepted items by hand. That gate is exactly what stops silent drift.
 
@@ -30,7 +30,8 @@ NO_PROJECT_LABEL = "(no project)"
 
 
 def _proposals_dir() -> Path:
-    return config.KNOWLEDGE_DIR / "_proposals"
+    # Resolved per call, so a repointed knowledge base is honoured.
+    return config.proposals_dir()
 
 
 def _excerpt(store, doc_id: str, limit: int = EXCERPT_CHARS) -> str:
@@ -147,7 +148,7 @@ def write_proposal(store, since_days: int = 1) -> Path:
     """Write today's synthesis proposal and return its path.
 
     Idempotent for a given date: the same-day file is overwritten. Only ever
-    touches `~/Knowledge/_proposals/` — never core.md or the knowledge base.
+    touches `config.PROPOSALS_DIR` — never core.md or the knowledge base.
     """
     digest = build_digest(store, since_days=since_days)
     out_dir = _proposals_dir()

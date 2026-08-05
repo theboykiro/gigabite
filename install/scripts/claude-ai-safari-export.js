@@ -12,8 +12,9 @@
 //   4. Paste this whole file, press Enter. If pasting is blocked, type
 //      `allow pasting` first, Enter, then paste.
 //   5. It downloads conversations.json to ~/Downloads. Then in a terminal:
-//        mv ~/Downloads/conversations.json ~/Knowledge/_sources/claude_ai/
+//        mv ~/Downloads/conversations.json ~/Knowledge/.gigabite/imports/claude_ai/
 //        gigabite ingest
+//        gigabite materialize   # write each chat out as a file you can open
 //
 (async () => {
   const j = (u) => fetch(u, { headers: { accept: 'application/json' }, credentials: 'include' })

@@ -144,12 +144,16 @@ class TestNotesIngester(_Base):
             "Pricing anchor decided at the kickoff.",
             project="acme", layer="delivery", title="Kickoff", ts="2026-06-15",
         )
-        # reserved top-level folders must be ignored
-        (self.knowledge / "_inbox").mkdir(exist_ok=True)
-        (self.knowledge / "_inbox" / "dropme.md").write_text(
-            "inbox scratch about widgets", encoding="utf-8")
-        (self.knowledge / "_historical").mkdir(exist_ok=True)
-        (self.knowledge / "_historical" / "old.md").write_text(
+        # the machinery folder and the legacy names for it must be ignored
+        (self.knowledge / config.MACHINE_DIRNAME / "imports").mkdir(
+            parents=True, exist_ok=True)
+        (self.knowledge / config.MACHINE_DIRNAME / "imports" / "raw.md").write_text(
+            "raw import about widgets", encoding="utf-8")
+        (self.knowledge / "_sources").mkdir(exist_ok=True)
+        (self.knowledge / "_sources" / "dropme.md").write_text(
+            "legacy scratch about widgets", encoding="utf-8")
+        (self.knowledge / "_archive").mkdir(exist_ok=True)
+        (self.knowledge / "_archive" / "old.md").write_text(
             "decayed history mentioning widgets", encoding="utf-8")
         # README and _project.md are meta, not knowledge
         (self.knowledge / "acme" / "README.md").write_text(

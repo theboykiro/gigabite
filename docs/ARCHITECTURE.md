@@ -89,25 +89,41 @@ Project knowledge lives in the knowledge base, one top-level folder per project:
     {layer-2}/          e.g. delivery
     {layer-3}/          e.g. a separate initiative inside the same account
   {project-b}/
-  _sources/             raw exports, machine-read (see §7)
-  _archive/             decayed context (see §6)
-  _proposals/           gated synthesis output (see §5)
-  .index/gigabite.db    the search index
+  README.md             what this folder is, in twenty lines
+  .gigabite/            every moving part, hidden and never browsed:
+                          index/       the search index
+                          imports/     raw machine-readable exports (see §7)
+                          archive/     decayed context (see §6)
+                          proposals/   gated synthesis output (see §5)
+                          originals/   retired imports and pre-migration copies,
+                                       kept so a move can be undone; indexed by nothing
+                          aliases.json name variants that map onto a project
 ```
 
 A project can hold several nested **layers** that load independently, so a task may
 pull one layer, several, or the project meta plus one layer, as detection decides.
 Layer naming is deliberately left open: it is data, decided per project, not fixed by
-the tool. Folders whose names begin with `_` or `.` are reserved and are never
-treated as projects, which is what keeps `_sources/`, `_archive/`, `_proposals/`, and
-the index out of the project namespace.
+the tool. The rule is now as short as it can be: **every top-level folder is a
+project, and the machinery is in `.gigabite/`**. An earlier layout reserved names
+beginning with `_`, which meant six things had to be explained to anyone who opened
+the folder and none of them were their knowledge; one hidden directory replaces the
+convention entirely.
 
 The knowledge base is a visible folder in the home directory by design. An earlier
 version hid it at `~/.knowledge`, and the practical consequence was that the operator
-could not find their own knowledge base in Finder — which in turn forced a visible
-drop folder inside the repository as a workaround. Making the base itself visible
-removes the need for that workaround, and the drop folder now sits at
-`~/Knowledge/Inbox`, inside the thing it feeds.
+could not find their own knowledge base in Finder — a store you cannot look at is one
+you cannot verify. That is also why `~/Knowledge` is the intake surface rather than
+having one: a file placed anywhere under `{project}/[{layer}/]` is indexed where it
+sits by the next ingest (`ROUTING.md`), so putting something in and finding it later
+are the same act. A staging folder used to sit here; it gave content two possible homes and
+made "where is my meeting?" depend on whether a filing pass had run, which is a second
+store wearing the first one's clothes.
+
+Content whose project cannot be resolved is written to the knowledge **root** — a
+loose, visible file indexed with an empty project, one drag from being filed. No
+folder is invented for it. Guessing a project is the failure this design exists to
+prevent (§3), and hiding the refusal in a folder nobody opens is barely better than
+guessing.
 
 ### 2.3 Conversation context
 
@@ -158,10 +174,14 @@ file writes, and flagged that as load-bearing and unconfirmed. It resolved as th
 documented fallback: an explicit save action rather than interception.
 `gigabite/features/save.py` is the only correct way to persist knowledge, and every
 path it produces is resolved under `config.KNOWLEDGE_DIR` from the detected project
-and layer, with the caller's working directory never consulted. Project and layer
-names are sanitised into a single safe folder name each, so `/`, `\`, and `..` cannot
-escape the knowledge base. This is marginally less seamless than interception would
-have been and is fully functional; `ROUTING.md` documents it in detail.
+and layer, with the caller's working directory never consulted. It has two writers,
+because there are two kinds of content: `save_note` turns text into a markdown note,
+and `save_file` copies an existing file — a screenshot, a PDF, a `.vtt` — in
+byte-for-byte under the same rule. Refusing what you cannot read means losing it, so
+nothing is refused. Project and layer names are sanitised into a single safe folder
+name each, so `/`, `\`, and `..` cannot escape the knowledge base. This is marginally
+less seamless than interception would have been and is fully functional; `ROUTING.md`
+documents it in detail.
 
 ## 5. Daily synthesis
 
@@ -174,7 +194,7 @@ gathers the documents updated in the window, groups them by project, and keeps a
 excerpt of roughly four hundred characters per document rather than the full text.
 Volume stays low on purpose, for the reasons in §6: transcripts belong in the source
 tool, and the knowledge base holds distilled context. `write_proposal` then renders
-that digest to `~/Knowledge/_proposals/YYYY-MM-DD.md` with two empty approval
+that digest to `~/Knowledge/.gigabite/proposals/YYYY-MM-DD.md` with two empty approval
 checklists, one for proposed knowledge updates and one for proposed changes to
 `core.md`. Writing twice on the same day overwrites, so the operation is idempotent.
 
@@ -218,19 +238,33 @@ everything ever recorded. `SYNTHESIS.md` covers both loops in more depth.
 
 ## 7. External integrations
 
-**Granola.** The guaranteed path is manual supply: paste or export a meeting, and the
-router detects context and files it into the right project's `meetings/` layer. The
-enhancement path — a programmatic pull — was flagged unconfirmed at design time and
-has since resolved: Granola v6 encrypts its local store behind a macOS keychain item,
-so unattended reads are not possible, and the manual path stands. A pull from
-Granola's public API remains the clean future route whenever API access is available;
-the parsing for it is already written. See `GRANOLA.md`.
+**Granola.** Content arrives because you hand it over: an export saved into a
+project's `meetings/` folder, or a copied transcript through `gigabite paste`
+(`/granola`), which routes it to the same place. Nothing in the codebase reads
+Granola's local store — that keeps the integration free of credentials and immune to
+whatever Granola changes next, which for a path used several times a day is worth more
+than saving the export click. A pull from Granola's public API remains the clean
+future route whenever API access is available; the parsing for it is already written.
+See `GRANOLA.md`.
 
 **Claude.ai.** Web chats have no official API, and the internal endpoints are
 Cloudflare-gated against non-browser clients. The working route is an in-page export
 script that runs inside the browser and produces a `conversations.json` the importer
-understands, dropped into `~/Knowledge/_sources/claude_ai/`. A keychain-token route
-exists and is blocked in practice. See `CLAUDE_AI.md`.
+understands, placed in `~/Knowledge/.gigabite/imports/claude_ai/`. A keychain-token
+route exists and is blocked in practice. See `CLAUDE_AI.md`.
+
+**Readable copies of machine-readable input.** An export is not content you can open,
+so a document that came from one would exist in `conversations.json` and in SQLite and
+nowhere a human looks — the folder would be a partial view of the store while claiming
+to be all of it. `gigabite materialize` renders every indexed document as markdown
+under its project (`meetings/` for meetings, `conversations/` for chats), which makes
+the folder the complete picture. Each rendering carries the `doc_id:` and `source:` of
+the document it renders, and `sources.notes` resolves that file to that document rather
+than to a new one: without the stamp the rendering would index as a second document
+with the same words and every search would return the conversation twice. It is
+idempotent — the stamps on disk are the record, so it survives an index rebuild — and
+non-destructive, moving raw imports into `.gigabite/originals/` rather than deleting
+them.
 
 **Calendar.** The calendar sits in a managed environment where direct AI access is not
 permitted, so the input is a pasted screenshot. Reading the image is the model's job,
@@ -286,8 +320,8 @@ on everything beneath it working.
 
 | # | Item | Impact | Status |
 |---|---|---|---|
-| 1 | Claude Code file-write interception (§4) | Load-bearing — determines the write mechanism | **Resolved** — no interception; explicit `save_note` fallback is the mechanism |
-| 2 | Granola API / programmatic export (§7) | Enhancement versus manual supply | **Resolved** — store is encrypted; manual supply stands, public API pending access |
+| 1 | Claude Code file-write interception (§4) | Load-bearing — determines the write mechanism | **Resolved** — no interception; an explicit write through `features.save` is the mechanism |
+| 2 | Granola API / programmatic export (§7) | Enhancement versus manual supply | **Resolved** — supplied by hand, no local store is read; public API pending access |
 | 3 | Access-event logging for decay (§6) | Decay quality | **Resolved** — `Store.record_access` on every default search hit |
 | 4 | Keychain integration (§8) | Security | **Resolved** — macOS `security`, service `gigabite:claude_ai` |
 | 5 | Decay window tuning (§6) | Optimisation | **Open** — currently 30 days, tune against real usage |

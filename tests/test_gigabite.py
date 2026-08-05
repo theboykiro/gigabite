@@ -16,7 +16,7 @@ os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
 
 from gigabite import config, util  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
-from gigabite.sources import claude_ai, claude_ai_live, claude_code, granola, granola_live  # noqa: E402
+from gigabite.sources import claude_ai, claude_ai_live, claude_code, granola  # noqa: E402
 
 
 def fresh_store(name) -> Store:
@@ -218,7 +218,7 @@ class TestClaudeAi(unittest.TestCase):
     def test_import_json_export(self):
         box = self._export("cai")
         st = fresh_store("cai")
-        rep = claude_ai.ingest(st, inbox=box)
+        rep = claude_ai.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)
         self.assertTrue(st.search("budget"))
 
@@ -231,7 +231,7 @@ class TestClaudeAi(unittest.TestCase):
             zf.write(Path(_TMP) / "caiz" / "conv_src.json", arcname="data/conversations.json")
         (Path(_TMP) / "caiz" / "conv_src.json").unlink()
         st = fresh_store("caiz")
-        rep = claude_ai.ingest(st, inbox=box)
+        rep = claude_ai.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)
         self.assertTrue(st.search("budget"))
 
@@ -309,7 +309,7 @@ class TestGranola(unittest.TestCase):
             "---\ntitle: Kickoff\ndate: 2026-06-15\nproject: acme\n---\n"
             "# Kickoff\n\n## Notes\nPricing anchor decided.\n\n## Transcript\nA: hi\nB: hey\n")
         st = fresh_store("gm")
-        rep = granola.ingest(st, inbox=box)
+        rep = granola.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)
         hits = st.search("anchor", project="acme")
         self.assertTrue(hits)
@@ -322,7 +322,7 @@ class TestGranola(unittest.TestCase):
         (box / "_notes.md").write_text("# ignore underscore-prefixed")
         (box / "real.md").write_text("# Real meeting\nactual content")
         st = fresh_store("gskip")
-        rep = granola.ingest(st, inbox=box)
+        rep = granola.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)                       # only real.md
         self.assertFalse(st.search("instructions"))            # README not indexed
         self.assertTrue(st.search("actual"))
@@ -333,7 +333,7 @@ class TestGranola(unittest.TestCase):
         (box / "_archive" / "old.md").write_text("# Old\nzebrafishmarker content")
         (box / "live.md").write_text("# Live\ndolphinmarker content")
         st = fresh_store("gnest")
-        granola.ingest(st, inbox=box)
+        granola.ingest(st, imports=box)
         self.assertTrue(st.search("dolphinmarker"))
         self.assertFalse(st.search("zebrafishmarker"))   # nested under _archive -> skipped
 
@@ -344,16 +344,6 @@ class TestGranola(unittest.TestCase):
         doc = granola.document_from_granola_json(obj)
         roles = [m.role for m in doc.messages]
         self.assertEqual(roles, ["note", "transcript"])
-
-    def test_double_encoded_cache_parse(self):
-        cache = {"cache": json.dumps(
-            {"state": {"documents": {"g2": {"id": "g2", "title": "Budget", "summary": "Q3 locked"}}}})}
-        docs = list(granola_live._documents_from_cache(json.dumps(cache).encode()))
-        self.assertEqual([d["title"] for d in docs], ["Budget"])
-
-    def test_safestorage_format_detection(self):
-        # non-v10 blobs are rejected by the CBC path without crashing
-        self.assertIsNone(granola_live._try_safestorage(b"key", b"\x2e\x48\xecrandom"))
 
 
 if __name__ == "__main__":

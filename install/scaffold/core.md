@@ -59,10 +59,11 @@ How you want calls made when they're ambiguous. Examples to replace with your ow
 
 - **Never derive a project from the working directory.** A folder name is not a
   project. Deriving one is how client knowledge gets filed under a tool's name.
-- **Ambiguous context is quarantined, never guessed.** If the project isn't clear,
-  ask, or park it somewhere explicitly marked for triage. A confidently misfiled
-  note is worse than an unfiled one.
-- **Knowledge is written only through the tool** (`gigabite save`, or the Inbox),
+- **Ambiguous context is left unfiled, never guessed.** If the project isn't clear,
+  ask, or leave the file loose at the top of `~/Knowledge` where it is visible and
+  still searchable. A confidently misfiled note is worse than an unfiled one, and no
+  folder is ever invented to hold the uncertainty.
+- **Knowledge is written only through the tool** (`gigabite save`, `paste`, `add`),
   so every path resolves under `~/Knowledge/` whatever the working directory.
 - **Before any bulk move, back up and check nothing else is writing.**
 

@@ -50,20 +50,40 @@ Code is pointed at; knowledge routes to the fixed central store at `~/Knowledge`
 based on detected context, so nothing is ever misfiled into the wrong project because
 of which repository happened to be open.
 
-**An obvious drop folder** at `~/Knowledge/Inbox` handles capture with no AI involved
-at all. Drag in a `.md`, `.txt`, `.vtt`, or `.json` file, run `gigabite file`, and it
-is read, routed to a project, saved as a note, and the original moved aside as a
-safety net. It works when you are offline or out of credits, which is the point.
+**The store is the drop surface**, and capture involves no AI at all. Put a file
+anywhere under `~/Knowledge/<project>/[<layer>/]` and the next ingest indexes it where
+it sits — nothing to run, nothing to remember, and it works when you are offline or
+out of credits. `.md`, `.txt`, `.vtt`, and `.json` are read for their prose;
+`gigabite add path/to/file` does the same from outside the folder. A staging area used
+to sit in front of this and was removed because it gave content two possible homes, so
+"where is my meeting?" had two answers depending on whether a pass had run.
 
-**Meeting notes** arrive either through that drop folder or through `/granola`, which
-files the transcript on your clipboard without it ever passing through the chat.
-Either way the meeting is filed into the relevant project's `meetings/` layer,
-alongside anything you wrote by hand.
+**Nothing handed over is refused.** A screenshot or a PDF is kept as a file and
+indexed by name, type, size and date, with an explicit statement that its contents
+were not read. There is no OCR and nothing is inferred about an image — the index says
+what is known and no more, because refusing a file you cannot read means losing it.
+
+**Meeting notes** arrive as an export saved into the project's `meetings/` folder, or
+through `/granola`, which files the transcript on your clipboard without it ever
+passing through the chat. Either way the meeting sits in that folder alongside
+anything you wrote by hand.
 
 **Conversation history** is captured from both Claude surfaces. Claude Code sessions
 are read automatically from `~/.claude/projects/` on every ingest; claude.ai chats,
 inside projects and out, arrive as a browser export and are de-duplicated by
 conversation id so re-exporting is safe.
+
+**Everything indexed can also be read as a file.** `gigabite materialize` writes each
+indexed document out as markdown under its project, so the folder is the complete
+picture rather than a partial view of the index — an export is machine-readable, and a
+conversation that lives only inside one is not something you can open. Each file names
+the document it renders, which is what keeps the same conversation from being indexed
+twice; re-running changes nothing and raw imports are moved aside, never deleted.
+
+**Unresolvable content is never guessed at.** When no project can be resolved, the
+file lands loose at the top of `~/Knowledge` — visible, indexed, one drag from being
+filed. No folder is invented for it, because a confidently misfiled note is worse than
+an unfiled one.
 
 **Calendar awareness** comes from a pasted screenshot, because the calendar sits in a
 managed environment with no AI access. The meetings are parsed out, mapped to
@@ -77,7 +97,7 @@ transcripts, which otherwise match your questions perfectly while answering noth
 ## Keeping it maintained
 
 **Daily synthesis** runs at day's end, reviews the documents that changed, and writes
-a proposal into `~/Knowledge/_proposals/`: a per-project digest with checklists for
+a proposal into `~/Knowledge/.gigabite/proposals/`: a per-project digest with checklists for
 proposed knowledge updates and proposed changes to the core protocol. Nothing is
 applied without your approval, and the module that writes it cannot write anywhere
 else.

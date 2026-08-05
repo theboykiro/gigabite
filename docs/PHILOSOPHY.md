@@ -67,14 +67,17 @@ amount of encouragement fixes it.
 
 **This system must never depend on that discipline.** It accretes from the exhaust of
 work that is already happening: meeting transcripts, Claude Code sessions, claude.ai
-chats, notes, calendar. The user's only obligation is to drop a file in an obvious
-place, and even that should be rare.
+chats, notes, calendar. The user's only obligation is to put a file where it belongs,
+and even that should be rare.
 
 The design consequence is a hard test applied to every feature: *if a feature only
 works when the user is diligent, it does not work.* The system must degrade to useful
 when the user is busy, out of credits, or gone for a fortnight — which is why the
-capture path that matters most is a folder and a plain-Python filing pass with no AI
-in it anywhere.
+capture path that matters most is a folder, indexed by plain Python, with no AI in it
+anywhere. It is also why nothing handed over is ever refused: a screenshot that cannot
+be read is kept and indexed by what is honestly known about it, because the
+alternative is asking the user to convert it first, which is the same discipline tax
+wearing a technical excuse.
 
 ## 4. Rationale over records
 
@@ -141,12 +144,15 @@ recorded, it does not ship.
 
 Concretely, against the router-era design, five things follow.
 
-**Capture has to be obvious.** Zero-friction, zero-AI capture (§3) means a drop folder
-a human can actually find. The knowledge base is `~/Knowledge`, a visible folder in the
-home directory rather than a hidden dotfile path, and the drop folder is
-`~/Knowledge/Inbox` inside it. An earlier version hid the base at `~/.knowledge` and
-had to compensate with a drop folder in the code repository; making the base itself
-visible removes the need for the workaround.
+**Capture has to be obvious.** Zero-friction, zero-AI capture (§3) means somewhere a
+human can actually find. The knowledge base is `~/Knowledge`, a visible folder in the
+home directory rather than a hidden dotfile path, and it is the drop surface itself:
+put a file under `<project>/[<layer>/]` and it is indexed where it sits. There used to
+be a staging folder in front of it, and it went because two homes for the same content
+means "where is my meeting?" has two answers — the version that survives is the one
+where storing something and finding it later are the same act. Everything mechanical
+lives behind one hidden `.gigabite/`, so what a human sees when they open the folder is
+only ever their own knowledge.
 
 **The knowledge model is org-shaped.** Top-level contexts are organisations, and layers
 within one capture kinds of context — meetings, delivery, strategy — rather than

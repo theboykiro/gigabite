@@ -55,29 +55,40 @@ at any point to pick up changes to the tool.
 
 ### If you installed an earlier version
 
-Earlier releases kept the knowledge base at `~/.knowledge` — a hidden folder, which
-is precisely why it was hard to find and use — and put the drop folder inside this
-repository as a visible workaround. Both of those have moved. The knowledge base is
-now `~/Knowledge`, an ordinary folder you can open in Finder, and the drop folder is
-`~/Knowledge/Inbox`. Move the contents of the old hidden folder across, delete the
-repository's `Inbox/` directory once it is empty, and re-run `./install.sh` to
-rebuild the index in its new home. If you would rather keep the stores elsewhere,
-`GIGABITE_KNOWLEDGE_DIR` and `GIGABITE_INBOX_DROP_DIR` still override both paths.
+The layout has moved on since earlier releases, and `gigabite relocate` brings an
+existing store up to date in one pass — `--dry-run` first if you want to see every
+move before it happens. Earlier
+releases kept the knowledge base hidden at `~/.knowledge`, which is precisely why it
+was hard to find and trust; it is now `~/Knowledge`, an ordinary folder you can open
+in Finder. Making it visible exposed the second problem: the tool's own furniture was
+visible with it, so all of it now sits behind one hidden `.gigabite/` directory, and
+the staging folder that used to sit alongside the projects is gone — you put a file
+where it belongs instead. Nothing is deleted by the migration; the index is rebuilt
+afterwards because it is derived data. If you would rather keep the stores elsewhere,
+`GIGABITE_KNOWLEDGE_DIR` and `GIGABITE_CORE_DIR` override both paths.
 
 ## Getting content in
 
 gigabite is only as useful as the history it holds, so the capture paths are
 deliberately cheap. Two of them need nothing from you at all, and the rest are a
-matter of dropping a file somewhere obvious.
+matter of putting a file where it belongs.
+
+There is one destination, and it is the store itself: a file placed anywhere under
+`~/Knowledge/<project>/[<layer>/]` is indexed where it sits on the next ingest. There
+is no staging folder and no filing step, because that arrangement gave content two
+possible homes and made "where is my meeting?" depend on whether a pass had run yet.
+When something arrives without a project the tool can resolve, it lands loose at the
+top of `~/Knowledge` — visible, indexed, one drag from being filed. No folder is ever
+invented for it, because a confidently misfiled note is worse than an unfiled one.
 
 | Source | How it arrives |
 |---|---|
 | **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
-| **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, then drop the downloaded `conversations.json` into `~/Knowledge/_sources/claude_ai/` and run `gigabite ingest`. |
-| **Granola** | Export a meeting as Markdown and drop it into `~/Knowledge/Inbox/`, or copy the transcript and run `/granola` in Claude Code. Either way it is filed into the project's `meetings/` folder. |
+| **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
+| **Granola** | Export a meeting as Markdown into `~/Knowledge/<project>/meetings/`, or copy the transcript and run `/granola` in Claude Code. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
 | **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
-| **Anything else** | Drop the file in `~/Knowledge/Inbox/` and run `gigabite file`. See [`install/scaffold/inbox-README.md`](install/scaffold/inbox-README.md). |
+| **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
 
 The claude.ai path deserves a word of explanation, because it looks more awkward
 than it should. claude.ai has no official API for your web chats, and the internal
@@ -89,17 +100,27 @@ keychain-token route (`gigabite claude-login` and `gigabite claude-sync`) is bui
 and documented, but Cloudflare currently blocks it, so the browser export is the
 route that works. The detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
 
-Granola is awkward for a different reason. Version 6 encrypts its entire local store
-behind a macOS keychain item, so the notes cannot be read unattended, which is why
-they are supplied by hand. A clean pull from Granola's public API is designed and
-half-built for whenever you get API access; see [`docs/GRANOLA.md`](docs/GRANOLA.md).
+Granola arrives by hand, and deliberately so: nothing here reads Granola's local
+store. A meeting is in the index because you exported it into a project folder or
+copied the transcript and ran `/granola`, which is a route with no credential in it
+and nothing to break when Granola ships an update. A clean pull from their public API
+is the future route whenever you have access; see [`docs/GRANOLA.md`](docs/GRANOLA.md).
 
-Whatever the source, the rhythm is the same: put a file somewhere and run
+An export is machine-readable rather than readable, so a claude.ai chat would
+otherwise exist only inside `conversations.json` and inside SQLite — leaving
+`~/Knowledge` a partial view of the store while claiming to be all of it.
+`gigabite materialize` writes every indexed document out as a markdown file under its
+project (meetings into `meetings/`, chats into `conversations/`), so the folder is the
+complete picture. Each file it writes names the document it renders in its
+frontmatter, which is what stops the same conversation being indexed twice; running it
+again does nothing, and raw imports are moved aside rather than deleted.
+
+Whatever the source, the rhythm is the same: put a file where it belongs and run
 `gigabite ingest`. Ingest is incremental — files whose size and modification time
-are unchanged are skipped, and re-dropping a newer export updates the existing
-document in place rather than creating a duplicate. Documents you have not touched
-for thirty days are archived out of the default search, non-destructively, and a
-search that matches one brings it straight back.
+are unchanged are skipped, and a newer export updates the existing document in place
+rather than creating a duplicate. Documents you have not touched for thirty days are
+archived out of the default search, non-destructively, and a search that matches one
+brings it straight back.
 
 ## Using it day to day
 
@@ -128,8 +149,9 @@ gigabite search "roadmap" --project acme --all  # scope to a project; --all incl
 gigabite doc <doc_id>                           # print a full conversation
 gigabite save "Decided X because Y" -p acme -l delivery -t "Title"
 gigabite project add acme --keywords "acme, acme corp"
-gigabite file                                   # file whatever is in ~/Knowledge/Inbox
-gigabite paste                                  # file the clipboard (a copied transcript)
+gigabite paste                                  # a copied transcript -> its project folder
+gigabite add ~/Desktop/shot.png -p acme         # store any file in a project folder
+gigabite materialize --dry-run                  # render indexed documents as files
 gigabite calendar agenda --day today            # meetings with attached prep
 gigabite synthesize                             # write the gated end-of-day proposal
 gigabite decay --status                         # reference-frequency archiving
@@ -138,14 +160,15 @@ gigabite status                                 # what is indexed
 gigabite paths                                  # where everything lives
 ```
 
-Two more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
-from scratch, and `gigabite route` resolves context and recalls passages as JSON,
-which is what `/gg` and the ambient hook call underneath. Run `gigabite --help`, or
+Three more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
+from scratch, `gigabite relocate` brings an older layout up to date, and
+`gigabite route` resolves context and recalls passages as JSON, which is what `/gg`
+and the ambient hook call underneath. Run `gigabite --help`, or
 `gigabite <command> --help`, for the full flag list on any of them.
 
 If you are ever unsure where something ended up, `gigabite paths` prints the resolved
-location of the core directory, the knowledge base, the index database, and each
-drop folder.
+location of the core directory, the knowledge base, the projects inside it, and the
+hidden `.gigabite/` directory that holds the machinery.
 
 ## How it works
 
@@ -159,7 +182,7 @@ chat, the segments of a transcript, or the single body of a note. Because every
 source lands in that shape, search does not care where something came from.
 
 **The index** is one SQLite FTS5 table with a row per message, kept at
-`~/Knowledge/.index/gigabite.db`. The document title is denormalised onto every
+`~/Knowledge/.gigabite/index/gigabite.db`. The document title is denormalised onto every
 message row so that a title match can be weighted separately, and ranking uses
 `bm25` with the title weighted five times the body. A query first runs as an AND of
 all its terms, with common stop words dropped so that a naturally phrased question
@@ -171,11 +194,14 @@ them rather than excluding them, so a session transcript still wins when it genu
 is the best answer.
 
 **Storage** is split deliberately. Code lives in this repository. Content lives in
-`~/Knowledge`, organised by project. The operating protocol — your voice, tone, and
-decision principles — lives in `~/.core/core.md` and is loaded whole on every routed
-turn. Secrets, if there are ever any, live in the macOS keychain and nowhere else.
-The rule that keeps this from degrading is that knowledge is never written to the
-working directory, no matter which repository Claude Code happens to be pointed at;
+`~/Knowledge`, one top-level folder per project, with everything mechanical — the
+index, raw imports, the archive, proposals, routing aliases — behind a single hidden
+`.gigabite/` directory, so `ls ~/Knowledge` shows your projects and a README and
+nothing you have to explain. The operating protocol — your voice, tone, and decision
+principles — lives in `~/.core/core.md` and is loaded whole on every routed turn.
+Secrets, if there are ever any, live in the macOS keychain and nowhere else. The rule
+that keeps this from degrading is that knowledge is never written to the working
+directory, no matter which repository Claude Code happens to be pointed at;
 [`docs/ROUTING.md`](docs/ROUTING.md) explains the mechanism.
 
 The repository itself is arranged around what each thing is *for* — read it, run it,
@@ -189,15 +215,15 @@ gigabite/            the package
   config.py            paths & constants (overridable via env)
   store.py             SQLite + FTS5 index, upsert & search
   util.py              text extraction, time parsing, FTS query safety
-  ingest.py            orchestrates sources + the Inbox filing pass
+  ingest.py            runs every source in order; notes last, and why
   cli.py               the `gigabite` command
-  features/            save · routing · inbox · calendar · synthesis · decay · sops
+  features/            save · intake · routing · materialize · relocate ·
+                       calendar · synthesis · decay · sops
   sources/
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)
-    granola.py         Granola exports (the manual path)
-    granola_live.py    experimental keychain-decrypt connector (dormant)
-    notes.py           ~/Knowledge/{project}/[{layer}/]*.md
+    granola.py         Granola exports you supply
+    notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
   claude-commands/     /gg, /search, /recall-status, /calendar, /granola
@@ -209,7 +235,7 @@ tests/               python3 -m unittest discover -s tests
 ```
 
 Note what is absent: there is no content directory in this tree. The knowledge base
-is not here, the drop folder is not here, and neither is the index.
+is not here, and neither is the index.
 
 ## Tests
 

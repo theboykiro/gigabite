@@ -22,19 +22,38 @@ KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}"
 # ---------------------------------------------------------------------------
 say "1/7  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
-mkdir -p "$CORE_DIR/capability" "$KNOW_DIR/_sources/claude_ai" "$KNOW_DIR/_sources/granola" "$KNOW_DIR/Inbox" "$KNOW_DIR/_archive"
+mkdir -p "$CORE_DIR/capability"    # `paths` above created the knowledge layout
 ok "core:      $CORE_DIR"
 ok "knowledge: $KNOW_DIR"
 
 copy_if_absent() { # src dest
-  if [ -e "$2" ]; then note "kept existing $(basename "$2")"; else cp "$1" "$2"; ok "seeded $(basename "$2")"; fi
+  if [ -e "$2" ]; then note "kept existing $(label "$2")"; else cp "$1" "$2"; ok "seeded $(label "$2")"; fi
+}
+# Several scaffold files are called README.md, so a bare basename tells you nothing
+# about which one the installer just touched. Show the parent folder with it.
+label() { printf '%s/%s' "$(basename "$(dirname "$1")")" "$(basename "$1")"; }
+# The knowledge README is instructions, not your content: it tells you where things
+# go. A stale one sends you to a folder that no longer exists, which is worse than
+# losing a note you wrote in it — so it is refreshed rather than kept, and the old
+# text is set aside first. Nothing is destroyed; the installer's promise holds.
+refresh_doc() { # src dest
+  if [ -e "$2" ] && cmp -s "$1" "$2"; then note "up to date $(label "$2")"; return; fi
+  if [ -e "$2" ]; then
+    # Set aside inside the machinery folder, so the replaced copy is kept without
+    # appearing in the knowledge base as a stray file.
+    kept_dir="$KNOW_DIR/.gigabite/originals"
+    mkdir -p "$kept_dir"
+    kept="$kept_dir/replaced-$(date +%Y-%m-%d)-$(basename "$2")"
+    mv "$2" "$kept"
+    warn "$(label "$2") was out of date — refreshed (old text kept as $(basename "$kept"))"
+  else
+    ok "seeded $(label "$2")"
+  fi
+  cp "$1" "$2"
 }
 copy_if_absent "$REPO/install/scaffold/core.md"              "$CORE_DIR/core.md"
 copy_if_absent "$REPO/install/scaffold/capability-README.md" "$CORE_DIR/capability/README.md"
-copy_if_absent "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
-copy_if_absent "$REPO/install/scaffold/inbox-claude_ai.md"   "$KNOW_DIR/_sources/claude_ai/README.md"
-copy_if_absent "$REPO/install/scaffold/inbox-granola.md"     "$KNOW_DIR/_sources/granola/README.md"
-copy_if_absent "$REPO/install/scaffold/inbox-README.md"      "$KNOW_DIR/Inbox/README.md"
+refresh_doc    "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
 
 # SOPs the subagents load at runtime
 if [ -d "$REPO/install/scaffold/sops" ]; then
@@ -165,5 +184,7 @@ say "7/7  Done"
 echo
 note "Search from the terminal:   gigabite search \"...\""
 note "Search from Claude Code:     /search ...   (works from any folder)"
-note "Add Claude.ai chats:         drop your export in $KNOW_DIR/_sources/claude_ai/"
-note "Add Granola notes:           see $KNOW_DIR/_sources/granola/README.md"
+note "Add anything by hand:        put the file in $KNOW_DIR/<project>/ — that is all"
+note "  a copied transcript: gigabite paste (or /granola); a screenshot: gigabite add FILE"
+note "Add Claude.ai chats:         put your export in $KNOW_DIR/.gigabite/imports/claude_ai/"
+note "  then: gigabite materialize   (writes each chat out as a file you can open)"

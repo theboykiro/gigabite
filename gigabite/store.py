@@ -85,9 +85,19 @@ class Document:
     extra: dict = field(default_factory=dict)
     messages: list[Message] = field(default_factory=list)
 
+    # An explicit doc_id, used when this file *is* an existing document rather
+    # than a new one. A materialized conversation (features.materialize) is a
+    # readable rendering of a chat that is already indexed under its own source,
+    # so it must resolve to that same doc_id — otherwise the same conversation
+    # would be indexed twice and every search would return it twice. The
+    # rendering declares the id it belongs to in its frontmatter, and
+    # sources.notes passes it through here. Empty means "derive it", which is
+    # every ordinary document.
+    doc_id_override: str = ""
+
     @property
     def doc_id(self) -> str:
-        return util.doc_id(self.source, self.native_id)
+        return self.doc_id_override or util.doc_id(self.source, self.native_id)
 
     def content_hash(self) -> str:
         h = hashlib.sha1()
@@ -238,6 +248,33 @@ class Store:
             "SELECT content_hash FROM documents WHERE doc_id=?", (doc_id,)
         ).fetchone()
         return row["content_hash"] if row else None
+
+    def document_ref(self, doc_id: str) -> Optional[str]:
+        """The ``ref`` of an indexed document, or None if it is not indexed.
+
+        Used to settle ownership when two files could describe the same document:
+        a raw export and the readable rendering of it (see sources.notes).
+        Deliberately lighter than ``get_document``, which also loads every message.
+        """
+        row = self.conn.execute(
+            "SELECT ref FROM documents WHERE doc_id=?", (doc_id,)
+        ).fetchone()
+        return row["ref"] if row else None
+
+    def set_document_ref(self, doc_id: str, ref: str) -> None:
+        """Repoint a document at a different file, keeping its history.
+
+        Used when a raw export is retired in favour of the readable rendering of
+        it (features.materialize): the document is the same document, so its
+        access and decay history must survive, but the file that owns it changes.
+        """
+        self.conn.execute("UPDATE documents SET ref=? WHERE doc_id=?", (ref, doc_id))
+        self.conn.commit()
+
+    def documents_by_ref(self, ref: str) -> list[dict]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM documents WHERE ref=?", (ref,)
+        )]
 
     def upsert_document(self, doc: Document) -> bool:
         """Insert or replace a document and its messages.

@@ -42,17 +42,25 @@ with its project name, and downloads the result.
 Then move the file into place and index it:
 
 ```bash
-mv ~/Downloads/conversations.json ~/Knowledge/_sources/claude_ai/
+mv ~/Downloads/conversations.json ~/Knowledge/.gigabite/imports/claude_ai/
 gigabite ingest
+gigabite materialize        # write each chat out as a file you can open
 ```
 
+`.gigabite/imports/` is where raw machine-readable input lives, and it is hidden
+because it is not content: a `conversations.json` is not something you read. That is
+what the third command is for — it renders every indexed chat as markdown under
+`~/Knowledge/<project>/conversations/`, so the chats exist somewhere you can open them
+rather than only inside an export and a SQLite file. Each rendering names the document
+it came from, so nothing is indexed twice, and re-running is a no-op.
+
 Anthropic's own data export works as well and lands in the same folder. Go to
-claude.ai → Settings → Privacy → Export data, and drop either the `.zip` you receive
-or the `conversations.json` extracted from it into `~/Knowledge/_sources/claude_ai/`.
+claude.ai → Settings → Privacy → Export data, and put either the `.zip` you receive or
+the `conversations.json` extracted from it in `~/Knowledge/.gigabite/imports/claude_ai/`.
 The importer reads both, and handles the schema defensively because Anthropic has
 changed field names over time.
 
-Either way, re-running the export later and dropping the newer file updates the
+Either way, re-running the export later and replacing the file updates the
 conversations already indexed rather than duplicating them, because entries are
 de-duplicated by conversation id.
 
@@ -114,7 +122,7 @@ script will need extending.
 
 ## In practice
 
-Use the browser export. Run it every few weeks, drop the file in
-`~/Knowledge/_sources/claude_ai/`, and run `gigabite ingest`. It takes a minute, it
+Use the browser export. Run it every few weeks, put the file in
+`~/Knowledge/.gigabite/imports/claude_ai/`, and run `gigabite ingest`. It takes a minute, it
 requires no stored credential, and it is the only route that is not one Cloudflare
 rule away from breaking. The token path stays in the tree for the day that changes.

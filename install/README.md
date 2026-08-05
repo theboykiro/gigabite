@@ -19,15 +19,21 @@ does not already exist, so re-running it never overwrites something you have edi
 |---|---|---|
 | `claude-commands/` | `~/.claude/commands/` | The slash commands — `/gg`, `/search`, `/recall-status`, `/calendar`, `/granola`. The placeholder `__GIGABITE_BIN__` is substituted for the real launcher path at install time, because Claude Code needs an absolute path in its `allowed-tools` declaration. |
 | `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn. The installer also registers it in `~/.claude/settings.json`; remove it there to switch ambient recall off. |
-| `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/agents/` | Starter templates: `core.md`, the SOPs, the `gg-*` subagents, and the READMEs that explain the knowledge base, the Inbox, and each source folder to a human who opens them. Copied only if absent. |
+| `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/agents/` | Starter templates: `core.md`, the capability README, the SOPs, the `gg-*` subagents, the `_project.md` template, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
 | `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled end-of-day job that writes a gated synthesis proposal and runs the decay pass. Nothing it produces is applied automatically. |
 | `scripts/` | *nothing — run by hand* | `claude-ai-safari-export.js`, which you paste into the claude.ai browser console to export your chats. It is here because it is part of the setup story, not because the installer touches it. |
 
-The `scaffold/` entry is the one that reaches furthest. It seeds `~/.core/core.md`
-and `~/.core/capability/`, the READMEs at `~/Knowledge/README.md`,
-`~/Knowledge/Inbox/README.md`, and inside `~/Knowledge/_sources/*/`, and the subagent
+The `scaffold/` entry is the one that reaches furthest. It seeds `~/.core/core.md` and
+`~/.core/capability/`, the README at `~/Knowledge/README.md`, and the subagent
 definitions Claude Code loads from `~/.claude/agents/`. Everything it writes is a
 template with no real content in it.
+
+That knowledge README is the one file the installer *refreshes* rather than leaves
+alone, and the reason is worth stating: it is instructions, not content. It tells you
+where things go, so a stale copy sends you to a folder that no longer exists — a worse
+outcome than losing a note you wrote. The replaced text is moved into
+`~/Knowledge/.gigabite/originals/` first, so nothing is destroyed and the installer's
+promise still holds.
 
 ## Two rules when editing anything here
 

@@ -151,7 +151,7 @@ class TestSynthesis(unittest.TestCase):
 
         path = synthesis.write_proposal(st, since_days=1)
         self.assertTrue(path.exists())
-        self.assertEqual(path.parent, config.KNOWLEDGE_DIR / "_proposals")
+        self.assertEqual(path.parent, config.PROPOSALS_DIR)
 
         body = path.read_text(encoding="utf-8")
         self.assertIn("Proposed knowledge updates", body)

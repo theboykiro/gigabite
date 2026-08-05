@@ -29,7 +29,7 @@ holds distilled context only. A digest that quoted everything would simply move 
 volume problem one level up.
 
 The second step is **propose**. `write_proposal(store, since_days=1)` renders the
-digest to `~/Knowledge/_proposals/YYYY-MM-DD.md`, with two empty approval checklists
+digest to `~/Knowledge/.gigabite/proposals/YYYY-MM-DD.md`, with two empty approval checklists
 appended: one headed *Proposed knowledge updates* and one headed *Proposed core.md
 updates*. Writing twice in the same day overwrites the file, so the operation is
 idempotent and the scheduled job can run as often as it likes.
@@ -46,8 +46,9 @@ and `--since-days N` widens the window.
 ### Why the gate is non-negotiable
 
 The synthesis module contains **no LLM calls** and **never writes to `core.md` or to
-the knowledge base**. Its only output is a proposal file in a reserved folder that the
-notes ingester deliberately skips.
+the knowledge base**. Its only output is a proposal file inside `.gigabite/`, which is
+machinery rather than knowledge and which the notes ingester skips entirely — so a
+proposal cannot become knowledge by sitting there, only by your applying it.
 
 Nothing is applied to the operating system until a human — or a `/gg` session working
 on your behalf — reviews the proposal and applies the accepted items. This is
