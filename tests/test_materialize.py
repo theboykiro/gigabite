@@ -277,17 +277,35 @@ class TestProjectIsNeverGuessed(_Base):
         self.assertEqual(plan.actionable, [], "it must not be written anywhere")
         self.assertEqual(plan.skipped[0].skip, materialize.UNRESOLVED)
 
-    def test_include_unfiled_writes_it_to_the_root_and_invents_no_folder(self):
+    def test_include_unfiled_files_it_under_personal(self):
         self._vague()
         plan, _ = materialize.run(self.store, retire=False, include_unfiled=True)
         item = plan.actionable[0]
-        self.assertTrue(item.triaged)
-        self.assertEqual(item.path.parent, self.knowledge,
-                         "unfiled content belongs at the knowledge root")
+        self.assertTrue(item.triaged, "it is still a fallback, not a routed project")
+        self.assertEqual(item.project, config.PERSONAL_PROJECT)
+        self.assertIn("personal/conversations/", item.path.as_posix())
+
+    def test_include_unfiled_leaves_the_knowledge_root_a_list_of_projects(self):
+        self._vague()
+        materialize.run(self.store, retire=False, include_unfiled=True)
+        loose = [q.name for q in self.knowledge.iterdir()
+                 if q.is_file() and q.suffix == ".md"]
+        self.assertEqual(loose, [], "nothing may be left loose at the root")
         visible_dirs = {q.name for q in self.knowledge.iterdir()
                         if q.is_dir() and not q.name.startswith(".")}
-        self.assertEqual(visible_dirs, {"acme"},
-                         "no folder may be invented to hold an unrouted file")
+        self.assertEqual(visible_dirs, {"acme", config.PERSONAL_PROJECT})
+
+    def test_personal_attracts_nothing_by_keyword(self):
+        """The folder must not become the drawer everything ambiguous falls into."""
+        from gigabite.features import routing
+        self._vague()
+        materialize.run(self.store, retire=False, include_unfiled=True)
+        personal = next(p for p in routing._scan_projects()
+                        if p["name"] == config.PERSONAL_PROJECT)
+        self.assertEqual(personal["keywords"], [],
+                         "keywords here would hijack routing for real projects")
+        ctx = routing.resolve_context("some personal thoughts about nothing")
+        self.assertIsNone(ctx["project"])
 
     def test_a_stray_handle_in_a_transcript_cannot_invent_a_project(self):
         """A real defect: '@leonardo' in a chat about sunglasses made a project."""
@@ -365,7 +383,7 @@ class TestProjectIsNeverGuessed(_Base):
         self.assertEqual(item.project, "acme")
         self.assertIn("acme/conversations/", item.path.as_posix())
 
-    def test_an_unfiled_file_records_no_project(self):
+    def test_an_unfiled_file_records_personal_as_its_project(self):
         self.store.upsert_document(Document(
             source=config.SOURCE_CLAUDE_AI, native_id="c-vague2",
             title="Assorted thoughts two", created_utc="2026-07-04T09:00:00+00:00",
@@ -375,7 +393,8 @@ class TestProjectIsNeverGuessed(_Base):
         materialize.run(self.store, retire=False, include_unfiled=True)
         notes.ingest(self.fresh_store(), root=self.knowledge)
         hit = next(h for h in self.fresh_store().search("identifying"))
-        self.assertEqual(hit["project"] or "", "")
+        self.assertEqual(hit["project"] or "", config.PERSONAL_PROJECT,
+                         "it is filed under personal, and says so in the index")
 
 
 class TestLayers(_Base):

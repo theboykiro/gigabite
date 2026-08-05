@@ -271,6 +271,26 @@ class Store:
         self.conn.execute("UPDATE documents SET ref=? WHERE doc_id=?", (ref, doc_id))
         self.conn.commit()
 
+    def set_document_project(self, doc_id: str, project: str) -> None:
+        """Record which project a document belongs to, keeping its history.
+
+        Needed because a materialized rendering does not re-index its document
+        (that would duplicate it, see sources.notes), so writing the file into
+        ``<project>/`` would otherwise leave the index still saying the document
+        has no project — the folder and the index disagreeing about the same
+        conversation, and ``search --project`` unable to find something that is
+        visibly filed. Filing is a fact about the document, not about the file, so
+        it is set on the row directly.
+        """
+        self.conn.execute("UPDATE documents SET project=? WHERE doc_id=?",
+                          (project, doc_id))
+        # The FTS rows carry their own copy of the project — it is what
+        # `search --project` filters on and what a hit reports — so updating the
+        # document row alone would leave search answering from the stale copy.
+        self.conn.execute("UPDATE fts SET project=? WHERE doc_id=?",
+                          (project, doc_id))
+        self.conn.commit()
+
     def documents_by_ref(self, ref: str) -> list[dict]:
         return [dict(r) for r in self.conn.execute(
             "SELECT * FROM documents WHERE ref=?", (ref,)

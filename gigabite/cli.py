@@ -229,9 +229,9 @@ def cmd_materialize(args) -> int:
         print(dim(f"  · retired original {Path(e['path']).name} → {e['moved_to']}"))
 
     triaged = sum(1 for i in plan.actionable if i.triaged)
-    print(dim(f"\n{len(plan.actionable)} materialized ({triaged} left unfiled at "
-              f"the knowledge root), {len(plan.skipped)} skipped, "
-              f"{len(moved)} original(s) retired."))
+    print(dim(f"\n{len(plan.actionable)} materialized "
+              f"({triaged} with no project, filed under {config.PERSONAL_PROJECT}/), "
+              f"{len(plan.skipped)} skipped, {len(moved)} original(s) retired."))
     if not args.dry_run and plan.actionable:
         ingest_mod.run(store, sources=[config.SOURCE_NOTE])
         print(dim("indexed."))
@@ -661,7 +661,7 @@ def build_parser() -> argparse.ArgumentParser:
     pmz.add_argument("--layer", help="layer to file them under (default: per source)")
     pmz.add_argument("--include-unfiled", action="store_true",
                      help="also write documents with no resolvable project, "
-                          "loose at the top of ~/Knowledge")
+                          f"under {config.PERSONAL_PROJECT}/")
     pmz.add_argument("--limit", type=int, help="stop after N documents")
     pmz.add_argument("--keep-sources", action="store_true",
                      help="leave raw imports in place even once they are readable files")

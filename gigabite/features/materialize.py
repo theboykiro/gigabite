@@ -14,8 +14,9 @@ Three things make it safe to run against real content:
 
 **Nothing is guessed.** The project comes from the document's own recorded project
 when it has one, otherwise from the same keyword routing every other intake uses,
-and otherwise from nowhere — the file is written to the knowledge root, visible and
-indexed with no project, for you to drag into a project.
+and otherwise from nowhere — the document is left in the index and skipped, unless
+``--include-unfiled`` says to write it under ``personal/`` (``config.PERSONAL_PROJECT``),
+which is where a conversation with no working context actually belongs.
 
 **Nothing is duplicated.** This is the whole difficulty. A rendering written into a
 project folder is a markdown file in the knowledge base, so the notes ingester
@@ -184,7 +185,11 @@ def _known_projects() -> set:
 
 
 UNRESOLVED = ("no project resolved — re-run with --project to place these, "
-              "or --include-unfiled to write them to the knowledge root")
+              f"or --include-unfiled to file them under {config.PERSONAL_PROJECT}/")
+
+# Layers ``personal/`` is described as holding, so its _project.md matches the
+# shape materialize actually writes into it.
+PERSONAL_LAYERS = sorted(set(DEFAULT_LAYERS.values()))
 
 
 def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
@@ -198,11 +203,11 @@ def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
     *project* forces one for the whole run: the tool still never guesses, but you
     can assert what you know ("these ten imports are all client meetings") in one
     command. Without it, a document whose project cannot be resolved is skipped
-    rather than written, unless *include_unfiled* says to put it at the knowledge
-    root. Skipping by default is the lesser of two bad outcomes: writing dozens of
-    unplaceable files into the top of the knowledge base makes the folder worse to
-    look at, and the whole point of materializing is that the folder is worth
-    looking at.
+    rather than written, unless *include_unfiled* says to file it under
+    ``personal/``. Skipping by default is deliberate: a document nothing can place
+    is usually a routing gap worth seeing, and the flag is how you say "no, these
+    really have no project" — a statement about the content, not a fallback the
+    tool should reach for on its own.
     """
     done = materialized_doc_ids()
     projects = _known_projects()
@@ -232,9 +237,10 @@ def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
             if item.triaged and not include_unfiled:
                 item.skip = UNRESOLVED
             else:
-                if not item.triaged:
-                    item.layer = (layer if layer is not None
-                                  else DEFAULT_LAYERS.get(src, ""))
+                if item.triaged:
+                    item.project = config.PERSONAL_PROJECT
+                item.layer = (layer if layer is not None
+                              else DEFAULT_LAYERS.get(src, ""))
                 written += 1
 
         p.items.append(item)
@@ -306,8 +312,12 @@ def apply(store, p: Plan) -> List[Item]:
         # save_note is the only way knowledge is persisted (ROUTING.md). The
         # doc_id/source pair is what stops this file being indexed as a second
         # copy of the conversation it renders (see sources.notes).
-        if not item.triaged:
-            savemod.ensure_project(item.project)
+        savemod.ensure_project(
+            item.project,
+            # personal/ is described by the layers materialize writes into it, and
+            # by no keywords at all, so nothing is ever routed there implicitly.
+            layers=PERSONAL_LAYERS if item.project == config.PERSONAL_PROJECT else None,
+        )
         item.path = savemod.save_note(
             body, item.project,
             layer=item.layer or None,
@@ -320,6 +330,10 @@ def apply(store, p: Plan) -> List[Item]:
                 "share": "private",
             },
         )
+        # The rendering will not be re-indexed (sources.notes defers to whichever
+        # file owns the document), so the row is told where it now lives. Without
+        # this, `search --project personal` misses files sitting in personal/.
+        store.set_document_project(item.doc_id, item.project)
         written.append(item)
     return written
 
