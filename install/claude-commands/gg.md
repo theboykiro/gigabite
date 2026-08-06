@@ -25,6 +25,10 @@ How to respond:
   units of work to the matching subagent (**gg-builder**, **gg-researcher**,
   **gg-reviewer**) — each follows its SOP and can itself invoke Skills and spawn Tasks.
   Chain build → QA (gg-reviewer) → your review before surfacing a deliverable.
+  Delegate exploration too, not just deliverables: any sweep whose *conclusion* is all
+  you need — grepping the codebase, scanning transcripts or logs, sizing up an
+  unfamiliar area — goes to a subagent so its bulk output dies with that agent instead
+  of riding along in every later turn of this thread.
 - To persist anything worth keeping, use `gigabite save "<text>" --project <p> [--layer <l>]`
   — never write notes into the working directory.
 

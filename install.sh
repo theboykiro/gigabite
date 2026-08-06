@@ -108,15 +108,45 @@ fi
 
 # ---------------------------------------------------------------------------
 say "4/7  Wiring the conversational layer (router protocol + ambient recall)"
-# Router constitution: append a managed block to ~/.claude/CLAUDE.md (never clobber).
+# Router constitution: keep a marker-bounded managed block in ~/.claude/CLAUDE.md in
+# sync with the scaffold. Only the block is touched; the user's own content is kept.
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 touch "$GLOBAL_CLAUDE"
-if grep -qF "gigabite:router:start" "$GLOBAL_CLAUDE" 2>/dev/null; then
-  note "router protocol already in ~/.claude/CLAUDE.md"
-else
-  printf '\n' >> "$GLOBAL_CLAUDE"; cat "$REPO/install/scaffold/CLAUDE.md" >> "$GLOBAL_CLAUDE"
-  ok "added router protocol to ~/.claude/CLAUDE.md"
-fi
+ROUTER_STATUS=$(ROUTER_SRC="$REPO/install/scaffold/CLAUDE.md" /usr/bin/python3 - "$GLOBAL_CLAUDE" <<'PY'
+import os, sys, shutil
+
+path = sys.argv[1]
+block = open(os.environ["ROUTER_SRC"], encoding="utf-8").read().strip("\n")
+start, end = "<!-- gigabite:router:start -->", "<!-- gigabite:router:end -->"
+current = open(path, encoding="utf-8").read()
+
+i, j = current.find(start), current.find(end)
+if i == -1:
+    updated = (current.rstrip("\n") + "\n\n" + block + "\n") if current.strip() else block + "\n"
+    status = "added"
+elif j == -1 or j < i:
+    # Start marker with no usable end marker: the block is unsafe to bound. Leave it.
+    print("corrupt"); sys.exit(0)
+else:
+    existing = current[i:j + len(end)]
+    if existing == block:
+        print("current"); sys.exit(0)
+    updated = current[:i] + block + current[j + len(end):]
+    status = "updated"
+
+shutil.copyfile(path, path + ".gigabite-bak")
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write(updated)
+print(status)
+PY
+)
+case "$ROUTER_STATUS" in
+  added)   ok "added router protocol to ~/.claude/CLAUDE.md" ;;
+  updated) ok "updated router protocol in ~/.claude/CLAUDE.md (backup: CLAUDE.md.gigabite-bak)" ;;
+  current) note "router protocol already up to date" ;;
+  corrupt) note "router markers in ~/.claude/CLAUDE.md look damaged — left untouched" ;;
+  *)       note "could not sync router protocol in ~/.claude/CLAUDE.md" ;;
+esac
 # Ambient recall hook: install script + register UserPromptSubmit in settings.json.
 HOOK_DIR="$HOME/.claude/gigabite"
 mkdir -p "$HOOK_DIR"
