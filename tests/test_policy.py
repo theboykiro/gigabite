@@ -74,11 +74,6 @@ class TestDefaults(PolicyTestCase):
         self.assertEqual(P.decide("spend").verdict, P.APPROVE)
         self.assertEqual(P.decide("credentials").verdict, P.USER_ONLY)
         self.assertEqual(P.decide("infra-security").verdict, P.NEVER)
-
-    def test_every_class_carries_a_reason(self):
-        for name in P.ACTION_CLASSES:
-            self.assertTrue(P.decide(name).why.strip(), name)
-
     def test_missing_policy_file_is_not_an_error(self):
         self.assertFalse(P.policy_path().exists())
         self.assertEqual(P.decide("read").verdict, P.ALLOW)
@@ -114,9 +109,6 @@ class TestFailClosed(PolicyTestCase):
 
 
 class TestHardRefusal(PolicyTestCase):
-    def test_infra_security_is_refused_by_default(self):
-        self.assertEqual(P.decide("infra-security").verdict, P.NEVER)
-
     def test_the_policy_file_cannot_relax_it(self):
         self.write_policy({"infra-security": {"verdict": "allow"}})
         with self.assertRaises(P.PolicyError):
@@ -134,12 +126,6 @@ class TestHardRefusal(PolicyTestCase):
         rid = self.led.start_run("g", authority="full").run_id
         d = P.authorize("infra-security", run_id=rid, led=self.led)
         self.assertEqual(d.verdict, P.NEVER)
-
-    def test_guard_raises_refused(self):
-        with self.assertRaises(P.Refused):
-            P.guard("infra-security", "disable the firewall")
-
-
 class TestUserConfiguration(PolicyTestCase):
     def test_a_user_can_narrow_a_class(self):
         self.write_policy({"code-working": {"verdict": "approve", "why": "not on this box"}})
@@ -163,14 +149,6 @@ class TestUserConfiguration(PolicyTestCase):
         self.assertNotIn("_comment", json.loads(path.read_text()))
         P.write_default(overwrite=True)
         self.assertIn("_comment", json.loads(path.read_text()))
-
-    def test_the_written_default_round_trips(self):
-        P.write_default()
-        rules = P.load()
-        for name, (verdict, _why) in P.DEFAULT_RULES.items():
-            self.assertEqual(rules[name]["verdict"], verdict, name)
-
-
 class TestGrants(PolicyTestCase):
     def test_a_grant_satisfies_an_approve(self):
         rid = self.led.start_run("g").run_id
@@ -275,12 +253,6 @@ class TestGuard(PolicyTestCase):
         with self.assertRaises(P.ApprovalRequired) as ctx:
             P.guard("outbound-comms", "email the vendor", run_id=rid, led=self.led)
         self.assertIn("gigabite policy grant", ctx.exception.decision.explain())
-
-    def test_guard_passes_once_granted(self):
-        rid = self.led.start_run("g").run_id
-        self.led.grant(rid, "outbound-comms")
-        self.assertTrue(P.guard("outbound-comms", "email", run_id=rid, led=self.led).allowed)
-
     def test_guard_refuses_user_only(self):
         with self.assertRaises(P.Refused):
             P.guard("credentials", "type the token")

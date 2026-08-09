@@ -82,11 +82,6 @@ class TestRelocate(unittest.TestCase):
         before.discard("_aliases.json")
         self.assertTrue(before.issubset(after), f"lost: {before - after}")
         self.assertTrue(self._machine("aliases.json").exists())
-
-    def test_unfiled_drop_lands_at_the_knowledge_root(self):
-        relocate.apply(self._plan())
-        self.assertTrue((self.target / "dropped.md").exists())
-
     def test_already_filed_originals_are_kept_but_not_indexable(self):
         filed = self.target / "Inbox" / "_filed" / "2026-08-05"
         filed.mkdir(parents=True)

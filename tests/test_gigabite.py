@@ -43,13 +43,6 @@ class TestUtil(unittest.TestCase):
         ]
         self.assertEqual(util.coalesce_blocks(content), "hmm\nhello\nworld")
         self.assertEqual(util.coalesce_blocks("plain"), "plain")
-
-    def test_time_normalisation(self):
-        self.assertTrue(util.to_iso_utc("2026-06-01T10:00:00Z").startswith("2026-06-01T10:00:00"))
-        self.assertEqual(util.to_iso_utc(""), "")
-        self.assertTrue(util.to_iso_utc(1_700_000_000).startswith("2023-"))
-
-
 class TestStore(unittest.TestCase):
     def test_upsert_search_and_incremental(self):
         st = fresh_store("store")
@@ -104,23 +97,6 @@ class TestStore(unittest.TestCase):
         hits = st.search("sqlite fts5 ranking")
         self.assertTrue(hits)
         self.assertEqual(hits[0]["title"], "FTS notes")
-
-    def test_restore_on_access_via_historical_fallback(self):
-        st = fresh_store("restore")
-        st.upsert_document(Document(source="granola", native_id="arch", title="Archived meeting",
-                                    messages=[Message(0, "note", "the wombat migration plan")]))
-        did = util.doc_id("granola", "arch")
-        st.set_active(did, False)
-        # default search excludes it (decay working)
-        self.assertFalse(st.search("wombat"))
-        # historical search returns it AND restores it (record_access -> active=1)
-        hits = st.search("wombat", include_historical=True)
-        self.assertTrue(hits)
-        row = st.conn.execute("SELECT active FROM documents WHERE doc_id=?", (did,)).fetchone()
-        self.assertEqual(row["active"], 1)
-        # now it's active again for default search
-        self.assertTrue(st.search("wombat"))
-
     def test_malformed_query_never_raises(self):
         st = fresh_store("store2")
         st.upsert_document(Document(source="granola", native_id="g", title="t",

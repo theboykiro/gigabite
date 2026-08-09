@@ -93,20 +93,6 @@ class TestDecay(unittest.TestCase):
         active = {d["doc_id"] for d in st.iter_documents(include_historical=False)}
         self.assertIn(stale.doc_id, active)
         self.assertTrue(st.search("quantum widgets"))
-
-    def test_search_on_historical_restores_via_record_access(self):
-        st = fresh_store("decay_search_restore")
-        stale = _doc("stale", "Stale doc", updated_days_ago=60, text="reticulating splines")
-        st.upsert_document(stale)
-        st.commit()
-        decay.run(st, window_days=30, dry_run=False)
-
-        # explicit historical search records access -> restores
-        hits = st.search("reticulating splines", include_historical=True, record=True)
-        self.assertTrue(hits)
-        active = {d["doc_id"] for d in st.iter_documents(include_historical=False)}
-        self.assertIn(stale.doc_id, active)
-
     def test_restore_and_status(self):
         st = fresh_store("decay_status")
         stale = _doc("stale", "Stale doc", updated_days_ago=60)

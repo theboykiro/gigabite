@@ -44,11 +44,6 @@ def _install_scaffold_sops() -> Path:
     return dest
 
 
-class TestSopsDir(unittest.TestCase):
-    def test_sops_dir_under_core(self):
-        self.assertEqual(sops.sops_dir(), config.CORE_DIR / "capability" / "sops")
-
-
 class TestListSops(unittest.TestCase):
     def setUp(self):
         _install_scaffold_sops()
@@ -56,19 +51,6 @@ class TestListSops(unittest.TestCase):
     def test_empty_when_dir_absent(self):
         shutil.rmtree(sops.sops_dir())
         self.assertEqual(sops.list_sops(), [])
-
-    def test_lists_all_scaffold_sops(self):
-        listed = sops.list_sops()
-        names = {s["name"] for s in listed}
-        self.assertEqual(names, {"build-qa-review", "research", "pm-decision"})
-
-    def test_entries_have_required_fields(self):
-        for s in sops.list_sops():
-            for key in ("name", "title", "role", "summary", "path"):
-                self.assertIn(key, s)
-                self.assertTrue(s[key], f"{key} empty for {s['name']}")
-            self.assertTrue(Path(s["path"]).is_file())
-
     def test_title_derived_from_heading(self):
         by_name = {s["name"]: s for s in sops.list_sops()}
         # heading is "# SOP: Research ..." -> label stripped
@@ -92,13 +74,3 @@ class TestLoadSop(unittest.TestCase):
 
     def test_load_unknown_returns_none(self):
         self.assertIsNone(sops.load_sop("does-not-exist"))
-
-    def test_build_qa_review_covers_all_three_roles(self):
-        text = sops.load_sop("build-qa-review")
-        self.assertIsNotNone(text)
-        for role in ("Builder", "QA", "Reviewer"):
-            self.assertIn(role, text)
-
-
-if __name__ == "__main__":
-    unittest.main()

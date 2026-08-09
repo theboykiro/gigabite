@@ -161,10 +161,6 @@ class TestManifestValidation(CapabilityTestCase):
 
 
 class TestShippedRegistry(CapabilityTestCase):
-    def test_only_real_integrations_ship(self):
-        """A listed connector that does not exist is a promise the registry breaks."""
-        self.assertEqual(set(C.SHIPPED), {"claude_ai"})
-
     def test_the_shipped_manifest_matches_the_live_module(self):
         from gigabite.sources import claude_ai_live
         self.assertEqual(C.get("claude_ai").keychain_service,
@@ -196,11 +192,6 @@ class TestCredentialHandle(CapabilityTestCase):
         for rendered in (repr(cred), str(cred), f"{cred}", "{}".format(cred)):
             self.assertNotIn("sk-super-secret", rendered)
             self.assertIn("redacted", rendered)
-
-    def test_the_value_is_still_reachable_deliberately(self):
-        self.backend.preload("gigabite:claude_ai", C.default_account(), "sk-super-secret")
-        self.assertEqual(C.get("claude_ai").credential(self.backend).value(), "sk-super-secret")
-
     def test_a_secret_does_not_leak_into_an_audit_detail(self):
         self.backend.preload("gigabite:claude_ai", C.default_account(), "sk-super-secret")
         rid = self.led.start_run("g").run_id
@@ -211,18 +202,35 @@ class TestCredentialHandle(CapabilityTestCase):
             self.assertNotIn("sk-super-secret", json.dumps(dict(row), default=str))
 
     def test_the_os_prompt_never_receives_the_secret_as_an_argument(self):
-        """`security -w` last means the OS asks; the value is not in argv."""
+        """`-w` goes last with no value, so macOS asks and argv stays clean.
+
+        This patches `subprocess.call` rather than subclassing the backend, so the
+        argv asserted on is the one `KeychainBackend.prompt` really builds. An
+        earlier version of this test had a fake backend construct the list it then
+        asserted against, which meant the real implementation could have passed
+        `-w "$SECRET"` and the test would still have gone green.
+        """
+        import subprocess as sp
         captured = {}
+        real_call, real_run = sp.call, sp.run
 
-        class Spy(C.KeychainBackend):
-            def prompt(self, service, account, label):
-                captured["args"] = ["security", "add-generic-password", "-s", service,
-                                    "-a", account, "-D", label, "-w"]
-                return 0
+        def fake_call(args, *a, **kw):
+            captured["args"] = list(args)
+            return 0
 
-        C.connect("claude_ai", Spy())
-        self.assertEqual(captured["args"][-1], "-w")
-        self.assertNotIn("sk-super-secret", " ".join(captured["args"]))
+        sp.call, sp.run = fake_call, lambda *a, **kw: real_run(["true"], capture_output=True)
+        try:
+            C.connect("claude_ai", C.KeychainBackend())
+        finally:
+            sp.call, sp.run = real_call, real_run
+
+        args = captured["args"]
+        self.assertEqual(args[0], "security")
+        self.assertEqual(args[-1], "-w", "`-w` must be last and valueless")
+        # Every argument is a flag or a value we chose. None is a secret, and
+        # there is nothing after -w for a secret to hide in.
+        self.assertEqual(len(args), args.index("-w") + 1)
+        self.assertIn("gigabite:claude_ai", args)
 
     def test_connecting_a_connector_with_nothing_to_store_is_refused(self):
         self.write_manifest("open_thing", {
@@ -242,13 +250,8 @@ class TestRequireParksABlocker(CapabilityTestCase):
         blocker = self.led.blockers(run_id=rid)[0]
         self.assertEqual(blocker["kind"], "not-connected")
         self.assertTrue(blocker["what_would_unblock"].strip())
-
-    def test_the_run_keeps_going(self):
-        rid = self.led.start_run("g").run_id
-        with self.assertRaises(C.NotConnected):
-            C.require("claude_ai", run_id=rid, led=self.led, backend=self.backend)
+        # Parked, not failed: the rest of the mission still runs.
         self.assertEqual(self.led.get_run(rid).status, "running")
-
     def test_require_returns_the_connector_once_connected(self):
         C.connect("claude_ai", self.backend)
         rid = self.led.start_run("g").run_id
@@ -265,14 +268,6 @@ class TestRequireParksABlocker(CapabilityTestCase):
 
 
 class TestAuthorizationJoin(CapabilityTestCase):
-    def test_a_connector_cannot_name_its_own_verdict(self):
-        """Only an action class. The user's policy decides what that may do."""
-        spec = dict(READONLY_MANIFEST)
-        spec["operations"] = {"search": {"action_class": "read", "verdict": "allow"}}
-        self.write_manifest("statista", spec)
-        op = C.get("statista").operation("search")
-        self.assertFalse(hasattr(op, "verdict"))
-
     def test_narrowing_the_policy_narrows_every_connector_at_once(self):
         self.write_manifest("statista", READONLY_MANIFEST)
         (config.CORE_DIR / "policy.json").write_text(

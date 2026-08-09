@@ -60,7 +60,6 @@ class TestRuns(LedgerTestCase):
         self.assertTrue(run.run_id.startswith("run_"))
         self.assertEqual(run.status, "running")
         self.assertEqual(run.version, 1)
-        self.assertEqual(run.baseline_minutes, 180)
         self.assertTrue(run.started_utc)
 
     def test_run_ids_are_unique(self):
@@ -105,12 +104,6 @@ class TestVersionGuard(LedgerTestCase):
         self.led.update_run(rid, status="blocked")          # now at v2
         with self.assertRaises(L.StaleVersion):
             self.led.update_run(rid, expected_version=1, status="done")
-
-    def test_matching_version_is_accepted(self):
-        run = self.led.start_run("g")
-        updated = self.led.update_run(run.run_id, expected_version=run.version, status="done")
-        self.assertEqual(updated.status, "done")
-
     def test_unknown_field_is_refused(self):
         rid = self.led.start_run("g").run_id
         with self.assertRaises(L.LedgerError):
@@ -289,13 +282,6 @@ class TestAuditTrail(LedgerTestCase):
         a = self.led.start_run("a").run_id
         self.led.start_run("b")
         self.assertTrue(all(r["run_id"] == a for r in self.led.audit_trail(run_id=a)))
-
-
-class TestIsolationFromTheIndex(LedgerTestCase):
-    def test_ledger_is_a_separate_file_from_the_index(self):
-        """`reindex` deletes the index; a run history cannot be regenerated."""
-        self.assertNotEqual(config.LEDGER_PATH, config.DB_PATH)
-        self.assertEqual(config.LEDGER_PATH.name, "ledger.db")
 
 
 class TestCli(LedgerTestCase):

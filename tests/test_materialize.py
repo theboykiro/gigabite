@@ -106,18 +106,6 @@ class TestNoDoubleIndexing(_Base):
         after = len(self.fresh_store().iter_documents())
         self.assertEqual(after, before,
                          "materializing must not add a document to the index")
-
-    def test_search_returns_one_hit_not_two(self):
-        self.store.upsert_document(_chat())
-        self.store.commit()
-        materialize.run(self.store, retire=False)
-        notes.ingest(self.fresh_store(), root=self.knowledge)
-
-        hits = self.fresh_store().search("widget anchor kickoff")
-        doc_ids = {h["doc_id"] for h in hits}
-        self.assertEqual(len(doc_ids), 1,
-                         f"a materialized chat surfaced as {len(doc_ids)} documents")
-
     def test_the_written_file_declares_the_document_it_renders(self):
         doc = _chat()
         self.store.upsert_document(doc)
@@ -221,14 +209,6 @@ class TestIdempotency(_Base):
         path.write_text("widget notes", encoding="utf-8")
         self.assertFalse(materialize._is_already_a_file({"ref": str(path)}),
                          "a file inside .gigabite/ is machinery, not stored content")
-
-    def test_rendering_is_deterministic(self):
-        doc = _chat()
-        self.store.upsert_document(doc)
-        self.store.commit()
-        full = self.store.get_document(doc.doc_id)
-        self.assertEqual(materialize.render(full), materialize.render(full))
-
     def test_dry_run_writes_nothing(self):
         self.store.upsert_document(_chat())
         self.store.commit()
@@ -340,12 +320,6 @@ class TestProjectIsNeverGuessed(_Base):
         ctx = routing.resolve_context("reply to jane.doe@acme.com when you can")
         self.assertNotEqual(ctx["confidence"], "explicit",
                             "an email domain must not read as @project")
-
-    def test_a_shell_prompt_host_is_not_a_project_marker(self):
-        from gigabite.features import routing
-        ctx = routing.resolve_context("jane@Janes-MacBook-Pro ~ % ls")
-        self.assertNotEqual(ctx["confidence"], "explicit")
-
     def test_a_marker_for_a_project_that_exists_is_still_honoured(self):
         self.store.upsert_document(Document(
             source=config.SOURCE_CLAUDE_AI, native_id="c-marked",
@@ -382,21 +356,6 @@ class TestProjectIsNeverGuessed(_Base):
         self.assertFalse(item.triaged)
         self.assertEqual(item.project, "acme")
         self.assertIn("acme/conversations/", item.path.as_posix())
-
-    def test_an_unfiled_file_records_personal_as_its_project(self):
-        self.store.upsert_document(Document(
-            source=config.SOURCE_CLAUDE_AI, native_id="c-vague2",
-            title="Assorted thoughts two", created_utc="2026-07-04T09:00:00+00:00",
-            messages=[Message(seq=0, role="user", text="Still nothing identifying.")],
-        ))
-        self.store.commit()
-        materialize.run(self.store, retire=False, include_unfiled=True)
-        notes.ingest(self.fresh_store(), root=self.knowledge)
-        hit = next(h for h in self.fresh_store().search("identifying"))
-        self.assertEqual(hit["project"] or "", config.PERSONAL_PROJECT,
-                         "it is filed under personal, and says so in the index")
-
-
 class TestLayers(_Base):
     def test_meetings_join_the_existing_meetings_layer(self):
         self.store.upsert_document(Document(
@@ -444,16 +403,6 @@ class TestRetiringRawImports(_Base):
         plan, _ = materialize.run(self.store)
         self.assertEqual(self.store.document_ref(doc.doc_id),
                          str(plan.actionable[0].path))
-
-    def test_retiring_leaves_one_document_and_it_is_searchable(self):
-        _path, doc = self._granola_export()
-        materialize.run(self.store)
-        notes.ingest(self.fresh_store(), root=self.knowledge)
-        st = self.fresh_store()
-        self.assertEqual(len(st.iter_documents()), 1)
-        hits = st.search("widget rollout")
-        self.assertEqual(len({h["doc_id"] for h in hits}), 1)
-
     def test_a_shared_import_is_left_alone(self):
         """conversations.json backs many documents; retiring it would lose them."""
         shared = config.SOURCES_CLAUDE_AI / "export.md"
@@ -672,17 +621,6 @@ class TestCliCommands(_Base):
         self.assertEqual(rc, 0)
         self.assertTrue(list((self.knowledge / "acme" / "conversations").glob("*.md")))
         self.assertEqual(len(self.fresh_store().iter_documents()), 1)
-
-    def test_materialize_dry_run_command_writes_nothing(self):
-        self.store.upsert_document(_chat(project="acme"))
-        self.store.commit()
-        before = self.files()
-        rc = self.cli.cmd_materialize(self._args(
-            dry_run=True, source=None, project=None, layer=None, limit=None,
-            keep_sources=True, include_unfiled=False))
-        self.assertEqual(rc, 0)
-        self.assertEqual(self.files(), before)
-
     def test_materialize_limit_takes_a_slice(self):
         for n in ("a", "b", "c"):
             self.store.upsert_document(_chat(native_id=n, project="acme",

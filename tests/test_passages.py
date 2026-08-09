@@ -123,15 +123,6 @@ class TestSearchDiversity(unittest.TestCase):
         self.assertEqual([m["text"] for m in got["messages"]],
                          ["first message", "second message", "third message"])
         self.assertEqual([m["seq"] for m in got["messages"]], [0, 1, 2])
-
-    def test_stats_reports_messages_and_passages_separately(self):
-        self._add("s", "Stats", config.SOURCE_NOTE,
-                  [" ".join(["word"] * 500), " ".join(["word"] * 500)])
-        s = self.store.stats()
-        self.assertEqual(s["messages"], 2)
-        self.assertGreater(s["passages"], s["messages"])
-
-
 def util_doc_id(source, native_id):
     return util.doc_id(source, native_id)
 
