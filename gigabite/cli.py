@@ -796,6 +796,100 @@ def cmd_run_touch(args) -> int:
     return 0
 
 
+def _policy():
+    from .features import policy as policy_mod
+    return policy_mod
+
+
+def cmd_policy_show(args) -> int:
+    pol = _policy()
+    try:
+        rules = pol.load()
+    except pol.PolicyError as exc:
+        print(_c("31", str(exc)))
+        return 1
+    path = pol.policy_path()
+    print(bold("action policy"))
+    print(dim(f"  {path}" + ("" if path.exists() else "  (not written yet — defaults in force)")))
+    print()
+    colour = {"allow": green, "approve": yellow, "user-only": cyan, "never": lambda s: _c("31", s)}
+    for name in pol.ACTION_CLASSES:
+        rule = rules[name]
+        paint = colour.get(rule["verdict"], dim)
+        locked = dim("  [enforced in code]") if name in pol.HARD_REFUSED else ""
+        print(f"  {name:<20} {paint(rule['verdict']):<12}{locked}")
+        print(dim(f"      {rule['why']}"))
+    print(dim("\n  run authority is a ceiling on top of this: "
+              "passive → read only, advisory → read + local-write."))
+    return 0
+
+
+def cmd_policy_check(args) -> int:
+    """Dry-run a decision. The way to answer 'would it let me?' without trying."""
+    pol = _policy()
+    try:
+        decision = pol.authorize(args.action_class, args.action or "", run_id=args.run or "")
+    except pol.PolicyError as exc:
+        print(_c("31", str(exc)))
+        return 1
+    paint = {"allow": green, "approve": yellow}.get(decision.verdict, lambda s: _c("31", s))
+    print(f"{paint(decision.verdict.upper())}  {decision.action_class}/{decision.action}")
+    print(dim(f"  {decision.why}"))
+    print(dim(f"  decided by: {decision.source}"))
+    return 0 if decision.allowed else 1
+
+
+def cmd_policy_init(args) -> int:
+    pol = _policy()
+    path = pol.write_default(overwrite=args.force)
+    print(f"policy at {bold(str(path))}")
+    print(dim("  edit `verdict` per class to widen or narrow what runs unattended."))
+    print(dim("  `infra-security` is enforced in code and cannot be relaxed there."))
+    return 0
+
+
+def cmd_policy_grant(args) -> int:
+    pol, (mod, led) = _policy(), _ledger()
+    if args.action_class in pol.HARD_REFUSED:
+        print(_c("31", f"{args.action_class} is refused in code — a grant would do nothing."))
+        return 1
+    if args.action_class not in pol.ACTION_CLASSES:
+        print(_c("31", f"unknown action class {args.action_class!r}"))
+        print(dim("  known: " + ", ".join(pol.ACTION_CLASSES)))
+        return 1
+    try:
+        led.grant(args.run_id, args.action_class, args.note or "")
+    except mod.UnknownRun:
+        print(f"no such run: {args.run_id}")
+        return 1
+    print(f"{args.run_id}: {green(args.action_class)} approved for this run")
+    print(dim("  revoke with `gigabite policy revoke`"))
+    return 0
+
+
+def cmd_policy_revoke(args) -> int:
+    _mod, led = _ledger()
+    n = led.revoke_grant(args.run_id, args.action_class)
+    print(f"revoked {n} grant(s) for {args.action_class} on {args.run_id}")
+    return 0
+
+
+def cmd_policy_grants(args) -> int:
+    mod, led = _ledger()
+    try:
+        rows = led.grants(args.run_id, live_only=not args.all)
+    except Exception:
+        rows = []
+    if not rows:
+        print(dim("no grants on this run."))
+        return 0
+    print(bold(f"grants on {args.run_id}"))
+    for g in rows:
+        state = dim("revoked") if g["revoked_utc"] else green("live")
+        print(f"  {state}  {g['action_class']}  {dim(g['note'] or '')}")
+    return 0
+
+
 def cmd_audit(args) -> int:
     _mod, led = _ledger()
     rows = led.audit_trail(run_id=args.run or "", limit=args.limit)
@@ -1028,6 +1122,38 @@ def build_parser() -> argparse.ArgumentParser:
     rt.add_argument("run_id")
     rt.add_argument("--minutes", type=float, required=True)
     rt.set_defaults(func=cmd_run_touch)
+
+    ppl = sub.add_parser("policy", help="what the system may do unattended, and what needs you")
+    plsub = ppl.add_subparsers(dest="policy_command")
+
+    pls = plsub.add_parser("show", help="the effective policy table")
+    pls.set_defaults(func=cmd_policy_show)
+
+    plc = plsub.add_parser("check", help="dry-run one decision without attempting it")
+    plc.add_argument("action_class")
+    plc.add_argument("action", nargs="?")
+    plc.add_argument("--run", help="decide in the context of a run (authority + grants apply)")
+    plc.set_defaults(func=cmd_policy_check)
+
+    pli = plsub.add_parser("init", help="write the default policy to ~/.core/policy.json")
+    pli.add_argument("--force", action="store_true", help="overwrite an existing file")
+    pli.set_defaults(func=cmd_policy_init)
+
+    plg = plsub.add_parser("grant", help="approve a whole action class for one run")
+    plg.add_argument("run_id")
+    plg.add_argument("action_class")
+    plg.add_argument("--note")
+    plg.set_defaults(func=cmd_policy_grant)
+
+    plr = plsub.add_parser("revoke", help="withdraw a grant")
+    plr.add_argument("run_id")
+    plr.add_argument("action_class")
+    plr.set_defaults(func=cmd_policy_revoke)
+
+    pll = plsub.add_parser("grants", help="what has been approved on a run")
+    pll.add_argument("run_id")
+    pll.add_argument("--all", action="store_true", help="include revoked")
+    pll.set_defaults(func=cmd_policy_grants)
 
     pau = sub.add_parser("audit", help="every gated action and how it was dispositioned")
     pau.add_argument("--run")

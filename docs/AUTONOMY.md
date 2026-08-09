@@ -108,6 +108,9 @@ un-halts everything it halted is a pause button, not a safety mechanism.
 
 ## 4. Layer 4 — the authority table
 
+**Status: built.** `gigabite/features/policy.py`, surfaced as `gigabite policy`,
+covered by `tests/test_policy.py`. Callers arrive with the capability registry.
+
 Enforced in code, at the tool boundary. Not in a prompt. A prompt is steering; the
 tool surface is the guardrail, and a guardrail that can be argued with is not one.
 

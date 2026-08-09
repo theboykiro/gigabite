@@ -47,7 +47,7 @@ from typing import Any, Optional
 
 from .. import config
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Run statuses. `blocked` is distinct from `halted`: blocked means the work hit
 # something it cannot get past on its own (see blockers), halted means a human or
@@ -254,6 +254,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
             FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
         );
 
+        -- Batched approvals (docs/AUTONOMY.md §4). "Yes, open tickets for this
+        -- run" is one answer rather than eleven, so a grant is scoped to a run
+        -- and an action class, never to a single call.
+        --
+        -- Storage only: a grant row is not permission. features.policy decides,
+        -- and it ignores grants for hard-refused classes outright — so a forged
+        -- row here cannot produce an allow.
+        CREATE TABLE IF NOT EXISTS grants (
+            grant_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id       TEXT NOT NULL,
+            action_class TEXT NOT NULL,
+            note         TEXT,
+            granted_utc  TEXT NOT NULL,
+            revoked_utc  TEXT,
+            FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_grants_run ON grants(run_id);
+
         CREATE TABLE IF NOT EXISTS audit (
             audit_id     INTEGER PRIMARY KEY AUTOINCREMENT,
             run_id       TEXT,
@@ -268,9 +286,28 @@ def init_schema(conn: sqlite3.Connection) -> None:
         """
     )
     row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-    if row is None:
+    found = int(row["value"]) if row and str(row["value"]).isdigit() else None
+
+    if found is None:
         conn.execute(
             "INSERT INTO meta(key,value) VALUES('schema_version',?)", (str(SCHEMA_VERSION),)
+        )
+    elif found > SCHEMA_VERSION:
+        # Forward guard. The index has none, and the consequence there is a
+        # corrupted rebuild of derived data; here it would be a newer tool's run
+        # history read through an older tool's assumptions. Stop instead.
+        raise LedgerError(
+            f"this ledger was written by a newer gigabite (schema v{found}, this build "
+            f"understands v{SCHEMA_VERSION}). Upgrade rather than risk the run history."
+        )
+    elif found < SCHEMA_VERSION:
+        # v1 -> v2 added `grants`, and every table above is CREATE ... IF NOT
+        # EXISTS, so the upgrade already happened. Purely additive changes need
+        # no migration branch — only a version stamp.
+        conn.execute(
+            "INSERT INTO meta(key,value) VALUES('schema_version',?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(SCHEMA_VERSION),),
         )
     conn.commit()
 
@@ -643,6 +680,50 @@ class Ledger:
             params.append(status)
         sql += " ORDER BY surfaced_utc"
         return [dict(r) for r in self.conn.execute(sql, params)]
+
+    # -- grants -------------------------------------------------------------
+    #
+    # Storage for batched approvals. Deliberately dumb: it records that a human
+    # said yes to a class for a run, and nothing here decides anything. The
+    # decision lives in features.policy, which is what makes a hand-written grant
+    # row for a hard-refused class worthless.
+
+    def grant(self, run_id: str, action_class: str, note: str = "") -> int:
+        self._require(run_id)
+        cur = self.conn.execute(
+            "INSERT INTO grants (run_id, action_class, note, granted_utc) VALUES (?,?,?,?)",
+            (run_id, action_class, note, _now()),
+        )
+        self.conn.commit()
+        self.audit(run_id, action_class, "grant", "approved", {"note": note})
+        return int(cur.lastrowid)
+
+    def revoke_grant(self, run_id: str, action_class: str) -> int:
+        """Revoke every live grant for a class on a run. Returns how many."""
+        cur = self.conn.execute(
+            "UPDATE grants SET revoked_utc=? WHERE run_id=? AND action_class=?"
+            " AND revoked_utc IS NULL",
+            (_now(), run_id, action_class),
+        )
+        self.conn.commit()
+        if cur.rowcount:
+            self.audit(run_id, action_class, "grant", "revoked")
+        return cur.rowcount
+
+    def has_grant(self, run_id: str, action_class: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM grants WHERE run_id=? AND action_class=? AND revoked_utc IS NULL"
+            " LIMIT 1",
+            (run_id, action_class),
+        ).fetchone()
+        return row is not None
+
+    def grants(self, run_id: str, *, live_only: bool = True) -> list:
+        sql = "SELECT * FROM grants WHERE run_id=?"
+        if live_only:
+            sql += " AND revoked_utc IS NULL"
+        sql += " ORDER BY grant_id"
+        return [dict(r) for r in self.conn.execute(sql, (run_id,))]
 
     # -- artifacts + audit --------------------------------------------------
 

@@ -46,35 +46,40 @@ Everything below assumes it. Nothing below is safe or measurable without it.
 
 ---
 
-## 2. ⇢ Policy engine
+## 2. ✅ Policy engine
 
-*Depends on: 1. On the critical path — 5, 6 and 7 all wait on this.*
+`gigabite/features/policy.py` · `gigabite policy` · `tests/test_policy.py`
 
-**What.** The authority table from [`AUTONOMY.md` §4](AUTONOMY.md#4-layer-4--the-authority-table)
-as executable code: a single `authorize(action_class, action, context) -> Decision`
-chokepoint that every side-effecting call passes through, returning allow / require
-approval / refuse, and writing an `audit` row either way.
+Nine action classes, four verdicts (`allow` / `approve` / `user-only` / `never`),
+one `authorize()` chokepoint that audits the outcome either way, and `guard()`
+which raises rather than returning a verdict a caller can ignore.
 
-**Why it is item 2.** A guardrail expressed in a prompt is steering, and steering
-can be argued with. The tool surface is the only guardrail that holds. Building the
-planner first would mean retrofitting permission checks into a call graph that
-already assumes it can do anything.
+Per-user configuration lives in `~/.core/policy.json`, where each rule carries its
+own `why` — the reason is shown at the moment of a refusal, so it is data rather
+than a comment. Which classes exist, and the fact that `infra-security` is `never`,
+stay in code.
 
-**Shape.**
-- Action classes as constants, matching the §4 table.
-- Policy in a user-editable file (`~/.core/policy.toml` or similar), not source —
-  this is per-user configuration, not a product decision.
-- The `never` row is enforced in code and is not addressable from the policy file.
-  A rule a user can relax is not a wall.
-- Approvals batch by class per run rather than prompting per call, so "yes, open
-  tickets for this run" is one answer and not eleven.
+Three properties are enforced rather than documented:
 
-**Done when.** A call in the `third-party-create` class cannot reach the network
-without either a recorded approval or a refusal in the audit trail, demonstrated
-by a test that asserts the refusal — the negative case is the one that matters.
+- **The `never` row is checked before the config file, before grants, and before
+  run authority.** Nothing downstream gets an opportunity to turn it into an allow,
+  and the file refuses to load if it tries.
+- **Unknown action classes fail closed** to `approve`, never to `allow`. A
+  permissive fallback on unrecognised input is the standard way a generated guard
+  ends up not guarding.
+- **Grants are storage, not permission.** A hand-written grant row for a
+  hard-refused class is ignored at the decision point, so forging one buys nothing.
 
-**Wrong if.** You find yourself adding a policy exception for a specific caller.
-That means the action classes are cut wrong; recut them.
+Approvals batch by class per run: `gigabite policy grant <run> <class>` is one
+answer covering every call in that class for that run.
+
+Run authority is a ceiling applied last, and only ever restricts — `passive`
+permits reads, `advisory` adds local writes. `supervised` and `full` impose nothing
+extra on purpose: the difference between them is which classes have earned an
+`allow` in the policy file, which is an auditable edit rather than a hidden switch.
+
+**Not yet wired to callers.** There are no connectors, so nothing routes through it
+in anger until item 5 — which is the whole reason it is built first.
 
 ---
 
@@ -136,9 +141,9 @@ afternoon become one five-minute list.
 
 ---
 
-## 5. ○ Capability registry and credential broker
+## 5. ⇢ Capability registry and credential broker
 
-*Depends on: 2.*
+*Depends on: 2. ⇢ Next on the critical path.*
 
 **What.** A declared connector per integration — auth method, scopes, read/write,
 action class, rate limit — and a broker that holds credentials in the macOS
