@@ -239,8 +239,9 @@ Ordered by what unblocks what, not by visible progress.
 2. **Policy engine and the §4 table**, enforced at the tool boundary.
 3. **Register router.** Small, self-contained, and fixes the most-felt problem today.
 4. **Blocker channel.** Park-and-continue, batched surfacing.
-5. **Capability registry and credential broker.** Keychain-backed, per connector,
-   first-time auth performed by the user.
+5. ~~Capability registry and credential broker.~~ **Built** —
+   `features/capability.py`. Keychain-backed, per connector, first-time auth
+   performed by the user in the OS prompt.
 6. **Planner and executor.** Decomposition to the ledger before execution, a validated
    output contract per step, and the recovery ladder: retry, fallback, escalate,
    degrade, compensate.

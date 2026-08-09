@@ -890,6 +890,78 @@ def cmd_policy_grants(args) -> int:
     return 0
 
 
+def _capability():
+    from .features import capability as cap_mod
+    return cap_mod
+
+
+def cmd_connect_list(args) -> int:
+    cap = _capability()
+    try:
+        registry = cap.load_all()
+    except cap.CapabilityError as exc:
+        print(_c("31", str(exc)))
+        return 1
+    print(bold("connectors"))
+    for name in sorted(registry):
+        conn = registry[name]
+        state = green("connected") if conn.connected() else yellow("not connected")
+        where = dim("") if conn.source == "shipped" else dim("  (user manifest)")
+        print(f"  {cyan(name):<24} {state}{where}")
+        for op in sorted(conn.operations.values(), key=lambda o: o.name):
+            gate = dim(f"[{op.action_class}]")
+            print(f"      {op.name:<22} {gate} {dim(op.summary)}")
+        if not conn.connected() and conn.how_to_connect:
+            print(dim(f"      → {conn.how_to_connect}"))
+    print(dim(f"\n  user manifests: {cap.connectors_dir()}"))
+    return 0
+
+
+def cmd_connect_add(args) -> int:
+    cap = _capability()
+    try:
+        rc = cap.connect(args.connector)
+    except cap.CapabilityError as exc:
+        print(_c("31", str(exc)))
+        return 1
+    if rc == 0:
+        print(f"{green('connected')} {args.connector}")
+        print(dim("  the value went straight from the system prompt into your keychain."))
+    else:
+        print(_c("31", f"could not store a credential for {args.connector}"))
+    return 0 if rc == 0 else 1
+
+
+def cmd_connect_forget(args) -> int:
+    cap = _capability()
+    try:
+        cap.forget(args.connector)
+    except cap.CapabilityError as exc:
+        print(_c("31", str(exc)))
+        return 1
+    print(f"forgot the stored credential for {args.connector}")
+    return 0
+
+
+def cmd_connect_check(args) -> int:
+    """Would this operation be permitted? Answers without attempting it."""
+    cap, pol = _capability(), _policy()
+    try:
+        decision = cap.authorize(args.connector, args.operation, run_id=args.run or "")
+    except cap.CapabilityError as exc:
+        print(_c("31", str(exc)))
+        return 1
+    paint = {"allow": green, "approve": yellow}.get(decision.verdict, lambda s: _c("31", s))
+    conn = cap.get(args.connector)
+    print(f"{paint(decision.verdict.upper())}  {args.connector}/{args.operation}"
+          f"  {dim('→ ' + conn.operation(args.operation).action_class)}")
+    print(dim(f"  {decision.why}"))
+    if not conn.connected():
+        print(yellow(f"  not connected — {conn.how_to_connect or 'connect it once'}"))
+        return 1
+    return 0 if decision.verdict == pol.ALLOW else 1
+
+
 def cmd_audit(args) -> int:
     _mod, led = _ledger()
     rows = led.audit_trail(run_id=args.run or "", limit=args.limit)
@@ -1154,6 +1226,26 @@ def build_parser() -> argparse.ArgumentParser:
     pll.add_argument("run_id")
     pll.add_argument("--all", action="store_true", help="include revoked")
     pll.set_defaults(func=cmd_policy_grants)
+
+    pcn = sub.add_parser("connect", help="integrations: what is reachable, and on whose authority")
+    cnsub = pcn.add_subparsers(dest="connect_command")
+
+    cnl = cnsub.add_parser("list", help="connectors, their operations and their action classes")
+    cnl.set_defaults(func=cmd_connect_list)
+
+    cna = cnsub.add_parser("add", help="connect one — you type the secret into the OS prompt")
+    cna.add_argument("connector")
+    cna.set_defaults(func=cmd_connect_add)
+
+    cnf = cnsub.add_parser("forget", help="remove a stored credential")
+    cnf.add_argument("connector")
+    cnf.set_defaults(func=cmd_connect_forget)
+
+    cnc = cnsub.add_parser("check", help="would this operation be permitted?")
+    cnc.add_argument("connector")
+    cnc.add_argument("operation")
+    cnc.add_argument("--run", help="decide in the context of a run (authority + grants apply)")
+    cnc.set_defaults(func=cmd_connect_check)
 
     pau = sub.add_parser("audit", help="every gated action and how it was dispositioned")
     pau.add_argument("--run")

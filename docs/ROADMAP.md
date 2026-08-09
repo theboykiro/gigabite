@@ -141,37 +141,44 @@ afternoon become one five-minute list.
 
 ---
 
-## 5. ⇢ Capability registry and credential broker
+## 5. ✅ Capability registry and credential broker
 
-*Depends on: 2. ⇢ Next on the critical path.*
+`gigabite/features/capability.py` · `gigabite connect` · `tests/test_capability.py`
 
-**What.** A declared connector per integration — auth method, scopes, read/write,
-action class, rate limit — and a broker that holds credentials in the macOS
-keychain and hands out short-lived handles rather than values.
+A connector is declared, not coded: a manifest in `~/.core/connectors/*.json` names
+the integration, how a human connects it, and which **action class** each of its
+operations falls into. That last field is the join — every operation resolves
+through the policy engine before it happens, so a connector cannot name its own
+verdict and adding capability adds its constraint in the same breath.
 
-**Why after the policy engine.** Every connector maps onto an action class. Adding
-connectors before there is a policy engine means adding capability with no way to
-constrain it.
+Adding a read-only integration is one JSON file. No change to the policy engine,
+the ledger, or the executor — asserted directly in `TestTheDoneCondition`.
 
-**Shape.**
-- First-time auth is performed **by the user**, in the provider's own flow. The
-  agent never sees, types, or stores a credential value — it asks for the
-  connection and reports whether it exists.
-- One connector manifest format, so adding an integration is data and not code.
-- A missing connection is a **blocker**, not an error: "Jira is not connected;
-  authenticate once and this step resumes."
-- The existing `claude_ai_live` keychain handling is the pattern to generalise
-  (value passed by stdin, never argv, never printed) — and the undocumented
-  internal-API access in that same module is the pattern *not* to generalise.
+**Credentials.** `connect` runs `security` with `-w` last, so macOS opens its own
+hidden prompt: the value is typed into a system dialog and never passes through
+argv, this process, shell history, or the conversation. Afterwards a `Credential`
+is a lazy handle whose `repr` and `str` are redacted, so a secret cannot leak by
+being logged, formatted into a message, or put in an audit detail. Presence checks
+deliberately omit `-w`, so listing connectors never pulls a value out of the
+keychain just to print the word "connected".
 
-**Done when.** Adding a new read-only connector requires no change to the policy
-engine, the ledger, or the planner.
+**A missing connection is a blocker, not an error.** `require` parks it on the run
+with the sentence that would resolve it, and the run keeps going.
+
+**Only real integrations ship.** The shipped registry contains `claude_ai` and
+nothing else, with a test pinning it — a connector listed here and not implemented
+would be a promise the registry cannot keep.
+
+**No transport.** This declares and authorises; it does not perform requests, and
+`rate_limit_per_minute` is carried for the executor to enforce rather than enforced
+here. A limiter with nothing to limit would be the same mistake as a guardrail
+nothing passes through.
 
 ---
 
-## 6. ○ Planner and executor
+## 6. ⇢ Planner and executor
 
-*Depends on: 1, 2, 5.*
+*Depends on: 1, 2, 5. ⇢ Next on the critical path.*
 
 **What.** The loop that turns a goal into steps, runs them, validates each against
 its contract, and recovers. This is the item everything else exists to make safe.

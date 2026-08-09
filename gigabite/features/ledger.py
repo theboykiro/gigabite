@@ -82,7 +82,17 @@ def _now() -> str:
 
 
 def _json(value: Any) -> Optional[str]:
-    return None if value is None else json.dumps(value, ensure_ascii=False)
+    """Serialise, falling back to `str` for anything json cannot take.
+
+    `default=str` rather than letting it raise, for two reasons. Audit details
+    carry whatever a caller passed as context, and an audit write is the one thing
+    that must not be what breaks a run — a `TypeError` here would lose the record
+    of the action *and* kill the caller. And objects that hold secrets redact in
+    their own `__str__` (see features.capability.Credential), so stringifying is
+    what keeps a credential out of the trail; raising would only move the problem
+    to the call site, one discipline at a time.
+    """
+    return None if value is None else json.dumps(value, ensure_ascii=False, default=str)
 
 
 def _unjson(raw: Any) -> Any:
