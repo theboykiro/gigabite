@@ -10,16 +10,18 @@ test here re-points config.KNOWLEDGE_DIR at its own fresh dir in setUp, which is
 exactly the surface save.py / notes.py resolve against at call time.
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
 # Redirect stores into a temp dir BEFORE importing the package (env-redirect
 # pattern from tests/test_gigabite.py). setUp additionally isolates each test.
-_TMP = tempfile.mkdtemp(prefix="gigabite-routing-")
-os.environ.setdefault("GIGABITE_CORE_DIR", str(Path(_TMP) / "core"))
-os.environ.setdefault("GIGABITE_KNOWLEDGE_DIR", str(Path(_TMP) / "knowledge"))
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config  # noqa: E402
 from gigabite.store import Store, connect  # noqa: E402

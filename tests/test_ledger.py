@@ -5,48 +5,26 @@ Pure stdlib (unittest). No network, no writes to the real home directory.
     python3 -m unittest discover -s tests        (from the repo root)
 """
 
-import os
-import tempfile
 import unittest
-from pathlib import Path
 
-# Redirect all stores into a temp dir BEFORE importing the package.
-_TMP = tempfile.mkdtemp(prefix="gigabite-ledger-test-")
-os.environ["GIGABITE_CORE_DIR"] = str(Path(_TMP) / "core")
-os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
+import os
+import sys
 
-from gigabite import cli, config  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+from _harness import TempRoot  # noqa: F401  (must precede any gigabite import)
+
+from gigabite import cli  # noqa: E402
 from gigabite.features import ledger as L  # noqa: E402
 
 
-class LedgerTestCase(unittest.TestCase):
-    """Each test gets its own knowledge root, so the STOP file can't leak."""
+class LedgerTestCase(TempRoot):
+    """Each test gets its own knowledge root, so the STOP file cannot leak."""
 
     def setUp(self):
-        # Restored in tearDown: these are module globals, and leaving them
-        # pointed at a temp dir breaks every test module that runs after this
-        # one under `unittest discover`.
-        self._saved = (
-            os.environ.get("GIGABITE_KNOWLEDGE_DIR"),
-            config.KNOWLEDGE_DIR,
-            config.MACHINE_DIR,
-        )
-        self.root = Path(tempfile.mkdtemp(prefix="gb-ledger-"))
-        os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(self.root)
-        config.KNOWLEDGE_DIR = self.root
-        config.MACHINE_DIR = config.machine_dir()
-        self.led = L.Ledger.open(self.root / ".gigabite" / "index" / "ledger.db")
-
-    def tearDown(self):
-        self.led.close()
-        L.release_stop()
-        env, knowledge, machine = self._saved
-        if env is None:
-            os.environ.pop("GIGABITE_KNOWLEDGE_DIR", None)
-        else:
-            os.environ["GIGABITE_KNOWLEDGE_DIR"] = env
-        config.KNOWLEDGE_DIR = knowledge
-        config.MACHINE_DIR = machine
+        super().setUp()
+        self.led = L.Ledger.open()
+        self.addCleanup(self.led.close)
+        self.addCleanup(L.release_stop)
 
 
 class TestRuns(LedgerTestCase):
@@ -84,7 +62,7 @@ class TestRuns(LedgerTestCase):
         self.led.add_step(rid, "research", summary="find sources")
         self.led.close()
 
-        reopened = L.Ledger.open(self.root / ".gigabite" / "index" / "ledger.db")
+        reopened = L.Ledger.open()
         self.addCleanup(reopened.close)
         run = reopened.get_run(rid)
         self.assertIsNotNone(run)

@@ -4,15 +4,15 @@
 """
 
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
-# Redirect all stores into a temp dir BEFORE importing the package.
-_TMP = tempfile.mkdtemp(prefix="gigabite-test-")
-os.environ["GIGABITE_CORE_DIR"] = str(Path(_TMP) / "core")
-os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config, util  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
@@ -20,10 +20,8 @@ from gigabite.sources import claude_ai, claude_ai_live, claude_code, granola  # 
 
 
 def fresh_store(name) -> Store:
-    db = Path(_TMP) / f"{name}.db"
-    if db.exists():
-        db.unlink()
-    return Store(connect(db))
+    """A Store on its own file. See _harness for where these land."""
+    return _harness.scratch_store(name)
 
 
 class TestUtil(unittest.TestCase):
@@ -127,7 +125,7 @@ class TestPasteHeader(unittest.TestCase):
 
 class TestClaudeCode(unittest.TestCase):
     def test_parse_jsonl_session(self):
-        d = Path(_TMP) / "cc" / "-Users-x-proj"
+        d = _harness.SCRATCH / "cc" / "-Users-x-proj"
         d.mkdir(parents=True, exist_ok=True)
         f = d / "sess.jsonl"
         lines = [
@@ -144,7 +142,7 @@ class TestClaudeCode(unittest.TestCase):
         ]
         f.write_text("\n".join(json.dumps(x) for x in lines))
         st = fresh_store("cc")
-        rep = claude_code.ingest(st, projects_dir=Path(_TMP) / "cc")
+        rep = claude_code.ingest(st, projects_dir=_harness.SCRATCH / "cc")
         self.assertEqual(rep.changed, 1)
         hits = st.search("roadmap")           # attachment text is searchable
         self.assertTrue(hits)
@@ -153,11 +151,11 @@ class TestClaudeCode(unittest.TestCase):
         self.assertEqual(st.get_document(hits[0]["doc_id"])["title"], "My Session")
 
         # second run is a no-op (signature unchanged)
-        rep2 = claude_code.ingest(st, projects_dir=Path(_TMP) / "cc")
+        rep2 = claude_code.ingest(st, projects_dir=_harness.SCRATCH / "cc")
         self.assertEqual(rep2.changed, 0)
 
     def test_shared_sessionid_files_do_not_collide_and_agents_skipped(self):
-        d = Path(_TMP) / "cc2" / "-Users-x-proj"
+        d = _harness.SCRATCH / "cc2" / "-Users-x-proj"
         d.mkdir(parents=True, exist_ok=True)
         # two files that both carry the SAME sessionId in their events, each with
         # a token unique to that file
@@ -168,7 +166,7 @@ class TestClaudeCode(unittest.TestCase):
                  "message": {"role": "user", "content": f"unique {marker} here"}},
             ]))
         st = fresh_store("cc2")
-        rep = claude_code.ingest(st, projects_dir=Path(_TMP) / "cc2")
+        rep = claude_code.ingest(st, projects_dir=_harness.SCRATCH / "cc2")
         # agent-*.jsonl is skipped; only the real session is indexed -> no collision
         self.assertEqual(rep.scanned, 1)
         self.assertEqual(rep.changed, 1)
@@ -178,7 +176,7 @@ class TestClaudeCode(unittest.TestCase):
 
 class TestClaudeAi(unittest.TestCase):
     def _export(self, name):
-        box = Path(_TMP) / name
+        box = _harness.SCRATCH / name
         box.mkdir(parents=True, exist_ok=True)
         convs = [{
             "uuid": "c1", "name": "Budget talk",
@@ -201,11 +199,11 @@ class TestClaudeAi(unittest.TestCase):
     def test_import_zip_export(self):
         import zipfile
         box = self._export("caiz")
-        (Path(_TMP) / "caiz" / "conversations.json").rename(Path(_TMP) / "caiz" / "conv_src.json")
+        (_harness.SCRATCH / "caiz" / "conversations.json").rename(_harness.SCRATCH / "caiz" / "conv_src.json")
         zpath = box / "export.zip"
         with zipfile.ZipFile(zpath, "w") as zf:
-            zf.write(Path(_TMP) / "caiz" / "conv_src.json", arcname="data/conversations.json")
-        (Path(_TMP) / "caiz" / "conv_src.json").unlink()
+            zf.write(_harness.SCRATCH / "caiz" / "conv_src.json", arcname="data/conversations.json")
+        (_harness.SCRATCH / "caiz" / "conv_src.json").unlink()
         st = fresh_store("caiz")
         rep = claude_ai.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)
@@ -279,7 +277,7 @@ class TestClaudeAiLive(unittest.TestCase):
 
 class TestGranola(unittest.TestCase):
     def test_markdown_with_frontmatter(self):
-        box = Path(_TMP) / "gm"
+        box = _harness.SCRATCH / "gm"
         box.mkdir(parents=True, exist_ok=True)
         (box / "note.md").write_text(
             "---\ntitle: Kickoff\ndate: 2026-06-15\nproject: acme\n---\n"
@@ -292,7 +290,7 @@ class TestGranola(unittest.TestCase):
         self.assertEqual(hits[0]["title"], "Kickoff")
 
     def test_inbox_readme_and_scaffold_files_are_skipped(self):
-        box = Path(_TMP) / "gskip"
+        box = _harness.SCRATCH / "gskip"
         box.mkdir(parents=True, exist_ok=True)
         (box / "README.md").write_text("# Drop your Granola notes here\ninstructions")
         (box / "_notes.md").write_text("# ignore underscore-prefixed")
@@ -304,7 +302,7 @@ class TestGranola(unittest.TestCase):
         self.assertTrue(st.search("actual"))
 
     def test_nested_reserved_dir_is_skipped(self):
-        box = Path(_TMP) / "gnest"
+        box = _harness.SCRATCH / "gnest"
         (box / "_archive").mkdir(parents=True, exist_ok=True)
         (box / "_archive" / "old.md").write_text("# Old\nzebrafishmarker content")
         (box / "live.md").write_text("# Live\ndolphinmarker content")

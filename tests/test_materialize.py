@@ -12,18 +12,16 @@ Written against a temp knowledge base, never the real one.
 import contextlib
 import io
 import json
-import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import os
+import sys
 
-_TMP = tempfile.mkdtemp(prefix="gigabite-mat-")
-os.environ.setdefault("GIGABITE_CORE_DIR", str(Path(_TMP) / "core"))
-os.environ.setdefault("GIGABITE_KNOWLEDGE_DIR", str(Path(_TMP) / "knowledge"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config  # noqa: E402
 from gigabite.features import intake, materialize, save  # noqa: E402

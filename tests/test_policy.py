@@ -10,53 +10,27 @@ Pure stdlib (unittest). No network, no writes to the real home directory.
 """
 
 import json
-import os
-import tempfile
 import unittest
-from pathlib import Path
 
-_TMP = tempfile.mkdtemp(prefix="gigabite-policy-test-")
-os.environ["GIGABITE_CORE_DIR"] = str(Path(_TMP) / "core")
-os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
+import os
+import sys
 
-from gigabite import cli, config  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+from _harness import TempRoot  # noqa: F401  (must precede any gigabite import)
+
+from gigabite import cli  # noqa: E402
 from gigabite.features import ledger as L  # noqa: E402
 from gigabite.features import policy as P  # noqa: E402
 
 
-class PolicyTestCase(unittest.TestCase):
+class PolicyTestCase(TempRoot):
     def setUp(self):
-        self._saved = (
-            os.environ.get("GIGABITE_KNOWLEDGE_DIR"),
-            os.environ.get("GIGABITE_CORE_DIR"),
-            config.KNOWLEDGE_DIR,
-            config.MACHINE_DIR,
-            config.CORE_DIR,
-        )
-        self.root = Path(tempfile.mkdtemp(prefix="gb-policy-"))
-        self.core = self.root / "core"
-        self.core.mkdir(parents=True, exist_ok=True)
-        os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(self.root)
-        os.environ["GIGABITE_CORE_DIR"] = str(self.core)
-        config.KNOWLEDGE_DIR = self.root
-        config.MACHINE_DIR = config.machine_dir()
-        config.CORE_DIR = self.core
-        self.led = L.Ledger.open(self.root / ".gigabite" / "index" / "ledger.db")
+        super().setUp()
+        self.led = L.Ledger.open()
+        self.addCleanup(self.led.close)
+        self.addCleanup(L.release_stop)
 
-    def tearDown(self):
-        self.led.close()
-        L.release_stop()
-        env_k, env_c, knowledge, machine, core = self._saved
-        for var, val in (("GIGABITE_KNOWLEDGE_DIR", env_k), ("GIGABITE_CORE_DIR", env_c)):
-            if val is None:
-                os.environ.pop(var, None)
-            else:
-                os.environ[var] = val
-        config.KNOWLEDGE_DIR = knowledge
-        config.MACHINE_DIR = machine
-        config.CORE_DIR = core
-
-    def write_policy(self, rules: dict) -> Path:
+    def write_policy(self, rules: dict) -> "pathlib.Path":
         path = P.policy_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"version": 1, "rules": rules}), encoding="utf-8")

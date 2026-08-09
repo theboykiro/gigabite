@@ -6,12 +6,15 @@ overwritten, running it twice is harmless, and an ambiguous situation stops
 rather than guesses.
 """
 
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config  # noqa: E402
 from gigabite.features import relocate  # noqa: E402

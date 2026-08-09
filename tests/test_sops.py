@@ -3,16 +3,16 @@
     python3 -m unittest discover -s tests        (from the repo root)
 """
 
-import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-# Redirect all stores into a temp dir BEFORE importing the package.
-_TMP = tempfile.mkdtemp(prefix="gigabite-sops-test-")
-os.environ["GIGABITE_CORE_DIR"] = str(Path(_TMP) / "core")
-os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config  # noqa: E402
 from gigabite.features import sops  # noqa: E402

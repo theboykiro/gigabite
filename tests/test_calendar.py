@@ -1,14 +1,15 @@
 """Calendar feature tests — project tagging, prep attachment, agenda filtering."""
 
-import os
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-_TMP = tempfile.mkdtemp(prefix="gigabite-cal-")
-os.environ["GIGABITE_CORE_DIR"] = str(Path(_TMP) / "core")
-os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(Path(_TMP) / "knowledge")
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
@@ -17,10 +18,8 @@ from gigabite.features import save  # noqa: E402
 
 
 def fresh_store(name) -> Store:
-    db = Path(_TMP) / f"{name}.db"
-    if db.exists():
-        db.unlink()
-    return Store(connect(db))
+    """A Store on its own file. See _harness for where these land."""
+    return _harness.scratch_store(name)
 
 
 class TestCalendar(unittest.TestCase):

@@ -13,14 +13,15 @@ user's own transcript instead of the material that answers it:
     python3 -m unittest discover -s tests        (from the repo root)
 """
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
 
-_TMP = tempfile.mkdtemp(prefix="gigabite-rank-")
-os.environ.setdefault("GIGABITE_CORE_DIR", str(Path(_TMP) / "core"))
-os.environ.setdefault("GIGABITE_KNOWLEDGE_DIR", str(Path(_TMP) / "knowledge"))
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
+import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config, util  # noqa: E402
 from gigabite import store as store_mod  # noqa: E402
@@ -58,7 +59,7 @@ class _IndexBase(unittest.TestCase):
     TEXT = "the pricing anchor was agreed with the client at nine seats"
 
     def setUp(self):
-        self.db = Path(_TMP) / f"{self.id().split('.')[-1]}.db"
+        self.db = _harness.SCRATCH / f"{self.id().split('.')[-1]}.db"
         if self.db.exists():
             self.db.unlink()
         self.st = Store(connect(self.db))

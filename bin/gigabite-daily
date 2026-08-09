@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# gigabite end-of-day routine, run by launchd (see launchd/com.gigabite.synthesis.plist).
+# gigabite end-of-day routine, run by launchd (see install/launchd/com.gigabite.synthesis.plist).
 # Deterministic + gated: refresh the local index, write a synthesis PROPOSAL (never
 # auto-applied), and archive stale docs (non-destructive). Then a best-effort notification.
+#
+# Every stage reports. The previous version sent all three to /dev/null with
+# `|| true`, so a job that had never once succeeded looked identical to a job that
+# ran perfectly every evening — the log was empty either way, and `launchctl list`
+# showed a status nobody was reading. A scheduled job that cannot say it failed is
+# indistinguishable from one that is not scheduled at all.
 set -uo pipefail
 
 SOURCE="${BASH_SOURCE[0]}"
@@ -13,8 +19,69 @@ done
 REPO="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 GB="$REPO/bin/gigabite"
 
-"$GB" ingest        >/dev/null 2>&1 || true   # local-only refresh
-"$GB" synthesize    >/dev/null 2>&1 || true   # writes ~/.knowledge/_proposals/<date>.md (gated)
-"$GB" decay --apply >/dev/null 2>&1 || true   # archive untouched docs (restorable)
+LOG="${GIGABITE_DAILY_LOG:-$HOME/Library/Logs/gigabite-synthesis.log}"
 
-/usr/bin/osascript -e 'display notification "End-of-day proposal ready — review with /gg or in ~/.knowledge/_proposals" with title "gigabite"' >/dev/null 2>&1 || true
+# launchd appends to this file forever. Keep the last ~256 KB so a year of nightly
+# runs stays readable rather than becoming a file nobody opens.
+if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 262144 ]; then
+  tail -c 131072 "$LOG" >"$LOG.trim" 2>/dev/null && mv "$LOG.trim" "$LOG"
+fi
+
+log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+
+FAILED=()
+
+# Run one stage, keeping its output in the log under the stage name. A failure is
+# recorded and the run continues: ingest failing is a reason not to trust tonight's
+# proposal, not a reason to skip the decay pass.
+stage() {
+  local name="$1"; shift
+  log "→ $name: $*"
+  local out status
+  out="$("$@" 2>&1)"; status=$?
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out" | sed 's/^/    /'
+  fi
+  if [ $status -ne 0 ]; then
+    log "✗ $name failed (exit $status)"
+    FAILED+=("$name")
+  else
+    log "✓ $name"
+  fi
+  return 0
+}
+
+log "=== gigabite daily start (repo: $REPO) ==="
+
+# Checked explicitly, because the failure this job actually had for its whole life
+# was launchd being unable to execute anything under ~/Desktop — a TCC refusal that
+# reads as a bare "Operation not permitted" with no hint of the cause. Naming it
+# here means the log says what to do instead of what went wrong.
+if [ ! -x "$GB" ]; then
+  log "✗ cannot execute $GB"
+  log "  If this says 'Operation not permitted', macOS is denying launchd access to"
+  log "  the folder holding the repo (Desktop, Documents and Downloads are protected)."
+  log "  Fix: move the repo somewhere unprotected (e.g. ~/gigabite) and re-run"
+  log "  install.sh, or grant Full Disk Access to /bin/bash in System Settings →"
+  log "  Privacy & Security."
+  exit 1
+fi
+
+stage "ingest"     "$GB" ingest                # local-only refresh
+stage "synthesize" "$GB" synthesize            # writes ~/Knowledge/.gigabite/proposals/<date>.md (gated)
+stage "decay"      "$GB" decay --apply         # archive untouched docs (restorable)
+
+notify() {
+  /usr/bin/osascript -e "display notification \"$1\" with title \"gigabite\"" \
+    >/dev/null 2>&1 || log "  (notification suppressed)"
+}
+
+if [ ${#FAILED[@]} -eq 0 ]; then
+  log "=== done ==="
+  notify "End-of-day proposal ready — review with /gg or in ~/Knowledge/.gigabite/proposals"
+  exit 0
+fi
+
+log "=== done with failures: ${FAILED[*]} ==="
+notify "Daily run failed: ${FAILED[*]}. See ~/Library/Logs/gigabite-synthesis.log"
+exit 1
