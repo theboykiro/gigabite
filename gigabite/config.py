@@ -87,6 +87,17 @@ MACHINE_DIR = machine_dir()
 INDEX_DIR = MACHINE_DIR / "index"
 DB_PATH = INDEX_DIR / "gigabite.db"
 
+# The autonomy ledger (docs/AUTONOMY.md §3). A SEPARATE file from the index, and
+# deliberately so: the index is derived data that `reindex` deletes and rebuilds
+# from the files on disk, whereas a run's history is a primary record that
+# nothing can regenerate. Different durability class, different file.
+LEDGER_PATH = INDEX_DIR / "ledger.db"
+
+# Global kill switch (docs/AUTONOMY.md §4). A file rather than a database row so
+# that it can be set, read and cleared by hand — with `touch` and `rm`, from any
+# process, while the database is locked, and while nothing of ours is running.
+STOP_FILE = MACHINE_DIR / "STOP"
+
 # Raw machine-readable imports — a claude.ai export's conversations.json. Not
 # content: every readable form of what they hold lives in a project folder (see
 # features.materialize). Kept because re-ingesting them is how the index is

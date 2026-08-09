@@ -567,12 +567,246 @@ def cmd_paths(args) -> int:
     print(f"  machinery: {config.MACHINE_DIR}")
     print(dim("    · hidden, and nothing in it needs opening: index, raw imports,"))
     print(dim("      archive, proposals, routing aliases"))
+    print(f"  ledger:    {config.LEDGER_PATH}")
+    print(dim("    · run history: a primary record, so `reindex` cannot reach it"))
+    if config.STOP_FILE.exists():
+        print(yellow(f"  STOP:      {config.STOP_FILE}  (kill switch engaged)"))
     return 0
 
 
 def _projects_for_paths() -> list:
     from .features import save as savemod
     return savemod.list_projects()
+
+
+# ---- the autonomy ledger (docs/AUTONOMY.md) --------------------------------
+#
+# Deliberately small. The planner and executor talk to `features.ledger` in
+# Python; the CLI exists so a human can see what is running, stop it, and read
+# what it decided. Anything beyond that would be speculating about a caller that
+# does not exist yet.
+
+def _ledger():
+    from .features import ledger as ledger_mod
+    return ledger_mod, ledger_mod.Ledger.open()
+
+
+def _run_line(run) -> str:
+    mark = {"running": green("●"), "blocked": yellow("◐"), "halted": yellow("■"),
+            "failed": _c("31", "✗"), "done": dim("✓")}.get(run.status, dim("·"))
+    when = util.short_date(run.started_utc) if run.started_utc else "—"
+    return f"  {mark} {cyan(run.run_id)}  {dim(when)}  {dim(run.authority):<12} {run.goal}"
+
+
+def cmd_run_start(args) -> int:
+    mod, led = _ledger()
+    try:
+        run = led.start_run(
+            args.goal,
+            done_definition=args.done or "",
+            authority=args.authority,
+            project=args.project or "",
+            baseline_minutes=args.baseline,
+        )
+    except mod.Halted as exc:
+        print(f"refusing to start: {exc}")
+        print(dim("  release it with `gigabite run resume`"))
+        return 1
+    except mod.LedgerError as exc:
+        print(f"cannot start run: {exc}")
+        return 1
+    print(bold(run.run_id))
+    print(f"  goal:      {run.goal}")
+    if run.done_definition:
+        print(f"  done when: {run.done_definition}")
+    print(f"  authority: {run.authority}")
+    if run.baseline_minutes is not None:
+        print(f"  baseline:  {run.baseline_minutes:g} min by hand")
+    else:
+        print(dim("  no baseline given — this run will not report hours saved"))
+    return 0
+
+
+def cmd_run_list(args) -> int:
+    mod, led = _ledger()
+    runs = led.list_runs(status=args.status or "", limit=args.limit)
+    if mod.halted():
+        reason = mod.stop_reason()
+        print(yellow(f"kill switch ENGAGED — {reason}" if reason else "kill switch ENGAGED"))
+    if not runs:
+        print(dim("no runs yet."))
+        return 0
+    print(bold(f"runs ({len(runs)})"))
+    for run in runs:
+        print(_run_line(run))
+    open_blockers = led.blockers()
+    if open_blockers:
+        print(yellow(f"\n{len(open_blockers)} open blocker(s)") +
+              dim(" — `gigabite run blockers`"))
+    return 0
+
+
+def cmd_run_show(args) -> int:
+    mod, led = _ledger()
+    try:
+        s = led.summary(args.run_id)
+    except mod.UnknownRun:
+        print(f"no such run: {args.run_id}")
+        return 1
+    if args.json:
+        payload = dict(s)
+        payload["run"] = vars(s["run"])
+        print(json.dumps(payload, indent=2, ensure_ascii=False, default=str))
+        return 0
+
+    run = s["run"]
+    print(bold(run.run_id) + f"  {dim(run.status)}")
+    print(f"  goal:      {run.goal}")
+    if run.done_definition:
+        print(f"  done when: {run.done_definition}")
+    print(f"  authority: {run.authority}    version: {run.version}")
+    if run.halt_reason:
+        print(yellow(f"  halted:    {run.halt_reason}"))
+
+    if s["steps"]:
+        counts = ", ".join(f"{k} {v}" for k, v in s["step_counts"].items() if v)
+        print(bold(f"\nsteps ({counts})"))
+        for st in s["steps"]:
+            mark = {"done": dim("✓"), "failed": _c("31", "✗"),
+                    "running": green("●"), "skipped": dim("–")}.get(st["status"], dim("·"))
+            tail = f"  {dim('attempt ' + str(st['attempts']))}" if st["attempts"] > 1 else ""
+            print(f"  {mark} {st['seq']:>2}. {st['kind']}  {st['summary'] or ''}{tail}")
+            if st["error"]:
+                # A step that succeeded on retry keeps the error that made it
+                # retry. Dim it rather than dropping it: why a step needed two
+                # goes is exactly what you want when reading a run back.
+                if st["status"] == "failed":
+                    print(_c("31", f"        {st['error']}"))
+                else:
+                    print(dim(f"        earlier attempt: {st['error']}"))
+
+    if s["decisions"]:
+        print(bold("\ndecisions"))
+        for d in s["decisions"]:
+            print(f"  {d['seq']}. {d['question']}")
+            print(f"     chose {bold(d['chosen'])} — {d['why']}")
+            rejected = json.loads(d["rejected_json"]) if d["rejected_json"] else None
+            if rejected:
+                print(dim(f"     rejected: {rejected}"))
+
+    if s["blockers"]:
+        print(bold("\nblockers"))
+        for b in s["blockers"]:
+            mark = yellow("open") if b["status"] == "open" else dim(b["status"])
+            print(f"  [{b['blocker_id']}] {mark} {b['kind']}: {b['description']}")
+            print(dim(f"        unblock by: {b['what_would_unblock']}"))
+
+    if s["artifacts"]:
+        print(bold("\nartifacts"))
+        for a in s["artifacts"]:
+            print(f"  {a['ref']} {dim(a['kind'] or '')}")
+
+    print(bold("\ncost"))
+    print(f"  your attention: {s['human_touch_minutes']:g} min")
+    if s["wall_minutes"] is not None:
+        print(dim(f"  wall clock:     {s['wall_minutes']:g} min (not charged to you)"))
+    if s["hours_saved"] is not None:
+        saved = s["hours_saved"]
+        print(f"  hours saved:    {green(format(saved, 'g'))}")
+    else:
+        print(dim("  hours saved:    unmeasured (no baseline was set at start)"))
+    return 0
+
+
+def cmd_run_halt(args) -> int:
+    mod, led = _ledger()
+    try:
+        run = led.halt_run(args.run_id, args.reason or "halted by user")
+    except mod.UnknownRun:
+        print(f"no such run: {args.run_id}")
+        return 1
+    print(f"{run.run_id} halted — {run.halt_reason}")
+    return 0
+
+
+def cmd_run_stop(args) -> int:
+    """The global kill switch."""
+    mod, led = _ledger()
+    halted_runs = led.halt_all(args.reason or "")
+    print(yellow("kill switch ENGAGED") + f"  ({mod.stop_file()})")
+    if halted_runs:
+        print(f"  halted {len(halted_runs)} run(s): {', '.join(halted_runs)}")
+    else:
+        print(dim("  nothing was in flight."))
+    print(dim("  nothing new will start until `gigabite run resume`."))
+    return 0
+
+
+def cmd_run_resume(args) -> int:
+    mod, _led = _ledger()
+    if mod.release_stop():
+        print("kill switch released.")
+        print(dim("  halted runs stay halted — restart them individually, on purpose."))
+    else:
+        print(dim("kill switch was not set."))
+    return 0
+
+
+def cmd_run_blockers(args) -> int:
+    _mod, led = _ledger()
+    rows = led.blockers(run_id=args.run or "", status="" if args.all else "open")
+    if not rows:
+        print(dim("no open blockers."))
+        return 0
+    print(bold(f"blockers ({len(rows)})"))
+    for b in rows:
+        mark = yellow("open") if b["status"] == "open" else dim(b["status"])
+        print(f"  [{b['blocker_id']}] {mark} {cyan(b['run_id'])} {b['kind']}: {b['description']}")
+        print(dim(f"        unblock by: {b['what_would_unblock']}"))
+    return 0
+
+
+def cmd_run_resolve(args) -> int:
+    _mod, led = _ledger()
+    led.resolve_blocker(args.blocker_id, "abandoned" if args.abandon else "resolved")
+    print(f"blocker {args.blocker_id} marked {'abandoned' if args.abandon else 'resolved'}.")
+    return 0
+
+
+def cmd_run_finish(args) -> int:
+    mod, led = _ledger()
+    try:
+        run = led.finish_run(args.run_id, args.status)
+    except mod.UnknownRun:
+        print(f"no such run: {args.run_id}")
+        return 1
+    print(f"{run.run_id} → {run.status}")
+    return 0
+
+
+def cmd_run_touch(args) -> int:
+    """Record attention spent on a run — the numerator of the oversight cost."""
+    mod, led = _ledger()
+    try:
+        run = led.add_human_time(args.run_id, args.minutes * 60.0)
+    except mod.UnknownRun:
+        print(f"no such run: {args.run_id}")
+        return 1
+    print(f"{run.run_id}: {run.human_touch_seconds / 60.0:g} min of your attention so far")
+    return 0
+
+
+def cmd_audit(args) -> int:
+    _mod, led = _ledger()
+    rows = led.audit_trail(run_id=args.run or "", limit=args.limit)
+    if not rows:
+        print(dim("nothing audited yet."))
+        return 0
+    for r in rows:
+        when = (r["ts_utc"] or "")[:19].replace("T", " ")
+        print(f"  {dim(when)}  {cyan(r['run_id'] or '—')}  "
+              f"{r['action_class']}/{r['action']}  {bold(r['disposition'])}")
+    return 0
 
 
 def cmd_relocate(args) -> int:
@@ -739,6 +973,67 @@ def build_parser() -> argparse.ArgumentParser:
     prt.add_argument("--json", action="store_true")
     prt.set_defaults(func=cmd_route)
 
+    # -- the autonomy ledger -------------------------------------------------
+    prn = sub.add_parser("run", help="the autonomy ledger: missions, steps, blockers, kill switch")
+    rsub = prn.add_subparsers(dest="run_command")
+
+    rs = rsub.add_parser("start", help="open a run (a mission that outlives this process)")
+    rs.add_argument("goal", help="what this run is for")
+    rs.add_argument("--done", help="definition of done — how we know it worked")
+    rs.add_argument("--authority", choices=["passive", "advisory", "supervised", "full"],
+                    default="supervised", help="default: supervised (autonomy is earned, see docs/AUTONOMY.md)")
+    rs.add_argument("--project", "-p")
+    rs.add_argument("--baseline", type=float, metavar="MIN",
+                    help="minutes this would take by hand — without it the run cannot report hours saved")
+    rs.set_defaults(func=cmd_run_start)
+
+    rl = rsub.add_parser("list", help="what has run and what is running")
+    rl.add_argument("--status", choices=list(("planned", "running", "blocked", "halted", "done", "failed")))
+    rl.add_argument("--limit", type=int, default=20)
+    rl.set_defaults(func=cmd_run_list)
+
+    rsh = rsub.add_parser("show", help="one run in full: steps, decisions, blockers, cost")
+    rsh.add_argument("run_id")
+    rsh.add_argument("--json", action="store_true")
+    rsh.set_defaults(func=cmd_run_show)
+
+    rh = rsub.add_parser("halt", help="stop one run")
+    rh.add_argument("run_id")
+    rh.add_argument("--reason")
+    rh.set_defaults(func=cmd_run_halt)
+
+    rst = rsub.add_parser("stop", help="GLOBAL KILL SWITCH: halt everything, block anything new")
+    rst.add_argument("--reason")
+    rst.set_defaults(func=cmd_run_stop)
+
+    rrs = rsub.add_parser("resume", help="release the kill switch (halted runs stay halted)")
+    rrs.set_defaults(func=cmd_run_resume)
+
+    rb = rsub.add_parser("blockers", help="what is parked, and what would unblock it")
+    rb.add_argument("--run")
+    rb.add_argument("--all", action="store_true", help="include resolved and abandoned")
+    rb.set_defaults(func=cmd_run_blockers)
+
+    rrv = rsub.add_parser("resolve", help="close a blocker")
+    rrv.add_argument("blocker_id", type=int)
+    rrv.add_argument("--abandon", action="store_true", help="close it as never-getting-done")
+    rrv.set_defaults(func=cmd_run_resolve)
+
+    rf = rsub.add_parser("finish", help="close a run")
+    rf.add_argument("run_id")
+    rf.add_argument("--status", choices=["done", "failed", "blocked"], default="done")
+    rf.set_defaults(func=cmd_run_finish)
+
+    rt = rsub.add_parser("touch", help="record minutes of YOUR attention this run cost")
+    rt.add_argument("run_id")
+    rt.add_argument("--minutes", type=float, required=True)
+    rt.set_defaults(func=cmd_run_touch)
+
+    pau = sub.add_parser("audit", help="every gated action and how it was dispositioned")
+    pau.add_argument("--run")
+    pau.add_argument("--limit", type=int, default=50)
+    pau.set_defaults(func=cmd_audit)
+
     pco = sub.add_parser("core", help="print the operating protocol (~/.core/core.md)")
     pco.set_defaults(func=cmd_core)
 
@@ -753,5 +1048,9 @@ def main(argv: Optional[list] = None) -> int:
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
         parser.print_help()
+        return 0
+    # A command with subcommands (`run`) sets no func until one is chosen.
+    if not getattr(args, "func", None):
+        parser.parse_args([args.command, "--help"])
         return 0
     return args.func(args)
