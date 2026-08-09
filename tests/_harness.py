@@ -57,6 +57,7 @@ _DERIVED = (
     "LEDGER_PATH", "STOP_FILE", "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_GRANOLA",
     "HISTORICAL_DIR", "PROPOSALS_DIR", "ORIGINALS_DIR", "ALIASES_FILE",
     "INBOX_CLAUDE_AI", "INBOX_GRANOLA", "INBOX_DIR",
+    "CLAUDE_CODE_PROJECTS_DIR",
 )
 
 
@@ -127,6 +128,11 @@ def _repoint(knowledge: Path, core: Path) -> None:
     config.INBOX_CLAUDE_AI = config.SOURCES_CLAUDE_AI
     config.INBOX_GRANOLA = config.SOURCES_GRANOLA
     config.INBOX_DIR = config.SOURCES_DIR
+    # NOT derived from KNOWLEDGE_DIR — it points at ~/.claude/projects, so
+    # without this a test that runs `ingest` reads the user's real Claude
+    # Code transcripts: slow, and it makes results depend on their history.
+    config.CLAUDE_CODE_PROJECTS_DIR = knowledge.parent / "claude-projects"
+    config.CLAUDE_CODE_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # A scratch area for tests that want a Store but not a whole knowledge root —
