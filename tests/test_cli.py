@@ -23,11 +23,19 @@ means that if one of those keys is ever renamed, ambient recall stops working
 **silently and permanently**, with no error anywhere. Those tests are the only thing
 standing between a rename and that outcome.
 
+`TestTheRecallHook` runs that shell script for real, against a shim binary and the
+temp knowledge root, because the contract tests above pin the JSON and not the
+thirty lines of bash that consume it.
+
     python3 -m unittest discover -s tests        (from the repo root)
 """
 
 import contextlib
 import io
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 import json
 import re
 import unittest
@@ -153,6 +161,134 @@ class TestRouteJsonContract(CliTestCase):
         code, out = run("route", "widget", "pricing", "anchor")
         self.assertEqual(code, 0)
         self.assertIn("context:", out)
+
+    def test_human_output_names_the_register(self):
+        code, out = run("route", "what", "did", "we", "decide", "about", "widget")
+        self.assertEqual(code, 0)
+        self.assertIn("register: brief", out)
+
+    def test_the_payload_carries_the_register(self):
+        """Added alongside the six-key hit contract, not instead of it — the hook
+        reads `register.mode` and every one of those keys off the same payload."""
+        d = self.payload("what", "did", "we", "decide", "about", "widget", "pricing")
+        reg = d["register"]
+        self.assertIn(reg["mode"], ("spar", "brief", "execute"))
+        for key in ("mode", "confidence", "reason", "signals"):
+            self.assertIn(key, reg)
+
+    def test_a_research_prompt_recalls_exactly_what_it_did_before(self):
+        """Half the done-condition for the register router: adding modes must not
+        change what a question about past work retrieves."""
+        d = self.payload("what", "did", "we", "decide", "about", "widget", "pricing")
+        self.assertEqual(d["register"]["mode"], "brief")
+        self.assertTrue(d["hits"])
+        self.assertTrue([h for h in d["hits"] if h["score"] < -1.0])
+
+    def test_a_sparring_turn_retrieves_nothing_at_all(self):
+        """The other half: a short volley must not reach the index. Not filtered
+        afterwards — never queried, which is where the milliseconds and the
+        `search(record=True)` write both are."""
+        d = self.payload("yeah", "that", "makes", "sense")
+        self.assertEqual(d["register"]["mode"], "spar")
+        self.assertEqual(d["hits"], [])
+
+    def test_a_short_prompt_naming_a_known_project_still_recalls(self):
+        """"widget pricing" is two content words and no verb, so by text alone it is
+        a volley. They are `acme`'s own keywords, which makes it a topic — and the
+        project axis is allowed to move a turn up to `brief`, never down."""
+        d = self.payload("widget", "pricing")
+        self.assertEqual(d["register"]["mode"], "brief")
+        self.assertTrue(d["hits"])
+
+    def test_a_sparring_turn_still_returns_the_whole_payload_shape(self):
+        """The hook json.loads() one shape. A mode that returns a different one is
+        the silent-failure case this class exists to prevent."""
+        d = self.payload("yeah", "that", "makes", "sense")
+        self.assertIsInstance(d["hits"], list)
+        self.assertIsInstance(d["context"], dict)
+        for key in ("project", "confidence"):
+            self.assertIn(key, d["context"])
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+HOOK_SOURCE = REPO_ROOT / "install" / "hooks" / "gg-recall.sh"
+
+
+@unittest.skipUnless(Path("/bin/bash").exists() and Path("/usr/bin/python3").exists(),
+                     "the hook is bash + /usr/bin/python3 by construction")
+class TestTheRecallHook(CliTestCase):
+    """The shell script itself, run end to end against a shim binary.
+
+    This is the product's primary surface and it had no coverage at all: it
+    swallows every error and exits 0 by design, so any mistake inside it is silent
+    and permanent. Running the real file — rather than asserting on the JSON it
+    happens to parse — is the only way a change to those thirty lines gets caught.
+
+    `__GIGABITE_BIN__` is replaced with a shim that runs this working copy, and the
+    subprocess inherits `GIGABITE_KNOWLEDGE_DIR` from `TempRoot`, so nothing here
+    can reach the real knowledge base.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.bin_dir = Path(tempfile.mkdtemp(prefix="gigabite-hook-"))
+        self.addCleanup(shutil.rmtree, str(self.bin_dir), True)
+        self.shim = self.bin_dir / "gigabite"
+        self.shim.write_text('#!/bin/sh\nexec /usr/bin/python3 -m gigabite "$@"\n')
+        self.shim.chmod(0o755)
+        self.hook = self.install_hook(str(self.shim))
+
+    def install_hook(self, binary: str) -> Path:
+        path = self.bin_dir / "gg-recall.sh"
+        path.write_text(HOOK_SOURCE.read_text(encoding="utf-8")
+                        .replace("__GIGABITE_BIN__", binary), encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def fire(self, payload, hook=None):
+        env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
+        proc = subprocess.run(["/bin/bash", str(hook or self.hook)],
+                              input=payload, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True)
+        return proc.returncode, proc.stdout
+
+    def prompt(self, text, hook=None):
+        return self.fire(json.dumps({"prompt": text}), hook=hook)
+
+    def test_a_research_prompt_injects_the_recall_block(self):
+        code, out = self.prompt("what did we decide about the widget pricing anchor")
+        self.assertEqual(code, 0)
+        self.assertIn("[gigabite recall", out)
+        self.assertIn("Widget pricing decision", out)
+
+    def test_a_sparring_turn_injects_nothing(self):
+        """The done-condition. Four words mid-conversation, and the hook is silent
+        even though the corpus would have matched on 'that' and 'sense'."""
+        code, out = self.prompt("yeah that makes sense")
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+
+    def test_a_short_imperative_is_not_treated_as_sparring(self):
+        """'move the repo' clears the spar ceiling on length alone; it is an
+        instruction, and instructions get their context."""
+        code, out = self.prompt("commit the widget pricing note")
+        self.assertEqual(code, 0)
+        self.assertIn("[gigabite recall", out)
+
+    def test_it_exits_zero_when_the_binary_is_missing(self):
+        """A moved install directory must degrade to no recall, never to a broken
+        prompt. This is the failure mode ROADMAP item 8 names."""
+        hook = self.install_hook(str(self.bin_dir / "does-not-exist"))
+        code, out = self.prompt("what did we decide about widget pricing", hook=hook)
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+
+    def test_it_exits_zero_on_input_that_is_not_json(self):
+        for payload in ("", "not json at all", "{}", '{"prompt": null}'):
+            code, out = self.fire(payload)
+            self.assertEqual(code, 0, repr(payload))
+            self.assertEqual(out, "", repr(payload))
 
 
 # ---------------------------------------------------------------------------

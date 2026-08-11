@@ -15,7 +15,9 @@ prompt=$(printf '%s' "$input" | "$PY" -c 'import sys,json;
 try: print(json.load(sys.stdin).get("prompt",""))
 except Exception: pass' 2>/dev/null)
 
-# skip trivial / empty prompts
+# skip trivial / empty prompts. A cheap pre-filter that saves the subprocess below
+# on turns the register router would call `spar` anyway; it can only ever suppress,
+# never inject, so it cannot disagree with the router in the expensive direction.
 [ -z "$prompt" ] && exit 0
 words=$(printf '%s' "$prompt" | wc -w | tr -d ' ')
 [ "${words:-0}" -lt 3 ] && exit 0
@@ -27,6 +29,11 @@ import os, json
 try:
     d = json.loads(os.environ.get("GG_JSON", ""))
 except Exception:
+    raise SystemExit(0)
+# The register router (AUTONOMY §7): a sparring turn gets nothing injected. An
+# absent or unrecognised mode falls back to injecting, because a stale binary that
+# says nothing about the register should behave the way it did before it existed.
+if (d.get("register") or {}).get("mode") == "spar":
     raise SystemExit(0)
 hits = d.get("hits") or []
 # bm25 scores are negative; more negative = stronger. Only inject strong hits.

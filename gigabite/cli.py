@@ -293,17 +293,22 @@ def cmd_route(args) -> int:
     from .features import routing
     store = _open()
     prompt = " ".join(args.prompt)
-    result = routing.route(store, prompt, limit=args.limit)
+    result = routing.route(store, prompt, limit=args.limit,
+                           previous_was_correction=args.after_correction,
+                           seconds_since_last=args.seconds_since_last)
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
         return 0
     ctx = result["context"]
+    reg = result["register"]
     print(dim(f"context: {ctx['project'] or '(unscoped)'}"
               + (f":{ctx['layer']}" if ctx['layer'] else "")
               + f"  [{ctx['confidence']}] — {ctx['reason']}"))
+    print(dim(f"register: {reg['mode']}  [{reg['confidence']}] — {reg['reason']}"))
     hits = result["hits"]
     if not hits:
-        print(dim("no prior context found"))
+        print(dim("recall suppressed for a sparring turn" if reg["mode"] == routing.SPAR
+                  else "no prior context found"))
         return 0
     print(dim(f"\nrecalled {len(hits)} passage(s):"))
     for h in hits:
@@ -1137,6 +1142,12 @@ def build_parser() -> argparse.ArgumentParser:
     prt.add_argument("prompt", nargs="+")
     prt.add_argument("--limit", type=int, default=6)
     prt.add_argument("--json", action="store_true")
+    # Register signals a caller may know and the recall hook does not. Both are
+    # optional on purpose: the resolver must never depend on being told.
+    prt.add_argument("--after-correction", action="store_true",
+                     help="the previous turn corrected the answer (biases away from spar)")
+    prt.add_argument("--seconds-since-last", type=float, default=None,
+                     help="seconds since the previous prompt (a long pause vetoes spar)")
     prt.set_defaults(func=cmd_route)
 
     # -- the autonomy ledger -------------------------------------------------
