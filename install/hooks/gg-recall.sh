@@ -15,12 +15,12 @@ prompt=$(printf '%s' "$input" | "$PY" -c 'import sys,json;
 try: print(json.load(sys.stdin).get("prompt",""))
 except Exception: pass' 2>/dev/null)
 
-# skip trivial / empty prompts. A cheap pre-filter that saves the subprocess below
-# on turns the register router would call `spar` anyway; it can only ever suppress,
-# never inject, so it cannot disagree with the router in the expensive direction.
+# An empty prompt has nothing to route. Everything else goes to the router: the
+# `register` axis below owns the "is this turn worth recalling for?" call, so a
+# word-count pre-filter here could only disagree with it — and it did, silently,
+# in the direction that loses recall: `widget pricing` is two words and a real
+# project's keywords, which is precisely the short turn that should recall.
 [ -z "$prompt" ] && exit 0
-words=$(printf '%s' "$prompt" | wc -w | tr -d ' ')
-[ "${words:-0}" -lt 3 ] && exit 0
 
 json=$("$GIGABITE_BIN" route --json "$prompt" 2>/dev/null) || exit 0
 

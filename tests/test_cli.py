@@ -186,16 +186,21 @@ class TestRouteJsonContract(CliTestCase):
 
     def test_a_sparring_turn_retrieves_nothing_at_all(self):
         """The other half: a short volley must not reach the index. Not filtered
-        afterwards — never queried, which is where the milliseconds and the
-        `search(record=True)` write both are."""
+        afterwards — never queried, which is what skips the `search(record=True)`
+        write and the snippets, though not any measurable latency."""
         d = self.payload("yeah", "that", "makes", "sense")
         self.assertEqual(d["register"]["mode"], "spar")
         self.assertEqual(d["hits"], [])
 
-    def test_a_short_prompt_naming_a_known_project_still_recalls(self):
+    def test_the_project_axis_promotes_a_short_prompt_naming_a_known_project(self):
         """"widget pricing" is two content words and no verb, so by text alone it is
         a volley. They are `acme`'s own keywords, which makes it a topic — and the
-        project axis is allowed to move a turn up to `brief`, never down."""
+        project axis is allowed to move a turn up to `brief`, never down.
+
+        This pins the payload only. Whether the *hook* recalls for it is a separate
+        question and lives in `TestTheRecallHook`, because that is the surface the
+        user has — a pre-filter in the shell script once made this pass here and
+        inject nothing there."""
         d = self.payload("widget", "pricing")
         self.assertEqual(d["register"]["mode"], "brief")
         self.assertTrue(d["hits"])
@@ -275,6 +280,19 @@ class TestTheRecallHook(CliTestCase):
         code, out = self.prompt("commit the widget pricing note")
         self.assertEqual(code, 0)
         self.assertIn("[gigabite recall", out)
+
+    def test_a_short_prompt_naming_a_known_project_still_recalls(self):
+        """Two words, no verb, and it must still recall — they are `acme`'s own
+        keywords, so the project axis promotes the turn to `brief`.
+
+        The router decided that correctly all along; the hook then threw it away in
+        a `wc -w` pre-filter above the router call, so this passed at the CLI layer
+        and injected nothing where it counts. Asserted here, on the real script,
+        because that is the only layer whose answer the user ever sees."""
+        code, out = self.prompt("widget pricing")
+        self.assertEqual(code, 0)
+        self.assertIn("[gigabite recall", out)
+        self.assertIn("Widget pricing decision", out)
 
     def test_it_exits_zero_when_the_binary_is_missing(self):
         """A moved install directory must degrade to no recall, never to a broken

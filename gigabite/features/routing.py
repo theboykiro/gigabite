@@ -325,9 +325,10 @@ def route(store, prompt: str, *, limit: int = 6, scope_to_project: bool = True,
     context. Falling through to keyword matching gives the real project instead.
 
     A `spar` turn returns no hits and never touches the index. Skipping the query
-    rather than discarding its results afterwards is the point: the search is where
-    the milliseconds are, and `search(record=True)` also writes, so a three-word
-    volley now costs no write transaction either.
+    rather than discarding its results afterwards is what buys anything: `search`
+    is ~1-4ms of a ~220ms hook, so this is not a latency win — the subprocess spawn
+    is the cost and we are already inside it. What it does buy is the ~1.5KB of
+    recall never injected into a volley, and no `search(record=True)` write.
 
     **The project axis can rescue a turn from `spar`.** "pricing anchor" is four
     words with no verb, which by text alone is a volley — but if those words are the

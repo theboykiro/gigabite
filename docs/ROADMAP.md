@@ -83,7 +83,7 @@ in anger until item 5 — which is the whole reason it is built first.
 
 ---
 
-## 3. ○ Register router (spar / brief / execute)
+## 3. ◐ Register router (spar / brief / execute)
 
 *Depends on: nothing. Parallel — pick it up any time.*
 
@@ -113,6 +113,22 @@ hand.
 
 **Wrong if.** It needs a model call to decide. That puts a round-trip in front of
 every prompt to save a round-trip.
+
+**Landed so far — the recall half only.** `resolve_register` in
+`features/routing.py` classifies spar / brief / execute from prompt text alone, no
+model call and no disk read; `route` returns it and skips the query entirely on
+`spar`; `install/hooks/gg-recall.sh` injects nothing for that mode. Pinned by
+`tests/test_register.py` (the classifier, as a fixed-prompt table) and
+`TestTheRecallHook` in `tests/test_cli.py` (the real script, end to end).
+
+**Still open before this is ✅.** The other three columns of §7: tools gated by
+mode, answer shape/length by mode, and the `spar → execute` announcement. The
+latency clause of *Done when* is also unmet and was mis-stated — `search` is
+~1-4ms of a ~220ms hook, so suppressing it saves the injected snippets and the
+`search(record=True)` write, not measurable time. The ~220ms is the subprocess
+spawn, and no mode can avoid it from inside. Two producers are also unwired:
+`--after-correction` and `--seconds-since-last` have no caller, so the
+inter-prompt-latency signal is unreachable in production.
 
 ---
 
