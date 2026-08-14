@@ -1018,7 +1018,9 @@ def cmd_relocate(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="gigabite", description="Local search across all your conversations.")
     p.add_argument("--version", action="version", version=f"gigabite {__version__}")
-    sub = p.add_subparsers(dest="command")
+    # metavar replaces the brace-list of every choice, which would otherwise
+    # re-list the commands hidden below.
+    sub = p.add_subparsers(dest="command", metavar="<command>")
 
     pi = sub.add_parser("ingest", help="scan sources and update the index")
     pi.add_argument("--source", choices=config.ALL_SOURCES)
@@ -1151,7 +1153,13 @@ def build_parser() -> argparse.ArgumentParser:
     prt.set_defaults(func=cmd_route)
 
     # -- the autonomy ledger -------------------------------------------------
-    prn = sub.add_parser("run", help="the autonomy ledger: missions, steps, blockers, kill switch")
+    # run/policy/connect/audit are hidden from --help: nothing in the slash
+    # commands, hooks, bin/, tools/ or install/ calls them yet. They stay fully
+    # wired and documented in docs/AUTONOMY.md — give them a help= again once
+    # something actually drives a run. (Omitting help is what hides a subparser;
+    # help=SUPPRESS renders literally, because argparse formats subactions
+    # without the SUPPRESS check it applies to ordinary arguments.)
+    prn = sub.add_parser("run")
     rsub = prn.add_subparsers(dest="run_command")
 
     rs = rsub.add_parser("start", help="open a run (a mission that outlives this process)")
@@ -1206,7 +1214,7 @@ def build_parser() -> argparse.ArgumentParser:
     rt.add_argument("--minutes", type=float, required=True)
     rt.set_defaults(func=cmd_run_touch)
 
-    ppl = sub.add_parser("policy", help="what the system may do unattended, and what needs you")
+    ppl = sub.add_parser("policy")
     plsub = ppl.add_subparsers(dest="policy_command")
 
     pls = plsub.add_parser("show", help="the effective policy table")
@@ -1238,7 +1246,7 @@ def build_parser() -> argparse.ArgumentParser:
     pll.add_argument("--all", action="store_true", help="include revoked")
     pll.set_defaults(func=cmd_policy_grants)
 
-    pcn = sub.add_parser("connect", help="integrations: what is reachable, and on whose authority")
+    pcn = sub.add_parser("connect")
     cnsub = pcn.add_subparsers(dest="connect_command")
 
     cnl = cnsub.add_parser("list", help="connectors, their operations and their action classes")
@@ -1258,7 +1266,7 @@ def build_parser() -> argparse.ArgumentParser:
     cnc.add_argument("--run", help="decide in the context of a run (authority + grants apply)")
     cnc.set_defaults(func=cmd_connect_check)
 
-    pau = sub.add_parser("audit", help="every gated action and how it was dispositioned")
+    pau = sub.add_parser("audit")
     pau.add_argument("--run")
     pau.add_argument("--limit", type=int, default=50)
     pau.set_defaults(func=cmd_audit)

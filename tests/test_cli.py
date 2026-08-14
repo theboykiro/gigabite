@@ -514,5 +514,43 @@ class TestNoArguments(CliTestCase):
         self.assertIn("usage", out.lower())
 
 
+class TestHelpSurface(CliTestCase):
+    """The autonomy commands are wired but nothing drives them yet, so they stay
+    out of --help. Hidden, not removed: help has to omit them and they still
+    have to run."""
+
+    HIDDEN = ("run", "policy", "connect", "audit")
+
+    def _help(self):
+        # format_help() rather than run("--help"), which exits via SystemExit.
+        return cli.build_parser().format_help()
+
+    def test_help_omits_the_undriven_autonomy_commands(self):
+        listed = {
+            line.split()[0]
+            for line in self._help().splitlines()
+            if line.startswith("    ") and line.split()
+        }
+        for name in self.HIDDEN:
+            self.assertNotIn(name, listed)
+
+    def test_help_still_lists_the_commands_with_callers(self):
+        out = self._help()
+        for name in ("search", "save", "paste", "add", "ingest", "route"):
+            self.assertIn(name, out)
+
+    def test_hidden_commands_still_dispatch(self):
+        for args in (("run", "list"), ("policy", "show"),
+                     ("connect", "list"), ("audit",)):
+            with self.subTest(command=" ".join(args)):
+                code, _ = run(*args)
+                self.assertEqual(code, 0)
+
+    def test_suppress_sentinel_never_leaks_into_help(self):
+        # argparse formats subactions without the SUPPRESS check it applies to
+        # ordinary arguments, so help=SUPPRESS would print the literal string.
+        self.assertNotIn("SUPPRESS", self._help())
+
+
 if __name__ == "__main__":
     unittest.main()
