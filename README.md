@@ -91,6 +91,30 @@ where it belongs instead. Nothing is deleted by the migration; the index is rebu
 afterwards because it is derived data. If you would rather keep the stores elsewhere,
 `GIGABITE_KNOWLEDGE_DIR` and `GIGABITE_CORE_DIR` override both paths.
 
+### Uninstalling
+
+```bash
+cd ~/gigabite && ./uninstall.sh
+```
+
+It shows you exactly what it is about to remove and waits for a yes. `--dry-run`
+prints that list and stops; `--yes` skips the question, and is required when the
+script is fed down a pipe rather than run at a terminal. It is safe to run twice —
+the second time it tells you everything is already gone.
+
+It reverses `install.sh` step for step: the `gigabite` launcher and the `PATH` line
+in your `.zshrc` and `.bash_profile`, the slash commands, the `gg-*` subagents, the
+three skills, the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
+`~/.claude/settings.json`, the scheduled synthesis job and its log. Files it edits
+rather than owns are backed up first, and it tells you where.
+
+**`~/Knowledge` and `~/.core` are never touched**, and the script says so and prints
+where they are. They hold your meetings, your notes and your own `core.md` — the only
+things on the machine a fresh clone cannot rebuild. On the same principle, a command
+or agent carrying one of gigabite's names that gigabite did not write is left exactly
+where it is and reported, never deleted. The clone is left too, because the script is
+running from inside it; it prints the one `rm -rf ~/gigabite` you can run yourself.
+
 ## Getting content in
 
 gigabite is only as useful as the history it holds, so the capture paths are
@@ -236,6 +260,7 @@ the code, the docs, the machine integration, the tests:
 ```
 README.md            start here
 install.sh           one-shot installer (idempotent, non-destructive)
+uninstall.sh         reverses it, and never touches ~/Knowledge or ~/.core
 bin/gigabite         self-locating launcher — this is what ends up on your PATH
 gigabite/            the package
   config.py            paths & constants (overridable via env)
