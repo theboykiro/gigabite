@@ -262,3 +262,15 @@ and your knowledge base will become the most valuable thing on the machine long
 before you notice. Set up a real versioned backup for `~/Knowledge` — the note in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) covers the reasoning. Everything else
 in this system is reproducible from a clone and a script; that folder is not.
+
+## Contributing
+
+Bug reports, ideas, and pull requests are welcome —
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the flow from fork to merge, including for
+people who have not sent a pull request before. The one rule that is not negotiable is
+the boundary above: only code goes in this repository, never content, and never a real
+client name — not even in an example.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
