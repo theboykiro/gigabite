@@ -73,3 +73,22 @@ tells Claude Code *when* to spin the agent up.
    `~/.core/core.md`.
 3. **Reinstall** so the files land in `~/.core/capability/sops/` and `~/.claude/agents/`.
    `list_sops()` picks up the new SOP automatically — no code change.
+
+## Adding a skill instead
+
+If the thing you are describing produces an output for a person rather than governing
+a hand-off, it is a skill. Those live in `install/scaffold/skills/<name>/SKILL.md` and
+install to `~/.claude/skills/<name>/SKILL.md`.
+
+| Skill | What it does |
+|---|---|
+| `meeting-prep` | Locates a meeting, then briefs it from what has already been said and decided — including the threads still open. |
+| `decision-record` | Captures a decision, what was rejected and why, and what would change the answer. Persists through `gigabite save`. |
+| `design-critique` | Reviews a screen or flow against its stated intent and prior decisions, separating a contradiction from a preference. |
+
+Two rules that are easy to get wrong. The directory is required — a bare `.md` file
+does not load — and frontmatter uses `allowed-tools` with a hyphen, since the
+underscore spelling fails validation silently. And a skill **shadows a slash command
+of the same name**, so nothing here may be called `meeting`: that name belongs to the
+command that files a transcript, and a skill taking it would leave the command
+unreachable with no error. `tests/test_skills.py` pins that.

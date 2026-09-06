@@ -108,8 +108,16 @@ request, and are restored automatically the moment a search matches them. Active
 context therefore stays a function of what you actually use.
 
 **Reusable SOPs** are modular, versioned operating procedures loaded by role. They
-drive agent chains such as build → QA → user-review, and they are what the `gg-builder`,
-`gg-reviewer`, and `gg-researcher` subagents load before they start work.
+drive agent chains such as build → QA → user-review, and they are what the `gg-builder`
+and `gg-reviewer` subagents load before they start work.
+
+**Skills** are the other half, and the distinction is worth holding: an SOP governs a
+hand-off between roles, a skill produces an output for a person. Three ship —
+`meeting-prep` builds a brief on an upcoming meeting from what you have already said
+about it, `decision-record` captures a decision along with what was rejected and what
+would change the answer, and `design-critique` reviews a screen against the decisions
+already taken on it. All three consult the index before they answer, and they trigger
+on what you ask for rather than having to be invoked by name.
 
 ## Security posture
 

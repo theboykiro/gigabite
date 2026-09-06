@@ -60,8 +60,10 @@ ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
 synthesis job through launchd, and builds the initial index.
 
 It also installs the Claude Code slash commands (`/gg`, `/search`,
-`/search-status`, `/calendar`, `/meeting`) and the `gg-*` subagents, refreshing its
-own copies on every run so an update reaches them. If a command or agent of that
+`/search-status`, `/calendar`, `/meeting`), the `gg-*` subagents, and three skills
+(`meeting-prep`, `decision-record`, `design-critique`) that trigger on what you ask
+for rather than needing to be named, refreshing its own copies on every run so an
+update reaches them. If a command or agent of that
 name is already yours, it is left alone and the installer tells you it did so. The
 one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
 beside it. Your knowledge base, your notes and your own `core.md` are never touched.
@@ -250,7 +252,7 @@ docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
   claude-commands/     /gg, /search, /search-status, /calendar, /meeting
   hooks/               the ambient-recall UserPromptSubmit hook
-  scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/agents
+  scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/{agents,skills}
   launchd/             the scheduled daily synthesis job
   scripts/             the claude.ai in-browser export helper
 tests/               python3 -m unittest discover -s tests

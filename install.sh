@@ -3,6 +3,7 @@
 #   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
 #   • installs /search and /search-status Claude Code commands (user-level)
+#   • installs the gg-* subagents and the gigabite skills (user-level)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
 set -euo pipefail
@@ -90,7 +91,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "3/7  Installing Claude Code commands + subagents (user-level)"
+say "3/7  Installing Claude Code commands, subagents + skills (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
 # A slash command or agent by one of our names may already be the user's own work.
@@ -133,6 +134,23 @@ if [ -d "$REPO/install/scaffold/agents" ]; then
   for a in "$REPO/install/scaffold/agents/"*.md; do
     [ -e "$a" ] || continue
     install_managed "$a" "$AGENT_DIR/$(basename "$a")" "subagent $(basename "$a" .md)"
+  done
+fi
+
+# Skills auto-trigger off their own description, so they need no invocation by name —
+# which is also why the directory layout is not optional: Claude Code reads a skill
+# from `<name>/SKILL.md`, and a bare `<name>.md` is ignored in silence.
+#
+# The directory name is the skill's name, and a skill SHADOWS a slash command of the
+# same name. That is why none of these is called `meeting`: it would disable /meeting
+# without saying anything. tests/test_skills.py pins that rule.
+if [ -d "$REPO/install/scaffold/skills" ]; then
+  SKILL_DIR="$HOME/.claude/skills"
+  for s in "$REPO/install/scaffold/skills/"*/SKILL.md; do
+    [ -e "$s" ] || continue
+    skill="$(basename "$(dirname "$s")")"
+    mkdir -p "$SKILL_DIR/$skill"
+    install_managed "$s" "$SKILL_DIR/$skill/SKILL.md" "skill $skill"
   done
 fi
 
