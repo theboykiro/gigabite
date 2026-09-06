@@ -333,30 +333,60 @@ def cmd_welcome(args) -> int:
     if example:
         query, d = example
         label = config.SOURCE_LABELS.get(d["source"], d["source"])
-        print(bold("Start here — this finds something, because it is yours already:"))
-        print()
-        print(f'    gigabite search "{query}"')
-        print(dim(f"      → {d['title']}   ({label}, {_human_date(d.get('created_utc') or '')})"))
+        terminal_cmd = f'    gigabite search "{query}"'
+        terminal_hit = dim(f"      \u2192 {d['title']}   ({label}, "
+                           f"{_human_date(d.get('created_utc') or '')})")
     else:
         # No title-derived query could be verified, so the honest fallback is the
         # one command that cannot miss: a document opened by its own id.
         d = next(iter(store.iter_documents(include_historical=False)), None)
-        print(bold("Start here — one of your own documents, opened by id:"))
-        print()
-        print(f"    gigabite doc {d['doc_id']}")
-        print(dim("      then: gigabite search \"<any word you saw in it>\""))
-    print()
+        query = None
+        terminal_cmd = f"    gigabite doc {d['doc_id']}"
+        terminal_hit = dim('      then: gigabite search "<any word you saw in it>"')
 
-    print(dim("Then, whenever you want it:"))
     if _claude_code_present():
-        print(dim("  · /search <anything> inside Claude Code — works from any folder"))
-        print(dim("  · relevant past conversations are pulled in as you type; you do"))
-        print(dim("    not have to ask for them"))
-    print(dim(f"  · anything you drop in {_tilde(config.KNOWLEDGE_DIR)}/<project>/ is indexed"))
+        # Said first, and as an instruction rather than a note. The ambient recall
+        # hook lives in settings.json and the router protocol in CLAUDE.md, and
+        # Claude Code reads both only when a session starts — so someone who
+        # installs with it already open sees none of this work, and concludes the
+        # tool is broken rather than that it is waiting.
+        print(bold("One thing before it works — reopen Claude Code."))
+        print()
+        print("    quit Claude Code, then start it again")
+        print(dim("  It reads its settings once, when it starts. Nothing below is live"))
+        print(dim("  until you have done that."))
+        print()
+        if query:
+            print(bold("Then just ask it, the way you would ask a colleague:"))
+            print()
+            print(f'    "what did we decide about {query}?"')
+            print(dim("  Your own history is pulled in before it answers. There is no"))
+            print(dim("  command to remember, and it works in any folder."))
+        else:
+            print(bold("Then ask it about anything you have worked on before."))
+            print(dim("  Your own history is pulled in before it answers."))
+        print()
+        print(dim("Prefer the terminal? This works now, without restarting:"))
+        print(dim(terminal_cmd))
+        print(terminal_hit)
+    else:
+        print(bold("Start here — this finds something, because it is yours already:"))
+        print()
+        print(terminal_cmd)
+        print(terminal_hit)
+
+    print()
+    print(dim("Also worth knowing:"))
+    if _claude_code_present():
+        # Demoted rather than dropped. Asking in plain English is the interface
+        # worth teaching first, but a command you can reach for on purpose is the
+        # thing people want the moment recall does not surface what they meant.
+        print(dim("  \u00b7 /search <anything> in Claude Code, to search on purpose"))
+    print(dim(f"  \u00b7 anything you drop in {_tilde(config.KNOWLEDGE_DIR)}/<project>/ is indexed"))
     print(dim("    where it sits — no filing step, no import"))
     if not per_source.get(config.SOURCE_CLAUDE_AI):
-        print(dim("  · your Claude.ai chats are not in here — only Claude Code is local."))
-        print(dim("    claude.ai → Settings → Export data, unzip into"))
+        print(dim("  \u00b7 your Claude.ai chats are not in here — only Claude Code is local."))
+        print(dim("    claude.ai \u2192 Settings \u2192 Export data, unzip into"))
         print(dim(f"    {_tilde(config.SOURCES_CLAUDE_AI)}/, then run `gigabite ingest`"))
     print()
     print(dim("`gigabite status` for the index itself. This brief re-runs any time: "
