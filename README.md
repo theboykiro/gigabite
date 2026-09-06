@@ -25,29 +25,51 @@ it, start with [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md).
 
 ## Installing
 
-Installation is a single script, and it is safe to run repeatedly:
+One command, from nothing to working:
 
 ```bash
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.sh | bash
 ```
 
-The script is idempotent and additive. It creates the `~/.core` and `~/Knowledge`
-layouts without ever overwriting content you already have, puts the `gigabite`
-launcher on your `PATH`, installs the Claude Code slash commands (`/gg`, `/search`,
-`/recall-status`, `/calendar`, `/granola`) and the `gg-*` subagents, appends the
-router protocol to `~/.claude/CLAUDE.md`, registers the ambient-recall hook in
-`~/.claude/settings.json`, schedules the gated end-of-day synthesis job through
-launchd, and finally builds the initial index. Where a file already exists it says
-so and leaves it alone.
+That checks your Mac can run it, downloads the code to `~/gigabite`, and runs the
+installer. Run it again any time to update.
+
+If you would rather read a script than pipe it into a shell — a reasonable instinct,
+and the reason the file is short and plain — download it, read it, then run it:
+
+```bash
+curl -fsSL -o bootstrap.sh https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.sh
+less bootstrap.sh
+bash bootstrap.sh
+```
+
+Or skip it entirely and do the two steps yourself. Clone into your home folder
+rather than Desktop, Documents or Downloads: macOS blocks background jobs from
+those, so the daily synthesis would never run.
+
+```bash
+git clone https://github.com/theboykiro/gigabite.git ~/gigabite
+cd ~/gigabite && ./install.sh
+```
+
+`install.sh` is the same script in all three cases, and it is safe to re-run. It
+creates the `~/.core` and `~/Knowledge` layouts without ever overwriting content you
+already have, puts the `gigabite` launcher on your `PATH`, appends the router
+protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
+ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
+synthesis job through launchd, and builds the initial index.
+
+Worth knowing before you run it, because "additive" is not the whole truth: the
+slash commands it installs (`/gg`, `/search`, `/recall-status`, `/calendar`,
+`/granola`) and the `gg-*` subagents are rewritten on every run, so if you already
+have a command or an agent by one of those names, yours is replaced. It also
+refreshes `~/Knowledge/README.md`, keeping your old copy alongside it. Everything
+else — your knowledge base, your notes, your own `core.md` — is left alone.
 
 You need macOS and Python 3.9 or later; the system Python is fine. There is nothing
-to `pip install`.
-
-On a new machine the whole setup is a clone and a run:
-
-```bash
-git clone <your-repo-url> && cd giga-bite && ./install.sh
-```
+to `pip install`. Claude Code is not strictly required — `gigabite search` works on
+its own in a terminal — but the router, the ambient recall and the slash commands
+all live inside it, so without it you have the index and not the point of it.
 
 Code comes from git, but your content does not. `~/.core` and `~/Knowledge` are
 local, and they rebuild themselves as you add sources again. Re-run `./install.sh`
