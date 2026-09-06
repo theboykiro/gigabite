@@ -161,11 +161,14 @@ _WELCOME_KINDS = (
     ("note", (config.SOURCE_NOTE,)),
 )
 
-# Two source labels only make sense to us. "Note" is the row in `status`; what
-# the user did was put a file somewhere.
+# Some source labels only make sense to us. "Note" is the row in `status`; what the
+# user did was put a file somewhere. "Meeting" is worse here — it is a fine row in
+# `status` but this sentence lists where things came FROM, and "meetings" has already
+# been counted in the half before it.
 _WELCOME_SOURCE_LABELS = {
     config.SOURCE_NOTE: "files you added yourself",
     config.SOURCE_CALENDAR: "your calendar",
+    config.SOURCE_MEETING: "transcripts you filed",
 }
 
 _WORD = re.compile(r"[^\W_]{4,}", re.UNICODE)
