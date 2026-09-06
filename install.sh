@@ -2,7 +2,7 @@
 # gigabite installer — idempotent, additive, non-destructive.
 #   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
-#   • installs /search and /recall-status Claude Code commands (user-level)
+#   • installs /search and /search-status Claude Code commands (user-level)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
 set -euo pipefail
@@ -111,10 +111,18 @@ install_managed() { # src dest label
   sed "s|__GIGABITE_BIN__|$BIN|g" "$1" > "$2"
   ok "$3"
 }
-for f in gg search recall-status calendar granola; do
+for f in gg search search-status calendar granola; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
   install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
+# /recall-status was renamed to /search-status: it reports on the search index, and
+# "recall" named the mechanism rather than the thing the user is asking about. The
+# old file still works, so leaving it behind would mean two commands for one job.
+# Removed only when it is ours, on the same test as everything else here.
+STALE="$CMD_DIR/recall-status.md"
+if [ -e "$STALE" ] && is_ours "$STALE"; then
+  rm -f "$STALE" && note "removed /recall-status — it is now /search-status"
+fi
 if [ -d "$REPO/install/scaffold/agents" ]; then
   AGENT_DIR="$HOME/.claude/agents"
   mkdir -p "$AGENT_DIR"
@@ -229,11 +237,8 @@ say "6/7  Building the initial index"
 
 # ---------------------------------------------------------------------------
 say "7/7  Done"
-"$BIN" status || true
 echo
-note "Search from the terminal:   gigabite search \"...\""
-note "Search from Claude Code:     /search ...   (works from any folder)"
-note "Add anything by hand:        put the file in $KNOW_DIR/<project>/ — that is all"
-note "  a copied transcript: gigabite paste (or /granola); a screenshot: gigabite add FILE"
-note "Add Claude.ai chats:         put your export in $KNOW_DIR/.gigabite/imports/claude_ai/"
-note "  then: gigabite materialize   (writes each chat out as a file you can open)"
+# `status` reports on a database; this reports on the user's own work and hands
+# them one command that is verified to find something in it. Read-only, and
+# re-runnable at any time with `gigabite welcome`.
+"$BIN" welcome || warn "installed, but couldn't summarise the index — try: gigabite welcome"

@@ -5,7 +5,7 @@ because the shipped slash commands are thin wrappers around these:
 
     /gg             -> core, ingest --no-remote, route --json
     /search         -> ingest, search
-    /recall-status  -> ingest, status
+    /search-status  -> ingest, status
     /calendar       -> calendar add --json-file, calendar agenda --day today
 
 `Store.search` had good coverage; `gigabite search` had none, so argument parsing,

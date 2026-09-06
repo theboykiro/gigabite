@@ -60,7 +60,7 @@ ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
 synthesis job through launchd, and builds the initial index.
 
 It also installs the Claude Code slash commands (`/gg`, `/search`,
-`/recall-status`, `/calendar`, `/granola`) and the `gg-*` subagents, refreshing its
+`/search-status`, `/calendar`, `/granola`) and the `gg-*` subagents, refreshing its
 own copies on every run so an update reaches them. If a command or agent of that
 name is already yours, it is left alone and the installer tells you it did so. The
 one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
@@ -107,7 +107,7 @@ invented for it, because a confidently misfiled note is worse than an unfiled on
 |---|---|
 | **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
 | **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
-| **Granola** | Export a meeting as Markdown into `~/Knowledge/<project>/meetings/`, or copy the transcript and run `/granola` in Claude Code. |
+| **Granola** | Export the meeting as Markdown into `~/Knowledge/<project>/meetings/`. That is the only destination — `/granola` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
 | **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
 | **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
@@ -123,9 +123,9 @@ and documented, but Cloudflare currently blocks it, so the browser export is the
 route that works. The detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
 
 Granola arrives by hand, and deliberately so: nothing here reads Granola's local
-store. A meeting is in the index because you exported it into a project folder or
-copied the transcript and ran `/granola`, which is a route with no credential in it
-and nothing to break when Granola ships an update. A clean pull from their public API
+store. A meeting is in the index because it is a file in
+`~/Knowledge/<project>/meetings/` — a route with no credential in it and nothing to
+break when Granola ships an update. A clean pull from their public API
 is the future route whenever you have access; see [`docs/GRANOLA.md`](docs/GRANOLA.md).
 
 An export is machine-readable rather than readable, so a claude.ai chat would
@@ -156,7 +156,7 @@ the slash commands:
 ```
 /gg what's still open on the traffic drop?    load core + recall + answer
 /search <query>                                search everything
-/recall-status                                 what is indexed right now
+/search-status                                 what is indexed right now
 /calendar                                      after pasting a calendar screenshot
 /granola                                       file the transcript on your clipboard
 ```
@@ -248,7 +248,7 @@ gigabite/            the package
     notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
-  claude-commands/     /gg, /search, /recall-status, /calendar, /granola
+  claude-commands/     /gg, /search, /search-status, /calendar, /granola
   hooks/               the ambient-recall UserPromptSubmit hook
   scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/agents
   launchd/             the scheduled daily synthesis job
