@@ -18,7 +18,7 @@ them the user's knowledge. So the layout is now the shortest true statement of
 what this folder is::
 
     ~/Knowledge/
-        acme/           one folder per project. A project's subfolders are its
+        acme/              one folder per project. A project's subfolders are its
         gigabite/          layers (meetings/, delivery/, …). Files are indexed
         contoso/           where they sit — no drop box, no filing step.
         README.md          what this folder is, in twenty lines

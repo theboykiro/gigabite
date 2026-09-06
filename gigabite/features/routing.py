@@ -29,7 +29,7 @@ from .. import config
 # An explicit project marker: '@project' or '@project:layer'.
 #
 # The leading lookbehind is load-bearing. Without it the '@' in an email address
-# matched, so 'jane.doe@acme.com' in the signature of a forwarded mail read
+# matched, so 'jane.doe@contoso.com' in the signature of a forwarded mail read
 # as '@contoso' and filed the document under that project — and 'jane@Janes-
 # MacBook-Pro' in a shell prompt read as a marker too. A marker is something typed
 # at a word boundary, never the middle of an address.
