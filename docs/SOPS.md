@@ -1,10 +1,21 @@
 # SOPs & subagents
 
-SOPs (standard operating procedures) are modular, versioned markdown files that
-define **how a process runs** — a build → QA → review chain, a research pass, a PM
-decision. They are separate from the core protocol on purpose: the core governs
-*how the operator works* in general; an SOP governs *how a specific job gets done*,
-and agents mix and match them per task (ARCHITECTURE §2.1, README "Reusable SOPs").
+SOPs (standard operating procedures) are markdown files that define **how work moves
+between roles** — who does what, in what order, and what must be true before it passes
+to the next role. They are separate from the core protocol on purpose: the core governs
+*how the operator works* in general; an SOP governs the *hand-offs within one chain*.
+
+## What is not an SOP
+
+The test is whether it describes a hand-off. If it says what one role gives another
+and the gate the work must clear first, it is an SOP. If it says how to produce an
+output for a person, it is a **skill** — a different mechanism, matched to a task
+rather than loaded by a role.
+
+Two files here failed that test and were removed: one described how to make a product
+decision, the other how to run a research pass. Both were useful and neither was a
+process; they were skills carrying a `role:` field, and shipping them as SOPs made the
+category meaningless. If you want them, they belong in a skill.
 
 ## What's here
 
@@ -13,8 +24,6 @@ Scaffold SOPs (`install/scaffold/sops/`), installed to `~/.core/capability/sops/
 | SOP | Role(s) | What it governs |
 |---|---|---|
 | `sop-build-qa-review.md` | builder, qa, reviewer | Build → QA → user-review chain with a hand-off gate at each step and a definition of done before work reaches the user. |
-| `sop-research.md` | researcher | Gather → synthesize → cite. Search the user's own history (`gigabite search`) before going external; egress-check before anything leaves the device. |
-| `sop-pm-decision.md` | pm | Frame → options → trade-offs → recommendation. Leads with the call, not a survey. |
 
 Scaffold subagents (`install/scaffold/agents/`), installed to `~/.claude/agents/`:
 
@@ -22,7 +31,7 @@ Scaffold subagents (`install/scaffold/agents/`), installed to `~/.claude/agents/
 |---|---|---|
 | `gg-builder.md` | `sop-build-qa-review` (builder role) | Build a feature/deliverable the user will act on. |
 | `gg-reviewer.md` | `sop-build-qa-review` (QA + reviewer roles) | QA and review built work before it reaches the user. |
-| `gg-researcher.md` | `sop-research` | Research/analysis needing facts from more than one place. |
+| `gg-researcher.md` | none — carries its own gather → egress-check → synthesize → cite sequence | Research/analysis needing facts from more than one place. |
 
 ## How subagents load SOPs
 

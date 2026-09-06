@@ -53,8 +53,8 @@ class TestListSops(unittest.TestCase):
         self.assertEqual(sops.list_sops(), [])
     def test_title_derived_from_heading(self):
         by_name = {s["name"]: s for s in sops.list_sops()}
-        # heading is "# SOP: Research ..." -> label stripped
-        self.assertEqual(by_name["research"]["title"], "Research — Gather, Synthesize, Cite")
+        # heading is "# SOP: Build → QA → User Review" -> label stripped
+        self.assertEqual(by_name["build-qa-review"]["title"], "Build → QA → User Review")
 
 
 class TestLoadSop(unittest.TestCase):
@@ -62,15 +62,15 @@ class TestLoadSop(unittest.TestCase):
         _install_scaffold_sops()
 
     def test_load_by_bare_name(self):
-        text = sops.load_sop("research")
+        text = sops.load_sop("build-qa-review")
         self.assertIsNotNone(text)
         self.assertIn("gigabite search", text)
 
     def test_load_matches_with_prefix_and_suffix(self):
-        a = sops.load_sop("research")
-        self.assertEqual(a, sops.load_sop("sop-research"))
-        self.assertEqual(a, sops.load_sop("sop-research.md"))
-        self.assertEqual(a, sops.load_sop("research.md"))
+        a = sops.load_sop("build-qa-review")
+        self.assertEqual(a, sops.load_sop("sop-build-qa-review"))
+        self.assertEqual(a, sops.load_sop("sop-build-qa-review.md"))
+        self.assertEqual(a, sops.load_sop("build-qa-review.md"))
 
     def test_load_unknown_returns_none(self):
         self.assertIsNone(sops.load_sop("does-not-exist"))
