@@ -3,6 +3,7 @@
     gigabite ingest [--source S] [--force]
     gigabite search QUERY [--source S] [--project P] [--limit N] [--context C] [--raw] [--json]
     gigabite status [--json]
+    gigabite welcome
     gigabite doc DOC_ID [--json]
     gigabite add PATH [--project P] [--layer L] [--move]
     gigabite materialize [--dry-run] [--source S] [--layer L] [--limit N]
@@ -14,7 +15,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -137,6 +140,224 @@ def cmd_status(args) -> int:
         print(f"    {label:<14} {info['documents']:>5} docs   {info['words']:>9,} words")
     if not s["by_source"]:
         print(dim("    (empty — run `gigabite ingest`)"))
+    return 0
+
+
+# ---- welcome: the first-run brief ------------------------------------------
+#
+# `status` answers "what is in the index". This answers "what do I do now",
+# which is the only question a new user actually has, and the reason the
+# installer ends here instead of on a table of counts.
+#
+# Read-only by construction, so it can be re-run whenever someone forgets the
+# first command — including before anything has ever been indexed, where opening
+# the store would create the database it is reporting as absent.
+
+# Sources grouped into words a non-engineer already owns. "claude_code" and
+# "granola" are our vocabulary, not theirs.
+_WELCOME_KINDS = (
+    ("conversation", (config.SOURCE_CLAUDE_CODE, config.SOURCE_CLAUDE_AI)),
+    ("meeting", (config.SOURCE_GRANOLA, config.SOURCE_CALENDAR)),
+    ("note", (config.SOURCE_NOTE,)),
+)
+
+# Two source labels only make sense to us. "Note" is the row in `status`; what
+# the user did was put a file somewhere.
+_WELCOME_SOURCE_LABELS = {
+    config.SOURCE_NOTE: "files you added yourself",
+    config.SOURCE_CALENDAR: "your calendar",
+}
+
+_WORD = re.compile(r"[^\W_]{4,}", re.UNICODE)
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def _and_list(items: list) -> str:
+    if len(items) < 2:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _human_date(iso: str) -> str:
+    """'5 Apr 2026' — a date someone reads, not a timestamp they parse."""
+    try:
+        d = datetime.strptime((iso or "")[:10], "%Y-%m-%d")
+    except ValueError:
+        return util.short_date(iso)
+    return f"{d.day} {d.strftime('%b %Y')}"
+
+
+def _claude_code_present() -> bool:
+    """Whether Claude Code has ever run on this machine.
+
+    The projects directory is the signal because Claude Code is what creates it;
+    its parent `~/.claude` is not, since other tools write there too. Read
+    through config so a test — and a relocated install — can point it elsewhere.
+    """
+    return config.CLAUDE_CODE_PROJECTS_DIR.is_dir()
+
+
+def _claude_code_history() -> bool:
+    """Whether any Claude Code transcript exists on disk.
+
+    Existence, not a count: the answer only picks a sentence, and the directory
+    can hold thousands of files. It is asked because "the index is empty" and
+    "you have no history" are different facts — transcripts present with an
+    empty index means nobody has run `ingest` yet, and saying otherwise would
+    tell the user their own work does not exist.
+    """
+    if not _claude_code_present():
+        return False
+    return next(config.CLAUDE_CODE_PROJECTS_DIR.rglob("*.jsonl"), None) is not None
+
+
+def _tilde(path) -> str:
+    """`~/Knowledge` rather than `/Users/jane/Knowledge` — shorter to read, and
+    the same string the docs and the README use."""
+    text = str(path)
+    home = str(Path.home())
+    return "~" + text[len(home):] if text.startswith(home) else text
+
+
+def _welcome_example(store: Store, docs: list) -> Optional[tuple]:
+    """A search that is certain to return one of the user's own documents.
+
+    Verified by running it rather than assumed. A word lifted from a title can
+    still rank nowhere — too common across the corpus, or dropped as a stop word
+    — and a first command that returns nothing is the exact outcome this whole
+    command exists to prevent. `record=False` keeps the check read-only: the
+    ordinary search path stamps accessed_utc and un-archives what it matched.
+    """
+    for d in docs:
+        words = [w for w in _WORD.findall(d.get("title") or "")
+                 if w.lower() not in util._STOPWORDS]
+        if not words:
+            continue
+        query = " ".join(words[:2])
+        hits = store.search(query, limit=5, record=False)
+        if any(h["doc_id"] == d["doc_id"] for h in hits):
+            return query, d
+    return None
+
+
+def _welcome_candidates(store: Store) -> list:
+    """Titled documents, best example first, capped so this stays cheap.
+
+    Claude Code sessions lead because they are the ones nobody had to file: on a
+    fresh install they are the whole point, and recognising your own session
+    title is what makes the index believable.
+    """
+    order = {config.SOURCE_CLAUDE_CODE: 0, config.SOURCE_CLAUDE_AI: 1}
+    docs = [d for d in store.iter_documents(include_historical=False)
+            if (d.get("title") or "").strip()]
+    # Two passes rather than one composite key: the dates are strings, so newest
+    # first cannot be expressed in the same key as ascending source order.
+    docs.sort(key=lambda d: d.get("created_utc") or "", reverse=True)
+    docs.sort(key=lambda d: order.get(d["source"], 2))
+    return docs[:25]
+
+
+def _welcome_empty() -> None:
+    know = _tilde(config.KNOWLEDGE_DIR)
+    unindexed = _claude_code_history()
+    print(bold("gigabite is installed — and the index is empty."))
+    print()
+    if unindexed:
+        # Transcripts on disk with nothing indexed: an ingest that has not run
+        # or did not finish, which is a different problem with a one-line fix.
+        print("  Nothing is indexed yet, but there are Claude Code sessions on this")
+        print(f"  machine, under {_tilde(config.CLAUDE_CODE_PROJECTS_DIR)}.")
+        print()
+        print(bold("  One command reads all of them:"))
+        print("""
+    1.  gigabite ingest
+    2.  gigabite welcome        (this brief, with your own work in it)
+""")
+    else:
+        if _claude_code_present():
+            print("  Nothing failed. There was simply nothing to read: Claude Code has no")
+            print(f"  saved sessions here, and no files have been put under {know}.")
+        else:
+            print("  Nothing failed. There was simply nothing to read: Claude Code is not")
+            print(f"  installed here, and no files have been put under {know}.")
+        print()
+        print(bold("  Shortest path to something useful — about a minute:"))
+        print(f"""
+    1.  mkdir -p {know}/acme
+        cp <any document worth finding later> {know}/acme/
+    2.  gigabite ingest
+    3.  gigabite search "a word you know is in that document"
+""")
+    print(dim("  Optional, and worth it if you have them:"))
+    print(dim("    · your Claude.ai chats — claude.ai → Settings → Export data, then"))
+    print(dim(f"      unzip into {_tilde(config.SOURCES_CLAUDE_AI)}/ and run `gigabite ingest`"))
+    # Redundant in the branch above, which already told them to run `ingest`.
+    if _claude_code_present() and not unindexed:
+        print(dim("    · every Claude Code session from now on is picked up the next time"))
+        print(dim("      you run `gigabite ingest` — no filing, no export"))
+    print()
+    print(dim("  Run `gigabite welcome` again once there is something in there."))
+
+
+def cmd_welcome(args) -> int:
+    if not config.DB_PATH.exists():
+        _welcome_empty()
+        return 0
+    store = _open()
+    s = store.stats()
+    if not s["documents"]:
+        _welcome_empty()
+        return 0
+
+    per_source = {src: info["documents"] for src, info in s["by_source"].items()}
+    kinds = [_count(n, noun) for noun, srcs in _WELCOME_KINDS
+             if (n := sum(per_source.get(src, 0) for src in srcs))]
+    labels = [_WELCOME_SOURCE_LABELS.get(src) or config.SOURCE_LABELS.get(src, src)
+              for src in config.ALL_SOURCES if per_source.get(src)]
+
+    print(bold("gigabite is installed, and it has already read your own work."))
+    print()
+    print(f"  {bold(_and_list(kinds))} — from {_and_list(labels)}")
+    if s.get("earliest"):
+        print(f"  spanning {_human_date(s['earliest'])} to {_human_date(s.get('latest') or '')}")
+    print(dim("  Indexed on this machine only. Nothing was uploaded anywhere."))
+    print()
+
+    example = _welcome_example(store, _welcome_candidates(store))
+    if example:
+        query, d = example
+        label = config.SOURCE_LABELS.get(d["source"], d["source"])
+        print(bold("Start here — this finds something, because it is yours already:"))
+        print()
+        print(f'    gigabite search "{query}"')
+        print(dim(f"      → {d['title']}   ({label}, {_human_date(d.get('created_utc') or '')})"))
+    else:
+        # No title-derived query could be verified, so the honest fallback is the
+        # one command that cannot miss: a document opened by its own id.
+        d = next(iter(store.iter_documents(include_historical=False)), None)
+        print(bold("Start here — one of your own documents, opened by id:"))
+        print()
+        print(f"    gigabite doc {d['doc_id']}")
+        print(dim("      then: gigabite search \"<any word you saw in it>\""))
+    print()
+
+    print(dim("Then, whenever you want it:"))
+    if _claude_code_present():
+        print(dim("  · /search <anything> inside Claude Code — works from any folder"))
+        print(dim("  · relevant past conversations are pulled in as you type; you do"))
+        print(dim("    not have to ask for them"))
+    print(dim(f"  · anything you drop in {_tilde(config.KNOWLEDGE_DIR)}/<project>/ is indexed"))
+    print(dim("    where it sits — no filing step, no import"))
+    if not per_source.get(config.SOURCE_CLAUDE_AI):
+        print(dim("  · your Claude.ai chats are not in here — only Claude Code is local."))
+        print(dim("    claude.ai → Settings → Export data, unzip into"))
+        print(dim(f"    {_tilde(config.SOURCES_CLAUDE_AI)}/, then run `gigabite ingest`"))
+    print()
+    print(dim("`gigabite status` for the index itself. This brief re-runs any time: "
+              "`gigabite welcome`."))
     return 0
 
 
@@ -1043,6 +1264,9 @@ def build_parser() -> argparse.ArgumentParser:
     pt = sub.add_parser("status", help="show index statistics")
     pt.add_argument("--json", action="store_true")
     pt.set_defaults(func=cmd_status)
+
+    pw = sub.add_parser("welcome", help="what is already indexed, and the one command to run first")
+    pw.set_defaults(func=cmd_welcome)
 
     pd = sub.add_parser("doc", help="print a full conversation by doc_id")
     pd.add_argument("doc_id")
