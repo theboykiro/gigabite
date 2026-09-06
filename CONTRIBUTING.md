@@ -29,6 +29,24 @@ If you accidentally commit something in this category, say so in the pull reques
 rather than quietly force-pushing over it. History rewriting is easier before a
 branch is public than after.
 
+There is a check for this, and it is worth running before you push:
+
+```bash
+python3 tools/check_egress.py
+```
+
+It reads a list of your own client vocabulary from `~/.core/egress-deny.txt` — kept
+outside the repository, because a list of client names is itself confidential — and
+fails if any of it appears in the tree or in a commit message. Seed the file with
+the names of clients, teams, internal products and colleagues. Run
+`python3 tools/check_egress.py --suggest` to have it propose candidates from your
+notes.
+
+Do not trust it to think for you. This project already published a client's team
+codename, and the reason no automatic check found it is that the codename was an
+ordinary dictionary word. Only a maintained list catches those, and only you know
+what belongs on yours.
+
 ## Reporting a bug or suggesting an idea
 
 Open an issue at
