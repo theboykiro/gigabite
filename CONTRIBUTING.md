@@ -32,7 +32,7 @@ branch is public than after.
 ## Reporting a bug or suggesting an idea
 
 Open an issue at
-[github.com/theboykiro/giga-bite/issues](https://github.com/theboykiro/giga-bite/issues).
+[github.com/theboykiro/gigabite/issues](https://github.com/theboykiro/gigabite/issues).
 
 For a bug, the useful things are: what you ran, what happened, what you expected, and
 the output of `gigabite status` and `gigabite paths`. Scrub any project names before
@@ -56,7 +56,7 @@ copy of the repository under your own account.
 **2. Clone your fork and make a branch.**
 
 ```bash
-git clone https://github.com/<your-username>/giga-bite.git ~/gigabite
+git clone https://github.com/<your-username>/gigabite.git ~/gigabite
 cd ~/gigabite
 git checkout -b short-description-of-change
 ```
