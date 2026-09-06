@@ -6,13 +6,13 @@ worth some awkwardness, and there is a little, because a meeting only arrives wh
 you hand it over.
 
 The source is called `meeting`, after the content rather than after whatever recorded
-it. There is no integration with any meeting-notes app: no API, no login, no
-keychain, and nothing here reads another application's store. What the ingester does
-is parse the markdown, text or JSON you supply — a Granola export is one thing that
-can be, and so is anything else that produces prose.
+it. The parsing itself never reads another application's store: what the ingester
+does is parse the markdown, text or JSON handed to it — a Granola export is one thing
+that can be, and so is anything else that produces prose. There is now one opt-in
+exception to "nothing here talks to a meeting-notes app" — a daily pull from
+Granola's own public API, for anyone on Granola Business — described below.
 
-This document sets out the supported route, then the one to build if API access
-appears.
+This document sets out the supported manual route, then the live pull.
 
 ## The supported route: supply the notes yourself
 
@@ -46,34 +46,60 @@ yourself, `gigabite add <file>` routes it by keyword — and if no project resol
 file is left loose at the top of `~/Knowledge` for you to drag in, never filed into a
 guess.
 
-## The future route: a public API
+## The live route: a daily pull from Granola's public API
 
-If you get Granola API access, the clean integration is a direct pull from their
-public API — the app already advertises `public_api_user_notes_enabled` and
-`public_api_folders_enabled`, so the capability exists on their side.
+Granola Business unlocks a real, documented API at
+`https://public-api.granola.ai/v1`, authenticated with an API key you create yourself
+(Granola desktop app → Settings → Connectors → API keys). `gigabite/sources/
+granola_live.py` pulls every new note once a day, at 19:00, and mirrors
+`claude_ai_live.py`'s pattern throughout: the key lives only in the macOS keychain
+(`gigabite:granola`), read at runtime and never printed, logged, or accepted as a CLI
+argument.
 
-Most of the work is already done.
-`gigabite/sources/meetings.py::document_from_granola_json` handles Granola's document
-shape, including notes and the speaker-segmented
-transcript, and it is reused rather than rewritten. Wiring the API is therefore three
-steps: fetch the documents, feed each through that function, and call
-`store.upsert_document`.
-
-The API key goes in the keychain and never in a file:
+One command stores the key, the other runs the pull:
 
 ```bash
-security add-generic-password -s "gigabite:granola" -a "$USER" -w
+gigabite granola-login   # opens the macOS secure prompt; paste the key there
+gigabite granola-sync    # pulls new notes, files each one, prints a report
 ```
 
-Then add a `pull_via_public_api(api_key)` alongside the existing code in
-`sources/meetings.py`. This has been left as a one-function addition rather than
-written speculatively, because guessing at an endpoint schema you cannot test against
-produces code that looks finished and is not.
+`granola-sync` does three things, in order:
+
+1. **Pull.** `GET /notes?created_after=<last successful pull>` (cursor-paginated),
+   then `GET /notes/{id}?include=transcript` for each one — full transcript and the
+   AI summary, which folds in your own typed notes (Granola merges them before the
+   API ever sees the note). A note whose summary hasn't finished yet 404s on the
+   detail endpoint; that is treated as "not ready, retry tomorrow", not an error,
+   which is exactly what happens to a same-day meeting pulled at the 19:00 mark.
+2. **Write.** Each note's raw JSON is written to `~/Knowledge/.gigabite/imports/
+   meetings/<note_id>.json` — kept deliberately, the same as every other raw import,
+   so the index can be rebuilt from scratch. Parsing that JSON is not
+   reimplemented: it is handed straight to the existing
+   `sources/meetings.py::document_from_granola_json` / `meetings.ingest`, unchanged.
+3. **Route.** `document_from_granola_json` sets `project=""` on purpose — nothing
+   here ever trusts whatever folder or workspace Granola itself assigned. Once the
+   note is indexed, `granola-sync` calls `features.materialize.run(store,
+   source="meeting")`, which resolves a project the same way every other unlabelled
+   document does: keyword matching against each project's `_project.md`, over the
+   full transcript and summary. A note that matches nothing stays visibly unresolved
+   in the index rather than being guessed at or dumped in `personal/`.
+
+To run it automatically, load the LaunchAgent — a separate, additive install path
+from the main daily job, since not everyone has Granola API access:
+
+```bash
+sed -e "s|__DAILY_BIN__|$PWD/bin/gigabite-granola-pull|g" \
+    -e "s|__LOG__|$HOME/Library/Logs/gigabite-granola-pull.log|g" \
+    install/launchd/com.gigabite.granola-pull.plist \
+    > ~/Library/LaunchAgents/com.gigabite.granola-pull.plist
+launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.gigabite.granola-pull.plist
+```
 
 ## Which to use
 
-Use the manual route. It has no secrets, no dependency on an undocumented format, and
-no way to break when the app it came from ships an update — and the `/meeting` path
-costs about three seconds per meeting, which is cheap enough that the discipline it
-requires is not really discipline at all. Revisit the API route when you actually
-have access.
+Both. The manual route (`/meeting`, `gigabite paste`, dropping a file) has no
+secrets and no dependency on an API that could change, and stays the right choice
+for a meeting you want indexed right now rather than at 19:00. The live pull is for
+not having to remember — once the key is in the keychain and the LaunchAgent is
+loaded, every meeting from the day is transcript-plus-summary in its project folder
+by evening, with nothing to copy or paste.

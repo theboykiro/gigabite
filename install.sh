@@ -4,6 +4,7 @@
 #   • puts `gigabite` on your PATH
 #   • installs /search and /search-status Claude Code commands (user-level)
 #   • installs the gg-* subagents and the gigabite skills (user-level)
+#   • offers to enable the "AI brain" integrations (Granola, more soon)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
 #
@@ -26,7 +27,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -v|--verbose) VERBOSE=1 ;;
     -h|--help)
-      sed -n '2,11p' "$REPO/install.sh" | sed 's/^# \{0,1\}//'
+      sed -n '2,12p' "$REPO/install.sh" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     # Refused rather than ignored: a mistyped --verbose that quietly produced a
     # quiet install is the one failure this flag exists to prevent.
@@ -311,11 +312,19 @@ fi
 note "disable with: launchctl bootout gui/$(id -u)/com.gigabite.synthesis"
 
 # ---------------------------------------------------------------------------
-say "6/7  Building the initial index"
+say "6/8  Enabling the \"AI brain\" integrations (Granola, more soon)"
+if [ -t 0 ]; then
+  "$BIN" integrations
+else
+  note "run 'gigabite integrations' later to enable Granola and future integrations"
+fi
+
+# ---------------------------------------------------------------------------
+say "7/8  Building the initial index"
 "$BIN" ingest || warn "ingest reported issues (see above)"
 
 # ---------------------------------------------------------------------------
-say "7/7  Done"
+say "8/8  Done"
 echo
 # `status` reports on a database; this reports on the user's own work and hands
 # them one command that is verified to find something in it. Read-only, and

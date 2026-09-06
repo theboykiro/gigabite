@@ -16,7 +16,7 @@ import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config, util  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
-from gigabite.sources import claude_ai, claude_ai_live, claude_code, meetings  # noqa: E402
+from gigabite.sources import claude_ai, claude_ai_live, claude_code, granola_live, meetings  # noqa: E402
 
 
 def fresh_store(name) -> Store:
@@ -318,6 +318,77 @@ class TestMeetings(unittest.TestCase):
         doc = meetings.document_from_granola_json(obj)
         roles = [m.role for m in doc.messages]
         self.assertEqual(roles, ["note", "transcript"])
+
+
+class TestGranolaLive(unittest.TestCase):
+    """Exercise the live pull with the Granola public API stubbed out."""
+
+    # n3 has no DETAIL entry, simulating a note whose AI summary hasn't
+    # finished yet (the real API 404s on the detail endpoint in that case).
+    NOTES_PAGE = {
+        "notes": [
+            {"id": "n1", "updated_at": "2026-06-01T00:00:00Z"},
+            {"id": "n2", "updated_at": "2026-06-02T00:00:00Z"},
+            {"id": "n3", "updated_at": "2026-06-03T00:00:00Z"},
+        ],
+        "hasMore": False,
+    }
+    DETAIL = {
+        "n1": {"id": "n1", "title": "Widget sync", "created_at": "2026-06-01T00:00:00Z",
+               "summary_markdown": "ship widget pricing",
+               "transcript": [{"source": "K", "text": "widgets first"}]},
+        "n2": {"id": "n2", "title": "Standalone", "created_at": "2026-06-02T00:00:00Z",
+               "summary_markdown": "a note about nothing in particular",
+               "transcript": [{"source": "K", "text": "just thinking aloud"}]},
+    }
+
+    def _fake_get(self, path, token):
+        if path.startswith("/notes/"):
+            note_id = path.split("/notes/")[1].split("?")[0]
+            if note_id not in self.DETAIL:
+                raise granola_live.GranolaError("granola HTTP 404", status=404)
+            return self.DETAIL[note_id]
+        return self.NOTES_PAGE
+
+    def setUp(self):
+        self._orig = granola_live._get
+        granola_live._get = self._fake_get
+        self._orig_box = config.SOURCES_MEETINGS
+        config.SOURCES_MEETINGS = _harness.SCRATCH / "granola-live-imports"
+
+    def tearDown(self):
+        granola_live._get = self._orig
+        config.SOURCES_MEETINGS = self._orig_box
+
+    def test_pulls_ready_notes_skips_unready_and_writes_raw_imports(self):
+        st = fresh_store("granola-live")
+        rep = granola_live.ingest(st, token="fake-key")
+        self.assertEqual(rep.scanned, 3)
+        self.assertEqual(rep.changed, 2)                       # n1 + n2 only
+        self.assertTrue(any("not finished processing" in n for n in rep.notes))
+        self.assertEqual(rep.errors, [])
+        self.assertTrue((config.SOURCES_MEETINGS / "n1.json").exists())
+        self.assertTrue((config.SOURCES_MEETINGS / "n2.json").exists())
+        self.assertFalse((config.SOURCES_MEETINGS / "n3.json").exists(),
+                         "an unready note must not be written as if it were captured")
+        self.assertTrue(st.search("widgets"))
+
+        # second run: same content re-fetched is a no-op (content hash unchanged)
+        rep2 = granola_live.ingest(st, token="fake-key")
+        self.assertEqual(rep2.changed, 0)
+
+    def test_no_token_is_a_clean_noop(self):
+        st = fresh_store("granola-live2")
+        granola_live._get = self._orig               # ensure real API path not hit
+        orig_read = granola_live.read_token
+        granola_live.read_token = lambda: None       # hermetic: ignore machine keychain
+        try:
+            rep = granola_live.ingest(st, token=None)
+        finally:
+            granola_live.read_token = orig_read
+        self.assertEqual(rep.changed, 0)
+        self.assertEqual(rep.errors, [])
+        self.assertTrue(any("no granola token" in n for n in rep.notes))
 
 
 if __name__ == "__main__":

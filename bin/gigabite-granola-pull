@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Daily Granola meeting pull, run by launchd (see
+# install/launchd/com.gigabite.granola-pull.plist). Separate from
+# bin/gigabite-daily: not everyone has Granola Business / API access yet, so
+# this is an additive install path the user opts into by loading its own plist.
+#
+# `gigabite granola-sync` does the whole job in one call: pull every new note
+# via the public API (transcript + AI summary), write raw imports, then route
+# each one into its project folder with gigabite's own keyword routing
+# (features.materialize) — never whatever folder Granola itself assigned.
+set -uo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REPO="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+GB="$REPO/bin/gigabite"
+
+LOG="${GIGABITE_GRANOLA_LOG:-$HOME/Library/Logs/gigabite-granola-pull.log}"
+
+# launchd appends to this file forever. Keep the last ~256 KB, same as the
+# synthesis job's log, so a year of nightly runs stays readable.
+if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 262144 ]; then
+  tail -c 131072 "$LOG" >"$LOG.trim" 2>/dev/null && mv "$LOG.trim" "$LOG"
+fi
+
+log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+
+FAILED=()
+
+# Run one stage, keeping its output in the log under the stage name.
+stage() {
+  local name="$1"; shift
+  log "→ $name: $*"
+  local out status
+  out="$("$@" 2>&1)"; status=$?
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out" | sed 's/^/    /'
+  fi
+  if [ $status -ne 0 ]; then
+    log "✗ $name failed (exit $status)"
+    FAILED+=("$name")
+  else
+    log "✓ $name"
+  fi
+  return 0
+}
+
+log "=== gigabite granola pull start (repo: $REPO) ==="
+
+# Same TCC/Desktop-denial diagnostic as bin/gigabite-daily: this job's one
+# recurring failure mode is launchd being denied access to the folder holding
+# the repo, which otherwise reads as a bare "Operation not permitted".
+if [ ! -x "$GB" ]; then
+  log "✗ cannot execute $GB"
+  log "  If this says 'Operation not permitted', macOS is denying launchd access to"
+  log "  the folder holding the repo (Desktop, Documents and Downloads are protected)."
+  log "  Fix: move the repo somewhere unprotected (e.g. ~/gigabite) and re-run"
+  log "  install.sh, or grant Full Disk Access to /bin/bash in System Settings →"
+  log "  Privacy & Security."
+  exit 1
+fi
+
+# Pulls every new note (transcript + AI summary) and files it by project —
+# materialize runs inside granola-sync, so nothing else is needed here.
+stage "granola-sync" "$GB" granola-sync
+
+notify() {
+  /usr/bin/osascript -e "display notification \"$1\" with title \"gigabite\"" \
+    >/dev/null 2>&1 || log "  (notification suppressed)"
+}
+
+if [ ${#FAILED[@]} -eq 0 ]; then
+  log "=== done ==="
+  notify "Granola meetings pulled and filed."
+  exit 0
+fi
+
+log "=== done with failures: ${FAILED[*]} ==="
+notify "Granola pull failed: ${FAILED[*]}. See ~/Library/Logs/gigabite-granola-pull.log"
+exit 1

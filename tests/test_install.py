@@ -2,7 +2,7 @@
 
 Two properties are pinned here, and they pull against each other.
 
-**The output has to fit on a screen.** `gigabite welcome`, at the end of step 7, is
+**The output has to fit on a screen.** `gigabite welcome`, at the end of step 8, is
 the only part of an install written for a person to read. Everything above it is
 bookkeeping, and a first-time reader who has scrolled past thirty green ticks has
 already spent the attention that screen needed. So on the success path the installer
@@ -52,29 +52,31 @@ UNINSTALL = REPO / "uninstall.sh"
 
 # The step whose output is the payload: everything above it is what got quietened,
 # and everything from it down (the ingest summary, then `welcome`) is left alone.
-INDEX_STEP = "6/7"
+INDEX_STEP = "7/8"
 # `welcome`'s first line, in the only state a fresh fake HOME can be in: nothing
 # indexed, because there is nothing on this machine to index.
 WELCOME_FIRST = "gigabite is installed"
 
-# Measured, not guessed. A quiet install of a fresh HOME prints 12 lines before the
-# index step — five of them the step headings themselves, which stay by design:
+# Measured, not guessed. A quiet install of a fresh HOME prints 14 lines before the
+# index step — six of them the step headings themselves, which stay by design:
 #
 #   1/7 heading, store paths
 #   2/7 heading, linked + PATH, "open a new terminal" (the way to use what was made)
 #   3/7 heading, "5 commands, 3 subagents, 3 skills"
 #   4/7 heading, router + hook (with the way to switch the hook off)
 #   5/7 heading, scheduled, "disable with: launchctl bootout ..."
+#   6/8 heading, the integrations menu — a note pointing at `gigabite integrations`
+#       when stdin isn't a terminal (as here), the real prompt when it is
 #
 # The budget is one line above that. Anything that reintroduces a per-item loop adds
 # three or more and fails here, which is the point of a number rather than a
 # description. Raising it is a decision about a first-time reader's attention, so it
 # should be made deliberately, in a commit that says so.
-QUIET_PREAMBLE_MAX = 13
-# The same count taken to `welcome`'s first line, so the step 6 ingest summary and
-# the step 7 heading are inside the bound too — that is the scroll a new user
+QUIET_PREAMBLE_MAX = 15
+# The same count taken to `welcome`'s first line, so the step 7 ingest summary and
+# the step 8 heading are inside the bound too — that is the scroll a new user
 # actually does before reaching the screen written for them.
-QUIET_TO_WELCOME_MAX = 24
+QUIET_TO_WELCOME_MAX = 26
 
 
 def strip_ansi(text: str) -> str:
@@ -202,8 +204,8 @@ class TestQuietByDefault(InstallCase):
             "%d lines before the welcome screen, budget %d:\n%s"
             % (len(pre), QUIET_TO_WELCOME_MAX, "\n".join(pre)))
 
-    def test_all_seven_numbered_steps_still_announce_themselves(self):
-        for step in ("1/7", "2/7", "3/7", "4/7", "5/7", "6/7", "7/7"):
+    def test_all_eight_numbered_steps_still_announce_themselves(self):
+        for step in ("1/7", "2/7", "3/7", "4/7", "5/7", "6/8", "7/8", "8/8"):
             self.assertIn(step, self.out)
 
     def test_the_per_item_confirmations_are_collapsed_into_a_count(self):

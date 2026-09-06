@@ -25,7 +25,7 @@ import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config  # noqa: E402
 from gigabite.features import intake, materialize, save  # noqa: E402
-from gigabite.sources import notes  # noqa: E402
+from gigabite.sources import granola_live, notes  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
 
 
@@ -64,10 +64,12 @@ class _Base(unittest.TestCase):
         # The machinery constants are bound at import; re-point the ones this
         # module's code paths read so nothing reaches the real store.
         self._orig_machine = (config.MACHINE_DIR, config.SOURCES_DIR,
-                              config.SOURCES_CLAUDE_AI, config.ORIGINALS_DIR)
+                              config.SOURCES_CLAUDE_AI, config.SOURCES_MEETINGS,
+                              config.ORIGINALS_DIR)
         config.MACHINE_DIR = config.machine_dir()
         config.SOURCES_DIR = config.MACHINE_DIR / "imports"
         config.SOURCES_CLAUDE_AI = config.SOURCES_DIR / "claude_ai"
+        config.SOURCES_MEETINGS = config.SOURCES_DIR / "meetings"
         config.ORIGINALS_DIR = config.MACHINE_DIR / "originals"
         self.addCleanup(self._restore)
 
@@ -78,7 +80,8 @@ class _Base(unittest.TestCase):
     def _restore(self):
         config.KNOWLEDGE_DIR = self._orig
         (config.MACHINE_DIR, config.SOURCES_DIR,
-         config.SOURCES_CLAUDE_AI, config.ORIGINALS_DIR) = self._orig_machine
+         config.SOURCES_CLAUDE_AI, config.SOURCES_MEETINGS,
+         config.ORIGINALS_DIR) = self._orig_machine
 
     def fresh_store(self) -> Store:
         """A second Store on the same db, as a later `gigabite ingest` would open."""
@@ -675,6 +678,53 @@ class TestCliCommands(_Base):
         out = buf.getvalue()
         for gone in ("Inbox", "_sources", "_proposals", "_archive", "drop here"):
             self.assertNotIn(gone, out)
+
+
+class TestGranolaPullThenMaterialize(_Base):
+    """The live pull writes raw imports; routing is left entirely to materialize.
+
+    `document_from_granola_json` sets `project=""` on purpose (gigabite/sources/
+    meetings.py) — this exercises the whole chain end to end and checks the note
+    lands by keyword, never by whatever Granola itself would have called it.
+    """
+
+    NOTES_PAGE = {"notes": [{"id": "g1", "updated_at": "2026-07-09T09:00:00Z"}],
+                  "hasMore": False}
+    DETAIL = {
+        "g1": {
+            "id": "g1", "title": "Vendor check-in",
+            "created_at": "2026-07-09T09:00:00Z",
+            "summary_markdown": "Widget rollout timeline confirmed for next sprint.",
+            "transcript": [{"source": "Kiril", "text": "the widget rollout stays on track"}],
+        },
+    }
+
+    def _fake_get(self, path, token):
+        if path.startswith("/notes/"):
+            note_id = path.split("/notes/")[1].split("?")[0]
+            if note_id not in self.DETAIL:
+                raise granola_live.GranolaError("granola HTTP 404", status=404)
+            return self.DETAIL[note_id]
+        return self.NOTES_PAGE
+
+    def setUp(self):
+        super().setUp()
+        self._orig_get = granola_live._get
+        granola_live._get = self._fake_get
+        self.addCleanup(lambda: setattr(granola_live, "_get", self._orig_get))
+
+    def test_pulled_note_is_routed_by_keyword_not_by_granola(self):
+        rep = granola_live.ingest(self.store, token="fake-key")
+        self.assertEqual(rep.changed, 1)
+        self.assertTrue((config.SOURCES_MEETINGS / "g1.json").exists(),
+                        "raw import must be kept for a from-scratch rebuild")
+
+        plan, _ = materialize.run(self.store, source=config.SOURCE_MEETING, retire=False)
+        self.assertEqual(len(plan.actionable), 1)
+        item = plan.actionable[0]
+        self.assertEqual(item.project, "acme")
+        self.assertEqual(item.layer, "meetings")
+        self.assertIn("acme/meetings/", item.path.as_posix())
 
 
 if __name__ == "__main__":

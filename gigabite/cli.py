@@ -9,6 +9,7 @@
     gigabite materialize [--dry-run] [--source S] [--layer L] [--limit N]
     gigabite reindex
     gigabite paths
+    gigabite integrations
 """
 
 from __future__ import annotations
@@ -540,6 +541,60 @@ def cmd_claude_sync(args) -> int:
         return 1
     print(green(f"✓ claude.ai: {rep.changed} added/updated, {rep.skipped} unchanged, "
                 f"{rep.scanned} scanned."))
+    return 0
+
+
+def cmd_granola_login(args) -> int:
+    from .features import integrations
+    from .sources import granola_live
+    print(bold("Store your Granola API key (stays on this machine)"))
+    print(dim(
+        "Get it: Granola desktop app -> Settings -> Connectors -> API keys\n"
+        "  (requires Granola Business). Copy the key (starts grn_…).\n"))
+    # The secure prompt itself (the "When you press Enter…" block through the
+    # call to store_token_interactive()) is not duplicated here — it lives in
+    # features.integrations, shared with `gigabite integrations`. Output stays
+    # byte-identical to before for anyone already using this command directly.
+    rc = integrations.run_secure_prompt(granola_live)
+    if rc is None:
+        return 1
+    if rc == 0:
+        print(green("\n✓ Key saved to keychain. Now run: ") + "gigabite granola-sync")
+        print(dim("If a keychain access prompt appears on first sync, choose \"Always Allow\"."))
+    else:
+        print(yellow("Key was not saved (prompt cancelled or failed)."))
+    return rc
+
+
+def cmd_integrations(args) -> int:
+    from .features import integrations
+    integrations.run_interactive(config.REPO_ROOT)
+    return 0
+
+
+def cmd_granola_sync(args) -> int:
+    from .features import materialize
+    from .sources import granola_live
+    store = _open()
+    print(dim("Pulling Granola meetings (transcript + AI summary) since the last pull…"))
+    rep = granola_live.ingest(store, force=args.force)
+    for note in rep.notes:
+        print(f"  {dim('· ' + note)}")
+    for err in rep.errors[:10]:
+        print(f"  {yellow('! ' + err)}")
+    if rep.errors and not rep.changed:
+        return 1
+    print(green(f"✓ granola: {rep.changed} added/updated, {rep.skipped} unchanged, "
+                f"{rep.scanned} scanned."))
+
+    # Route each new meeting into its project folder by keyword — never trust
+    # whatever folder/workspace Granola itself assigned.
+    plan, _retired = materialize.run(store, source=config.SOURCE_MEETING)
+    for item in plan.actionable:
+        print(f"  {green('→')} {item.title} → {item.project}/{item.layer}/")
+    for item in plan.skipped:
+        if item.skip == materialize.UNRESOLVED:
+            print(f"  {yellow('?')} {item.title}: {item.skip}")
     return 0
 
 
@@ -1351,6 +1406,16 @@ def build_parser() -> argparse.ArgumentParser:
     pcs = sub.add_parser("claude-sync", help="pull all claude.ai chats (in/out of projects) via the stored token")
     pcs.add_argument("--force", action="store_true", help="re-fetch every conversation")
     pcs.set_defaults(func=cmd_claude_sync)
+
+    pgl = sub.add_parser("granola-login", help="securely store your Granola API key in the keychain")
+    pgl.set_defaults(func=cmd_granola_login)
+
+    pin = sub.add_parser("integrations", help="enable/manage the \"AI brain\" integrations (Granola, more soon)")
+    pin.set_defaults(func=cmd_integrations)
+
+    pgs = sub.add_parser("granola-sync", help="pull Granola meetings (transcript + summary) and file them by project")
+    pgs.add_argument("--force", action="store_true", help="re-fetch every note")
+    pgs.set_defaults(func=cmd_granola_sync)
 
     pv = sub.add_parser("save", help="persist a note into ~/Knowledge/{project}/{layer}/ (never the working dir)")
     pv.add_argument("text", nargs="*", help="note text (or - / --stdin to read stdin)")
