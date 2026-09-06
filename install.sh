@@ -6,6 +6,9 @@
 #   • installs the gg-* subagents and the gigabite skills (user-level)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
+#
+#   ./install.sh                install, one line per step
+#   ./install.sh --verbose      every file it touched, one line each
 set -euo pipefail
 
 REPO="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
@@ -16,19 +19,49 @@ say()  { printf '\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  \033[2m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
+die()  { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; shift; for l in "$@"; do note "$l" >&2; done; exit 1; }
+
+VERBOSE="${GIGABITE_VERBOSE:-0}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -v|--verbose) VERBOSE=1 ;;
+    -h|--help)
+      sed -n '2,11p' "$REPO/install.sh" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    # Refused rather than ignored: a mistyped --verbose that quietly produced a
+    # quiet install is the one failure this flag exists to prevent.
+    *) die "unknown option: $1" "Run ./install.sh --help" ;;
+  esac
+  shift
+done
+# Every per-item confirmation goes through here. On the success path the installer
+# prints one line per numbered step, because step 7 is the only screen written for
+# a first-time reader, and a wall of green ticks is what they scroll past to miss
+# it. Nothing is dropped, only gated: --verbose (or GIGABITE_VERBOSE=1) restores
+# the lot, which is what to ask someone for when their install misbehaves.
+# Loud in either mode: every warn, anything skipped or backed up, and every
+# instruction the user needs in order to undo something.
+detail() { [ "$VERBOSE" = 1 ] || return 0; "$@"; }
 
 CORE_DIR="${GIGABITE_CORE_DIR:-$HOME/.core}"
 KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}"
+# The PATH directories to try, in order, and the command that loads the daily job.
+# Overridable for one reason: the installer's behaviour has to be exercisable
+# against a throwaway HOME, and a test that had to write into /opt/homebrew/bin or
+# boot a job into the live launchd domain is a test nobody may run twice. The
+# defaults are what a real install has always used; uninstall.sh names both the
+# same way, so the two scripts can be pointed at the same fake machine.
+BIN_DIRS="${GIGABITE_BIN_DIRS:-/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/bin}"
+LAUNCHCTL="${GIGABITE_LAUNCHCTL:-launchctl}"
 
 # ---------------------------------------------------------------------------
 say "1/7  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
 mkdir -p "$CORE_DIR/capability"    # `paths` above created the knowledge layout
-ok "core:      $CORE_DIR"
-ok "knowledge: $KNOW_DIR"
+ok "core: $CORE_DIR  ·  knowledge: $KNOW_DIR"
 
 copy_if_absent() { # src dest
-  if [ -e "$2" ]; then note "kept existing $(label "$2")"; else cp "$1" "$2"; ok "seeded $(label "$2")"; fi
+  if [ -e "$2" ]; then detail note "kept existing $(label "$2")"; else cp "$1" "$2"; detail ok "seeded $(label "$2")"; fi
 }
 # Several scaffold files are called README.md, so a bare basename tells you nothing
 # about which one the installer just touched. Show the parent folder with it.
@@ -38,7 +71,7 @@ label() { printf '%s/%s' "$(basename "$(dirname "$1")")" "$(basename "$1")"; }
 # losing a note you wrote in it — so it is refreshed rather than kept, and the old
 # text is set aside first. Nothing is destroyed; the installer's promise holds.
 refresh_doc() { # src dest
-  if [ -e "$2" ] && cmp -s "$1" "$2"; then note "up to date $(label "$2")"; return; fi
+  if [ -e "$2" ] && cmp -s "$1" "$2"; then detail note "up to date $(label "$2")"; return; fi
   if [ -e "$2" ]; then
     # Set aside inside the machinery folder, so the replaced copy is kept without
     # appearing in the knowledge base as a stray file.
@@ -48,7 +81,7 @@ refresh_doc() { # src dest
     mv "$2" "$kept"
     warn "$(label "$2") was out of date — refreshed (old text kept as $(basename "$kept"))"
   else
-    ok "seeded $(label "$2")"
+    detail ok "seeded $(label "$2")"
   fi
   cp "$1" "$2"
 }
@@ -67,9 +100,14 @@ fi
 # ---------------------------------------------------------------------------
 say "2/7  Putting gigabite on your PATH"
 INSTALLED=""
-for d in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin"; do
+OLD_IFS="$IFS"
+IFS=:
+set -- $BIN_DIRS                       # split on ':' without losing spaces in a path
+IFS="$OLD_IFS"
+for d in "$@"; do
+  [ -n "$d" ] || continue
   if mkdir -p "$d" 2>/dev/null && [ -w "$d" ]; then
-    ln -sf "$BIN" "$d/gigabite" && INSTALLED="$d/gigabite" && ok "linked $d/gigabite" && break
+    ln -sf "$BIN" "$d/gigabite" && INSTALLED="$d/gigabite" && break
   fi
 done
 if [ -z "$INSTALLED" ]; then
@@ -77,14 +115,16 @@ if [ -z "$INSTALLED" ]; then
 else
   BIN_DIR="$(dirname "$INSTALLED")"
   case ":$PATH:" in
-    *":$BIN_DIR:"*) : ;;                       # already on PATH
+    *":$BIN_DIR:"*) ok "linked $INSTALLED" ;;  # already on PATH
     *)
       LINE="export PATH=\"$BIN_DIR:\$PATH\"  # added by gigabite"
       for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
         touch "$rc"
         grep -qF "added by gigabite" "$rc" 2>/dev/null || printf '\n%s\n' "$LINE" >> "$rc"
       done
-      ok "added $BIN_DIR to PATH (in .zshrc/.bash_profile)"
+      ok "linked $INSTALLED — and added $BIN_DIR to PATH (in .zshrc/.bash_profile)"
+      # Loud in either mode: without it the command they were just given does
+      # not exist in the shell they are standing in.
       note "open a new terminal, or run:  export PATH=\"$BIN_DIR:\$PATH\""
       ;;
   esac
@@ -104,18 +144,25 @@ mkdir -p "$CMD_DIR"
 # deliberate. Someone else's file that happens to say "gigabite" is far rarer than an
 # existing install needing its update, and only the second failure is certain.
 is_ours() { grep -qi "gigabite" "$1" 2>/dev/null; }
+# WROTE counts what these loops actually wrote, so each group can report a number
+# instead of a line per file. The count is the only thing that gets quieter: the
+# "kept your own" warn below is the reason this function exists, and it is printed
+# in either mode.
+WROTE=0
 install_managed() { # src dest label
   if [ -e "$2" ] && ! is_ours "$2"; then
     warn "kept your own $3 — gigabite did not write that file, so it is untouched"
     return
   fi
   sed "s|__GIGABITE_BIN__|$BIN|g" "$1" > "$2"
-  ok "$3"
+  detail ok "$3"
+  WROTE=$((WROTE + 1))
 }
 for f in gg search search-status calendar meeting; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
   install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
+CMD_N=$WROTE
 # Commands that have been renamed: /recall-status -> /search-status, because it
 # reports on the search index and "recall" named the mechanism rather than the thing
 # being asked about; /granola -> /meeting, because the tool it came from is one
@@ -128,6 +175,7 @@ for stale_cmd in recall-status granola; do
     rm -f "$STALE" && note "removed /$stale_cmd — it has been renamed"
   fi
 done
+AGENT_N=0
 if [ -d "$REPO/install/scaffold/agents" ]; then
   AGENT_DIR="$HOME/.claude/agents"
   mkdir -p "$AGENT_DIR"
@@ -135,6 +183,7 @@ if [ -d "$REPO/install/scaffold/agents" ]; then
     [ -e "$a" ] || continue
     install_managed "$a" "$AGENT_DIR/$(basename "$a")" "subagent $(basename "$a" .md)"
   done
+  AGENT_N=$((WROTE - CMD_N))
 fi
 
 # Skills auto-trigger off their own description, so they need no invocation by name —
@@ -144,6 +193,7 @@ fi
 # The directory name is the skill's name, and a skill SHADOWS a slash command of the
 # same name. That is why none of these is called `meeting`: it would disable /meeting
 # without saying anything. tests/test_skills.py pins that rule.
+SKILL_N=0
 if [ -d "$REPO/install/scaffold/skills" ]; then
   SKILL_DIR="$HOME/.claude/skills"
   for s in "$REPO/install/scaffold/skills/"*/SKILL.md; do
@@ -152,7 +202,9 @@ if [ -d "$REPO/install/scaffold/skills" ]; then
     mkdir -p "$SKILL_DIR/$skill"
     install_managed "$s" "$SKILL_DIR/$skill/SKILL.md" "skill $skill"
   done
+  SKILL_N=$((WROTE - CMD_N - AGENT_N))
 fi
+ok "$CMD_N commands, $AGENT_N subagents, $SKILL_N skills"
 
 
 # ---------------------------------------------------------------------------
@@ -189,10 +241,12 @@ with open(path, "w", encoding="utf-8") as fh:
 print(status)
 PY
 )
+# Routine outcomes are folded into this step's one line, below. An outcome that
+# left a backup behind, or left the file alone, is not routine and is printed.
 case "$ROUTER_STATUS" in
-  added)   ok "added router protocol to ~/.claude/CLAUDE.md" ;;
+  added)   detail ok "added router protocol to ~/.claude/CLAUDE.md" ;;
   updated) ok "updated router protocol in ~/.claude/CLAUDE.md (backup: CLAUDE.md.gigabite-bak)" ;;
-  current) note "router protocol already up to date" ;;
+  current) detail note "router protocol already up to date" ;;
   corrupt) note "router markers in ~/.claude/CLAUDE.md look damaged — left untouched" ;;
   *)       note "could not sync router protocol in ~/.claude/CLAUDE.md" ;;
 esac
@@ -231,11 +285,14 @@ print("added")
 PY
 ) || HOOK_STATUS="error"
 case "$HOOK_STATUS" in
-  added)         ok "ambient recall hook registered (UserPromptSubmit). Remove it from ~/.claude/settings.json to disable." ;;
-  exists)        note "ambient recall hook already registered" ;;
+  added)         detail ok "ambient recall hook registered (UserPromptSubmit)" ;;
+  exists)        detail note "ambient recall hook already registered" ;;
   unparseable)   warn "~/.claude/settings.json isn't valid JSON — backed it up to .gigabite.bak and did NOT modify it. Add the hook manually or fix the file and re-run." ;;
   *)             warn "could not register the recall hook automatically ($HOOK_STATUS). Hook script is at $HOOK_DIR/gg-recall.sh; add it to settings.json manually." ;;
 esac
+# The step's one line. It carries the way out, because a hook that runs on every
+# prompt is not something to leave someone unable to switch off.
+ok "router protocol + ambient recall (remove the hook from ~/.claude/settings.json to disable)"
 
 # ---------------------------------------------------------------------------
 say "5/7  Scheduling the gated end-of-day synthesis (launchd)"
@@ -245,8 +302,8 @@ LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist
 mkdir -p "$LA_DIR" "$(dirname "$LOG")"
 sed -e "s|__DAILY_BIN__|$DAILY|g" -e "s|__LOG__|$LOG|g" \
     "$REPO/install/launchd/com.gigabite.synthesis.plist" > "$PLIST"
-launchctl bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
-if launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
+"$LAUNCHCTL" bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
+if "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
   ok "scheduled: gigabite synthesize + decay daily at 18:00 (gated; nothing auto-applies)"
 else
   warn "installed the LaunchAgent plist but couldn't load it now; it will load at next login. ($PLIST)"
