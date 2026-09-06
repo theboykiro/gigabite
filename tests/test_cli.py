@@ -343,7 +343,7 @@ class TestSearch(CliTestCase):
         self.assertEqual(hits, [])
 
     def test_source_filter_excludes_other_sources(self):
-        hits = json.loads(run("search", "--json", "--source", "granola", "widget")[1])
+        hits = json.loads(run("search", "--json", "--source", "meeting", "widget")[1])
         self.assertEqual(hits, [])
 
     def test_a_query_with_fts_punctuation_does_not_crash(self):

@@ -154,10 +154,10 @@ def cmd_status(args) -> int:
 # the store would create the database it is reporting as absent.
 
 # Sources grouped into words a non-engineer already owns. "claude_code" and
-# "granola" are our vocabulary, not theirs.
+# "claude_ai" are our vocabulary, not theirs.
 _WELCOME_KINDS = (
     ("conversation", (config.SOURCE_CLAUDE_CODE, config.SOURCE_CLAUDE_AI)),
-    ("meeting", (config.SOURCE_GRANOLA, config.SOURCE_CALENDAR)),
+    ("meeting", (config.SOURCE_MEETING, config.SOURCE_CALENDAR)),
     ("note", (config.SOURCE_NOTE,)),
 )
 
@@ -587,7 +587,7 @@ def cmd_project(args) -> int:
 
 
 def _parse_meeting_header(text: str) -> dict:
-    """Pull title/date from a Granola-style header at the top of a transcript.
+    """Pull title/date from a header at the top of a transcript.
 
     Recognises lines like 'Meeting Title: …', 'Title: …', 'Date: Jul 20',
     'Date: 2026-07-20'. Only scans the first ~12 lines. Dates without a year
@@ -619,7 +619,7 @@ def _parse_meeting_header(text: str) -> dict:
 def cmd_paste(args) -> int:
     """Save whatever's on the clipboard (or stdin) into ~/Knowledge.
 
-    Fast intake for Granola transcripts: copy in Granola, then run this. It lands
+    Fast intake for a meeting transcript: copy it, then run this. It lands
     in exactly the place a file dragged into a project folder would — there is one
     destination, so "where did my meeting go?" has one answer however you handed
     it over.
@@ -639,7 +639,7 @@ def cmd_paste(args) -> int:
         print(yellow("clipboard/stdin is empty — copy the transcript first, then re-run."))
         return 1
 
-    # Granola copies carry a header (Meeting Title:/Date:/Participants:) — read it.
+    # A copied transcript often carries a header (Meeting Title:/Date:/Participants:).
     hdr = _parse_meeting_header(text)
     title = args.title or hdr.get("title") or text.splitlines()[0][:80]
     day = args.date or hdr.get("date") or __import__("datetime").date.today().isoformat()
@@ -1244,7 +1244,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", metavar="<command>")
 
     pi = sub.add_parser("ingest", help="scan sources and update the index")
-    pi.add_argument("--source", choices=config.ALL_SOURCES)
+    pi.add_argument("--source", choices=config.ALL_SOURCES,
+                     type=config.canonical_source)
     pi.add_argument("--force", action="store_true", help="re-read everything, ignore sync state")
     pi.add_argument("--remote", action="store_true", help="also run the live claude.ai pull (Cloudflare-gated; usually use the browser export)")
     pi.add_argument("--no-remote", action="store_true", help=argparse.SUPPRESS)  # back-compat (default is already local-only)
@@ -1252,7 +1253,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     ps = sub.add_parser("search", help="full-text search the index")
     ps.add_argument("query", nargs="+")
-    ps.add_argument("--source", choices=config.ALL_SOURCES)
+    ps.add_argument("--source", choices=config.ALL_SOURCES,
+                     type=config.canonical_source)
     ps.add_argument("--project")
     ps.add_argument("--limit", type=int, default=20)
     ps.add_argument("--context", type=int, default=0, help="show up to N+1 snippets per conversation")
@@ -1285,7 +1287,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="write every indexed conversation out as a readable file")
     pmz.add_argument("--dry-run", action="store_true",
                      help="report what would happen; write and move nothing")
-    pmz.add_argument("--source", choices=config.ALL_SOURCES, help="only this source")
+    pmz.add_argument("--source", choices=config.ALL_SOURCES,
+                     type=config.canonical_source, help="only this source")
     pmz.add_argument("--project", "-p",
                      help="place everything in this run under one project "
                           "(use when you know where they belong and routing can't tell)")
@@ -1332,13 +1335,13 @@ def build_parser() -> argparse.ArgumentParser:
     pj.add_argument("--layers")
     pj.set_defaults(func=cmd_project)
 
-    ppa = sub.add_parser("paste", help="save clipboard contents (e.g. a copied Granola transcript) into ~/Knowledge")
+    ppa = sub.add_parser("paste", help="save clipboard contents (e.g. a copied meeting transcript) into ~/Knowledge")
     ppa.add_argument("--title", "-t", help="title (default: the transcript header, else the first line)")
     ppa.add_argument("--date", "-d", help="YYYY-MM-DD (default: the transcript header, else today)")
     ppa.add_argument("--project", "-p", help="force a project (default: auto-detected)")
     ppa.add_argument("--layer", "-l", help="force a layer, e.g. meetings (needs --project)")
-    ppa.add_argument("--source", choices=[config.SOURCE_GRANOLA, config.SOURCE_NOTE],
-                     default=config.SOURCE_GRANOLA,
+    ppa.add_argument("--source", choices=[config.SOURCE_MEETING, config.SOURCE_NOTE],
+                     default=config.SOURCE_MEETING, type=config.canonical_source,
                      help="what the text is, recorded as provenance on the note")
     ppa.add_argument("--stdin", action="store_true", help="read from stdin instead of the clipboard")
     ppa.set_defaults(func=cmd_paste)

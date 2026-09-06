@@ -54,9 +54,9 @@ from gigabite.store import Document, Message, Store, connect  # noqa: E402
 # failure mode otherwise is a test quietly reaching the real ~/Knowledge.
 _DERIVED = (
     "KNOWLEDGE_DIR", "CORE_DIR", "CORE_FILE", "MACHINE_DIR", "INDEX_DIR", "DB_PATH",
-    "LEDGER_PATH", "STOP_FILE", "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_GRANOLA",
+    "LEDGER_PATH", "STOP_FILE", "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_MEETINGS",
     "HISTORICAL_DIR", "PROPOSALS_DIR", "ORIGINALS_DIR", "ALIASES_FILE",
-    "INBOX_CLAUDE_AI", "INBOX_GRANOLA", "INBOX_DIR",
+    "INBOX_CLAUDE_AI", "INBOX_MEETINGS", "INBOX_DIR",
     "CLAUDE_CODE_PROJECTS_DIR",
 )
 
@@ -120,13 +120,13 @@ def _repoint(knowledge: Path, core: Path) -> None:
     config.STOP_FILE = config.MACHINE_DIR / "STOP"
     config.SOURCES_DIR = config.MACHINE_DIR / "imports"
     config.SOURCES_CLAUDE_AI = config.SOURCES_DIR / "claude_ai"
-    config.SOURCES_GRANOLA = config.SOURCES_DIR / "granola"
+    config.SOURCES_MEETINGS = config.SOURCES_DIR / "meetings"
     config.HISTORICAL_DIR = config.MACHINE_DIR / "archive"
     config.PROPOSALS_DIR = config.MACHINE_DIR / "proposals"
     config.ORIGINALS_DIR = config.MACHINE_DIR / "originals"
     config.ALIASES_FILE = config.MACHINE_DIR / "aliases.json"
     config.INBOX_CLAUDE_AI = config.SOURCES_CLAUDE_AI
-    config.INBOX_GRANOLA = config.SOURCES_GRANOLA
+    config.INBOX_MEETINGS = config.SOURCES_MEETINGS
     config.INBOX_DIR = config.SOURCES_DIR
     # NOT derived from KNOWLEDGE_DIR — it points at ~/.claude/projects, so
     # without this a test that runs `ingest` reads the user's real Claude

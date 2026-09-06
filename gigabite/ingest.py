@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from . import config
-from .sources import IngestReport, claude_ai, claude_ai_live, claude_code, granola, notes
+from .sources import IngestReport, claude_ai, claude_ai_live, claude_code, meetings, notes
 from .store import Store
 
 # Order matters, and 'note' must stay last.
@@ -19,7 +19,7 @@ from .store import Store
 _INGESTERS = {
     config.SOURCE_CLAUDE_CODE: claude_code.ingest,
     config.SOURCE_CLAUDE_AI: claude_ai.ingest,
-    config.SOURCE_GRANOLA: granola.ingest,
+    config.SOURCE_MEETING: meetings.ingest,
     config.SOURCE_NOTE: notes.ingest,
 }
 

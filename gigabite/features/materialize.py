@@ -46,13 +46,12 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .. import config, util
-from ..sources.granola import _parse_frontmatter
 from . import intake, save as savemod
 
 # Where a materialized document lands when its own source implies a layer.
 #
 # Meetings already live in ``<project>/meetings/`` — 60-odd of them, filed by hand
-# before this existed — so a materialized Granola meeting joins them rather than
+# before this existed — so a materialized meeting joins them rather than
 # starting a second convention. Chats get their own layer for the same reason a
 # transcript is not a note: they are raw material, and mixing them into the
 # project root would bury the handful of written notes under dozens of them.
@@ -60,7 +59,7 @@ from . import intake, save as savemod
 # This is the one place the tool picks a layer rather than leaving it empty.
 # Override it per run with ``--layer``.
 DEFAULT_LAYERS: Dict[str, str] = {
-    config.SOURCE_GRANOLA: "meetings",
+    config.SOURCE_MEETING: "meetings",
     config.SOURCE_CLAUDE_AI: "conversations",
     config.SOURCE_CLAUDE_CODE: "conversations",
 }
@@ -128,7 +127,7 @@ def materialized_doc_ids(root: Optional[Path] = None) -> Dict[str, Path]:
         if config.MACHINE_DIRNAME in path.parts:
             continue
         try:
-            meta, _ = _parse_frontmatter(path.read_text(encoding="utf-8",
+            meta, _ = util.parse_frontmatter(path.read_text(encoding="utf-8",
                                                         errors="replace"))
         except OSError:
             continue
@@ -345,7 +344,7 @@ def apply(store, p: Plan) -> List[Item]:
 def retire_sources(store, *, dry_run: bool = False) -> List[dict]:
     """Move raw exports out of ``_sources/`` once their content is a readable file.
 
-    ``_sources/`` is for machine-readable originals, but ten Granola meetings had
+    ``_sources/`` is for machine-readable originals, but ten meeting exports had
     been dropped there as plain markdown before project folders were the norm, so
     real content was sitting in a folder nobody browses. Once ``materialize`` has
     written that content into ``<project>/meetings/``, the export is redundant.

@@ -305,10 +305,6 @@ def list_projects() -> List[dict]:
     Returns ``[{name, keywords: [...], layers: [...], path}]``, sorted by name.
     Reserved top-level folders (leading '_' or '.') are skipped.
     """
-    # local import avoids a circular import at module load (granola imports nothing
-    # from features, but keep the dependency direction one-way and explicit here).
-    from ..sources.granola import _parse_frontmatter
-
     root = config.KNOWLEDGE_DIR
     out: List[dict] = []
     if not root.exists():
@@ -320,7 +316,7 @@ def list_projects() -> List[dict]:
         meta_path = entry / "_project.md"
         if not meta_path.exists():
             continue
-        meta, _ = _parse_frontmatter(
+        meta, _ = util.parse_frontmatter(
             meta_path.read_text(encoding="utf-8", errors="replace")
         )
         out.append({

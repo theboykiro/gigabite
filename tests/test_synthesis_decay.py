@@ -71,7 +71,7 @@ class TestDecay(unittest.TestCase):
     def test_undateable_document_is_left_active(self):
         st = fresh_store("decay_undated")
         st.upsert_document(Document(
-            source="granola", native_id="nodate", title="No timestamps",
+            source="meeting", native_id="nodate", title="No timestamps",
             messages=[Message(0, "note", "floating note")]))
         st.commit()
         report = decay.run(st, window_days=30, dry_run=False)

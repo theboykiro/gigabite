@@ -238,14 +238,15 @@ everything ever recorded. `SYNTHESIS.md` covers both loops in more depth.
 
 ## 7. External integrations
 
-**Granola.** Content arrives because you hand it over: an export saved into a
-project's `meetings/` folder, or a copied transcript through `gigabite paste`
-(`/meeting`), which routes it to the same place. Nothing in the codebase reads
-Granola's local store — that keeps the integration free of credentials and immune to
-whatever Granola changes next, which for a path used several times a day is worth more
-than saving the export click. A pull from Granola's public API remains the clean
-future route whenever API access is available; the parsing for it is already written.
-See `GRANOLA.md`.
+**Meetings.** There is no integration with a meeting-notes app, which is why the
+source is called `meeting` rather than after one of them. Content arrives because you
+hand it over: an export saved into a project's `meetings/` folder, or a copied
+transcript through `gigabite paste` (`/meeting`), which routes it to the same place.
+Nothing in the codebase reads another application's local store — that keeps the path
+free of credentials and immune to whatever that application changes next, which for a
+path used several times a day is worth more than saving the export click. A pull from
+Granola's public API remains the clean future route whenever API access is available;
+the parsing for it is already written. See `MEETINGS.md`.
 
 **Claude.ai.** Web chats have no official API, and the internal endpoints are
 Cloudflare-gated against non-browser clients. The working route is an in-page export
@@ -311,7 +312,7 @@ Phasing follows the dependency order set by the open assumptions rather than by
 convenience. The two load-bearing verifications came first, because both changed the
 shape of what got built. Then the core load — `core.md` always loaded, knowledge read
 from `~/Knowledge`. Then context detection with nested-layer resolution, then
-knowledge-write routing, then manual Granola supply and the calendar screenshot parse.
+knowledge-write routing, then manual meeting supply and the calendar screenshot parse.
 The two background loops, synthesis with its approval gate and then decay, came after
 those, and the SOP system with role-based agent spawning came last, because it depends
 on everything beneath it working.

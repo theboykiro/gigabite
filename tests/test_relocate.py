@@ -31,8 +31,8 @@ class TestRelocate(unittest.TestCase):
 
         (self.legacy / "acme" / "meetings").mkdir(parents=True)
         (self.legacy / "acme" / "meetings" / "sync.md").write_text("# sync")
-        (self.legacy / "_inbox" / "granola").mkdir(parents=True)
-        (self.legacy / "_inbox" / "granola" / "m.md").write_text("# meeting")
+        (self.legacy / "_inbox" / "meetings").mkdir(parents=True)
+        (self.legacy / "_inbox" / "meetings" / "m.md").write_text("# meeting")
         (self.legacy / "_historical").mkdir()
         (self.legacy / "_historical" / "old.md").write_text("# old")
         (self.legacy / "_proposals").mkdir()
@@ -64,7 +64,7 @@ class TestRelocate(unittest.TestCase):
 
     def test_all_machinery_moves_into_one_hidden_folder(self):
         relocate.apply(self._plan())
-        self.assertTrue(self._machine("imports", "granola", "m.md").exists())
+        self.assertTrue(self._machine("imports", "meetings", "m.md").exists())
         self.assertTrue(self._machine("archive", "old.md").exists())
         self.assertTrue(self._machine("proposals", "2026-07-20.md").exists())
         self.assertTrue(self._machine("aliases.json").exists())

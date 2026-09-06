@@ -30,7 +30,7 @@ that its contents were not read. There is no OCR and no inference — the index
 says what is known and no more.
 
 **A file may declare that it *is* an existing document.** ``features.materialize``
-renders a claude.ai chat or a Granola meeting as readable markdown under a project
+renders a claude.ai chat or a meeting as readable markdown under a project
 folder, and stamps the source document's id into its frontmatter::
 
     doc_id: claude_ai:c28ac56fc34f9c87
@@ -57,8 +57,6 @@ from typing import Iterator, Optional
 from .. import config, util
 from ..store import Document, Message, Store
 from . import IngestReport
-# Reuse the frontmatter / title parsing already proven for markdown notes.
-from .granola import _parse_frontmatter, _title_from_markdown
 
 # config.py owns the canonical SOURCE_NOTE constant + label; use the literal here
 # so this module stands alone if imported before that wiring lands.
@@ -164,11 +162,11 @@ def document_from_note(path: Path, root: Path) -> Optional[Document]:
     body = ""
     if suffix in (".md", ".markdown", ".txt"):
         raw = path.read_text(encoding="utf-8", errors="replace")
-        meta, parsed = _parse_frontmatter(raw)
+        meta, parsed = util.parse_frontmatter(raw)
         body = util.clean_text(parsed)
 
     if body:
-        title = meta.get("title") or _title_from_markdown(body, path.stem)
+        title = meta.get("title") or util.title_from_markdown(body, path.stem)
         created = util.to_iso_utc(
             meta.get("date") or meta.get("created") or meta.get("created_at")
         )
@@ -188,10 +186,17 @@ def document_from_note(path: Path, root: Path) -> Optional[Document]:
     declared = (meta.get("doc_id") or "").strip()
     source = SOURCE
     if declared:
-        # 'source:' records what the original was (granola, claude_ai, …) so the
+        # 'source:' records what the original was (meeting, claude_ai, …) so the
         # adopted row still reports itself honestly in search. Fall back to the
         # prefix of the declared id, which is namespaced by source.
-        source = (meta.get("source") or declared.split(":", 1)[0] or SOURCE).strip()
+        #
+        # Through ``canonical_source`` because these values were written by the
+        # version of the tool that wrote the file: everything filed before the
+        # 'granola' source was renamed says ``source: granola``, and will for as
+        # long as the file exists. The alternative was rewriting the user's own
+        # notes to match an internal rename (config.LEGACY_SOURCE_IDS).
+        source = config.canonical_source(
+            (meta.get("source") or declared.split(":", 1)[0] or SOURCE).strip())
 
     return Document(
         source=source,

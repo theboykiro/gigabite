@@ -2,7 +2,7 @@
 
 gigabite is a local context router for Claude. It gives Claude a searchable memory
 of everything you have already said and decided — your Claude Code sessions, your
-claude.ai chats, your Granola meetings, your own notes, and your calendar — and it
+claude.ai chats, your meetings, your own notes, and your calendar — and it
 loads the relevant parts of that history into each turn before Claude answers. You
 talk to it the way you would talk to an assistant who was in the room last week,
 rather than to a model that starts every conversation from nothing.
@@ -109,7 +109,7 @@ invented for it, because a confidently misfiled note is worse than an unfiled on
 |---|---|
 | **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
 | **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
-| **Granola** | Export the meeting as Markdown into `~/Knowledge/<project>/meetings/`. That is the only destination — `/meeting` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
+| **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `/meeting` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
 | **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
 | **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
@@ -124,11 +124,13 @@ keychain-token route (`gigabite claude-login` and `gigabite claude-sync`) is bui
 and documented, but Cloudflare currently blocks it, so the browser export is the
 route that works. The detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
 
-Granola arrives by hand, and deliberately so: nothing here reads Granola's local
-store. A meeting is in the index because it is a file in
-`~/Knowledge/<project>/meetings/` — a route with no credential in it and nothing to
-break when Granola ships an update. A clean pull from their public API
-is the future route whenever you have access; see [`docs/GRANOLA.md`](docs/GRANOLA.md).
+Meetings arrive by hand, and deliberately so: there is no integration with a
+meeting-notes app, and nothing here reads one's local store — which is why the source
+is called `meeting` rather than after any of them. A meeting is in the index because
+it is a file in `~/Knowledge/<project>/meetings/` — a route with no credential in it
+and nothing to break when the app that recorded it ships an update. A clean pull from
+Granola's public API is the future route whenever you have access; see
+[`docs/MEETINGS.md`](docs/MEETINGS.md).
 
 An export is machine-readable rather than readable, so a claude.ai chat would
 otherwise exist only inside `conversations.json` and inside SQLite — leaving
@@ -168,7 +170,7 @@ Claude is not in front of you. These are the commands that matter most:
 
 ```bash
 gigabite search "enterprise pricing anchor"     # search everything
-gigabite search "budget" --source granola       # restrict to one source
+gigabite search "budget" --source meeting       # restrict to one source
 gigabite search "roadmap" --project acme --all  # scope to a project; --all includes archived
 gigabite doc <doc_id>                           # print a full conversation
 gigabite save "Decided X because Y" -p acme -l delivery -t "Title"
@@ -246,7 +248,7 @@ gigabite/            the package
   sources/
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)
-    granola.py         Granola exports you supply
+    meetings.py        meeting notes and exports you supply
     notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine

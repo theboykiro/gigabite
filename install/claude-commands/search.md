@@ -1,5 +1,5 @@
 ---
-description: Search everything you've discussed — Claude Code, Claude.ai, and Granola meetings
+description: Search everything you've discussed — Claude Code, Claude.ai, and your meetings
 argument-hint: <what to search for>
 allowed-tools: Bash(__GIGABITE_BIN__:*)
 ---

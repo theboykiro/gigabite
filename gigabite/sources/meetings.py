@@ -1,20 +1,21 @@
-"""Ingest Granola meeting notes.
+"""Ingest meeting notes.
 
-Granola meetings arrive because you hand them over — an export, or a transcript
-copied to the clipboard (`gigabite paste`). Nothing here reads Granola's own
-store or its keychain. This module parses what you supply.
+Meetings arrive because you hand them over — an export, or a transcript copied
+to the clipboard (`gigabite paste`). Nothing here talks to a meeting-notes app,
+reads its local store or touches a keychain: there is no integration, and the
+source is named for the content rather than for whatever produced it. This
+module parses what you supply.
 
 Accepts:
   - .md / .txt  — one file per meeting (title from YAML frontmatter, first
                   '# heading', or filename). Notes + transcript both indexed.
-  - .json       — a single Granola document, a list of them, or an API-shaped
+  - .json       — a single exported document, a list of them, or an API-shaped
                   payload ({"docs":[...]}). Notes and transcript split out.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -26,43 +27,18 @@ from . import IngestReport
 # markdown / text
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
-
-
-def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    m = _FRONTMATTER.match(text)
-    if not m:
-        return {}, text
-    meta: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            meta[k.strip().lower()] = v.strip().strip('"').strip("'")
-    return meta, text[m.end():]
-
-
-def _title_from_markdown(body: str, fallback: str) -> str:
-    for line in body.splitlines():
-        line = line.strip()
-        if line.startswith("# "):
-            return line[2:].strip()
-        if line:
-            break
-    return fallback
-
-
 def document_from_markdown(path: Path) -> Optional[Document]:
     raw = path.read_text(encoding="utf-8", errors="replace")
-    meta, body = _parse_frontmatter(raw)
+    meta, body = util.parse_frontmatter(raw)
     body = util.clean_text(body)
     if not body:
         return None
-    title = meta.get("title") or _title_from_markdown(body, path.stem)
+    title = meta.get("title") or util.title_from_markdown(body, path.stem)
     created = util.to_iso_utc(meta.get("date") or meta.get("created") or meta.get("created_at"))
     native_id = meta.get("id") or meta.get("document_id") or path.name
 
     return Document(
-        source=config.SOURCE_GRANOLA,
+        source=config.SOURCE_MEETING,
         native_id=str(native_id),
         title=title.strip(),
         project=meta.get("project", ""),
@@ -87,7 +63,7 @@ def _first(obj: dict, *keys):
 
 
 def _notes_text(obj: dict) -> str:
-    """Extract human-readable notes/summary from a Granola document object."""
+    """Extract human-readable notes/summary from an exported document object."""
     v = _first(obj, "notes_markdown", "notes_plain", "summary_markdown", "summary",
                "notes", "overview")
     if isinstance(v, str):
@@ -152,7 +128,7 @@ def document_from_granola_json(obj: dict, ref: str = "granola") -> Optional[Docu
 
     attendees = _first(obj, "attendees", "people", "participants")
     return Document(
-        source=config.SOURCE_GRANOLA,
+        source=config.SOURCE_MEETING,
         native_id=str(native_id),
         title=str(title).strip(),
         project="",
@@ -185,8 +161,8 @@ def _signature(path: Path) -> str:
 
 
 def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) -> IngestReport:
-    report = IngestReport(source=config.SOURCE_GRANOLA)
-    box = Path(imports) if imports else config.SOURCES_GRANOLA
+    report = IngestReport(source=config.SOURCE_MEETING)
+    box = Path(imports) if imports else config.SOURCES_MEETINGS
     if not box.exists():
         return report        # no imports folder is normal, not a problem
 
@@ -212,7 +188,7 @@ def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) ->
         report.scanned += 1
         sig = _signature(path)
         key = str(path)
-        if not force and store.get_signature(config.SOURCE_GRANOLA, key) == sig:
+        if not force and store.get_signature(config.SOURCE_MEETING, key) == sig:
             report.skipped += 1
             continue
         try:
@@ -231,7 +207,7 @@ def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) ->
                     report.changed += 1
                 else:
                     report.skipped += 1
-            store.set_signature(config.SOURCE_GRANOLA, key, sig)
+            store.set_signature(config.SOURCE_MEETING, key, sig)
         except Exception as e:
             report.errors.append(f"{path.name}: {e}")
 

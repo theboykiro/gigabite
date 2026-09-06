@@ -104,7 +104,7 @@ STOP_FILE = MACHINE_DIR / "STOP"
 # rebuilt from scratch.
 SOURCES_DIR = MACHINE_DIR / "imports"
 SOURCES_CLAUDE_AI = SOURCES_DIR / "claude_ai"
-SOURCES_GRANOLA = SOURCES_DIR / "granola"
+SOURCES_MEETINGS = SOURCES_DIR / "meetings"
 
 # Decayed knowledge: still indexed and retrievable, just no longer in the way
 # (ARCHITECTURE §6).
@@ -124,7 +124,7 @@ ALIASES_FILE = MACHINE_DIR / "aliases.json"
 
 # Older names for the two import paths, kept so an out-of-tree caller keeps working.
 INBOX_CLAUDE_AI = SOURCES_CLAUDE_AI
-INBOX_GRANOLA = SOURCES_GRANOLA
+INBOX_MEETINGS = SOURCES_MEETINGS
 INBOX_DIR = SOURCES_DIR
 
 # Sentinel project meaning "not resolved". Content saved under it lands at the
@@ -161,19 +161,42 @@ CLAUDE_CODE_PROJECTS_DIR = HOME / ".claude" / "projects"
 # --- source identifiers -----------------------------------------------------
 SOURCE_CLAUDE_CODE = "claude_code"
 SOURCE_CLAUDE_AI = "claude_ai"
-SOURCE_GRANOLA = "granola"
+SOURCE_MEETING = "meeting"
 SOURCE_NOTE = "note"
 SOURCE_CALENDAR = "calendar"
 
-ALL_SOURCES = (SOURCE_CLAUDE_CODE, SOURCE_CLAUDE_AI, SOURCE_GRANOLA, SOURCE_NOTE, SOURCE_CALENDAR)
+ALL_SOURCES = (SOURCE_CLAUDE_CODE, SOURCE_CLAUDE_AI, SOURCE_MEETING, SOURCE_NOTE, SOURCE_CALENDAR)
 
 SOURCE_LABELS = {
     SOURCE_CLAUDE_CODE: "Claude Code",
     SOURCE_CLAUDE_AI: "Claude.ai",
-    SOURCE_GRANOLA: "Granola",
+    SOURCE_MEETING: "Meeting",
     SOURCE_NOTE: "Note",
     SOURCE_CALENDAR: "Calendar",
 }
+
+# Source ids written by an earlier version, mapped onto the current one.
+#
+# Renaming a constant does not change data already on disk: every meeting note in
+# ``~/Knowledge/<project>/meetings/`` carries its own ``source:`` frontmatter, and
+# files written before the rename say ``source: granola`` — for as long as they
+# exist. The alternative was rewriting the user's own content to match an internal
+# rename, which is not a trade worth making, so the translation happens on read.
+#
+# Ids are *not* rewritten: a doc_id like ``granola:83d359daba9b1c83`` is an opaque
+# identifier, and the doc_id↔file link is what stops one conversation being
+# indexed twice. Only the source label changes.
+LEGACY_SOURCE_IDS = {"granola": SOURCE_MEETING}
+
+
+def canonical_source(value: str) -> str:
+    """Translate a source id read off disk into the current one.
+
+    Unknown values pass through unchanged — this maps renames, it does not
+    validate.
+    """
+    key = (value or "").strip().lower()
+    return LEGACY_SOURCE_IDS.get(key, value)
 
 
 def ensure_dirs() -> None:
@@ -190,7 +213,7 @@ def ensure_dirs() -> None:
         INDEX_DIR,
         SOURCES_DIR,
         SOURCES_CLAUDE_AI,
-        SOURCES_GRANOLA,
+        SOURCES_MEETINGS,
         HISTORICAL_DIR,
     ):
         d.mkdir(parents=True, exist_ok=True)

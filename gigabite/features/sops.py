@@ -9,8 +9,7 @@ A spawned Claude Code subagent loads the SOP relevant to its role and follows
 it. This module is the read side: enumerate what's installed and fetch one by
 name. Nothing here writes — SOPs are seeded by the installer.
 
-Frontmatter is parsed with a small regex, mirroring
-``sources/granola._parse_frontmatter`` — no YAML dependency.
+Frontmatter is parsed with ``util.parse_frontmatter`` — no YAML dependency.
 """
 
 from __future__ import annotations
@@ -19,26 +18,12 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from gigabite import config
-
-_FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
+from gigabite import config, util
 
 
 def sops_dir() -> Path:
     """Where installed SOPs live: ``~/.core/capability/sops/``."""
     return config.CORE_DIR / "capability" / "sops"
-
-
-def _parse_frontmatter(text: str) -> tuple[dict, str]:
-    m = _FRONTMATTER.match(text)
-    if not m:
-        return {}, text
-    meta: dict[str, str] = {}
-    for line in m.group(1).splitlines():
-        if ":" in line:
-            k, _, v = line.partition(":")
-            meta[k.strip().lower()] = v.strip().strip('"').strip("'")
-    return meta, text[m.end():]
 
 
 def _canonical(name: str) -> str:
@@ -74,7 +59,7 @@ def list_sops() -> list[dict]:
     out: list[dict] = []
     for path in _sop_files():
         raw = path.read_text(encoding="utf-8", errors="replace")
-        meta, body = _parse_frontmatter(raw)
+        meta, body = util.parse_frontmatter(raw)
         name = meta.get("name") or _canonical(path.name)
         out.append({
             "name": name,
@@ -91,7 +76,7 @@ def load_sop(name: str) -> Optional[str]:
     target = _canonical(name)
     for path in _sop_files():
         candidates = {_canonical(path.name)}
-        meta, _ = _parse_frontmatter(path.read_text(encoding="utf-8", errors="replace"))
+        meta, _ = util.parse_frontmatter(path.read_text(encoding="utf-8", errors="replace"))
         if meta.get("name"):
             candidates.add(_canonical(meta["name"]))
         if target in candidates:

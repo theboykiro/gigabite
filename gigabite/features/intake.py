@@ -44,8 +44,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .. import config, util
-# Reuse the frontmatter parser already proven for markdown notes.
-from ..sources.granola import _parse_frontmatter
 from . import routing, save as savemod
 
 # Extensions we can read prose out of. Anything else is kept as a file and
@@ -131,7 +129,7 @@ def extract(path: Path) -> Tuple[str, Dict[str, str], str]:
         except json.JSONDecodeError:
             return "", {}, BINARY
     else:
-        meta, body = _parse_frontmatter(raw)
+        meta, body = util.parse_frontmatter(raw)
         if suffix == ".vtt":
             body = strip_vtt(body)
 

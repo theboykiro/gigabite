@@ -16,7 +16,7 @@ fabricate. Distinguish what's established from what's inferred.
 Your sequence is gather → egress-check → synthesize → cite, and it is below.
 
 **Gather — own history first:** run `gigabite search "<query>"` before anything
-external. The user's Claude Code, Claude.ai, and Granola history often already holds
+external. The user's Claude Code, Claude.ai, and meeting history often already holds
 the answer, the decision, or the constraint. Vary terms across a few searches (the
 index falls back to any-term matching); pull a full doc with `gigabite doc <doc_id>`
 when a hit is central. Only go external for what the local pass didn't answer.

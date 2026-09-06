@@ -16,7 +16,7 @@ import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config, util  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
-from gigabite.sources import claude_ai, claude_ai_live, claude_code, granola  # noqa: E402
+from gigabite.sources import claude_ai, claude_ai_live, claude_code, meetings  # noqa: E402
 
 
 def fresh_store(name) -> Store:
@@ -97,14 +97,14 @@ class TestStore(unittest.TestCase):
         self.assertEqual(hits[0]["title"], "FTS notes")
     def test_malformed_query_never_raises(self):
         st = fresh_store("store2")
-        st.upsert_document(Document(source="granola", native_id="g", title="t",
+        st.upsert_document(Document(source="meeting", native_id="g", title="t",
                                     messages=[Message(0, "note", "hello world")]))
         for q in ['"', ") OR (", "AND", "*", "", "hello AND"]:
             st.search(q)  # must not raise
 
 
 class TestPasteHeader(unittest.TestCase):
-    def test_parses_granola_header(self):
+    def test_parses_meeting_header(self):
         from gigabite.cli import _parse_meeting_header
         h = _parse_meeting_header(
             "Meeting Title: Acme Mobile Retro\nDate: Jul 17\n"
@@ -275,7 +275,7 @@ class TestClaudeAiLive(unittest.TestCase):
         self.assertTrue(any("no claude.ai token" in n for n in rep.notes))
 
 
-class TestGranola(unittest.TestCase):
+class TestMeetings(unittest.TestCase):
     def test_markdown_with_frontmatter(self):
         box = _harness.SCRATCH / "gm"
         box.mkdir(parents=True, exist_ok=True)
@@ -283,7 +283,7 @@ class TestGranola(unittest.TestCase):
             "---\ntitle: Kickoff\ndate: 2026-06-15\nproject: acme\n---\n"
             "# Kickoff\n\n## Notes\nPricing anchor decided.\n\n## Transcript\nA: hi\nB: hey\n")
         st = fresh_store("gm")
-        rep = granola.ingest(st, imports=box)
+        rep = meetings.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)
         hits = st.search("anchor", project="acme")
         self.assertTrue(hits)
@@ -292,11 +292,11 @@ class TestGranola(unittest.TestCase):
     def test_inbox_readme_and_scaffold_files_are_skipped(self):
         box = _harness.SCRATCH / "gskip"
         box.mkdir(parents=True, exist_ok=True)
-        (box / "README.md").write_text("# Drop your Granola notes here\ninstructions")
+        (box / "README.md").write_text("# Drop your meeting notes here\ninstructions")
         (box / "_notes.md").write_text("# ignore underscore-prefixed")
         (box / "real.md").write_text("# Real meeting\nactual content")
         st = fresh_store("gskip")
-        rep = granola.ingest(st, imports=box)
+        rep = meetings.ingest(st, imports=box)
         self.assertEqual(rep.changed, 1)                       # only real.md
         self.assertFalse(st.search("instructions"))            # README not indexed
         self.assertTrue(st.search("actual"))
@@ -307,7 +307,7 @@ class TestGranola(unittest.TestCase):
         (box / "_archive" / "old.md").write_text("# Old\nzebrafishmarker content")
         (box / "live.md").write_text("# Live\ndolphinmarker content")
         st = fresh_store("gnest")
-        granola.ingest(st, imports=box)
+        meetings.ingest(st, imports=box)
         self.assertTrue(st.search("dolphinmarker"))
         self.assertFalse(st.search("zebrafishmarker"))   # nested under _archive -> skipped
 
@@ -315,7 +315,7 @@ class TestGranola(unittest.TestCase):
         obj = {"id": "g9", "title": "Sync", "created_at": "2026-05-01T09:00:00Z",
                "notes_markdown": "ship search first",
                "transcript": [{"speaker": "K", "text": "search is priority"}]}
-        doc = granola.document_from_granola_json(obj)
+        doc = meetings.document_from_granola_json(obj)
         roles = [m.role for m in doc.messages]
         self.assertEqual(roles, ["note", "transcript"])
 

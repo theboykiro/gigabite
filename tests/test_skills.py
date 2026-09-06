@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
 import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
-from gigabite.sources.granola import _parse_frontmatter  # noqa: E402
+from gigabite.util import parse_frontmatter  # noqa: E402
 
 _REPO = Path(__file__).resolve().parent.parent
 _SKILLS = _REPO / "install" / "scaffold" / "skills"
@@ -115,7 +115,7 @@ class TestFrontmatter(SkillTestCase):
 
     def test_required_keys_are_present_and_non_empty(self):
         for path, text in self.each():
-            meta, body = _parse_frontmatter(text)
+            meta, body = parse_frontmatter(text)
             self.assertTrue(body.strip(), f"{path}: frontmatter but no body")
             for key in REQUIRED_KEYS:
                 self.assertIn(key, meta, f"{path}: missing {key}")
@@ -123,7 +123,7 @@ class TestFrontmatter(SkillTestCase):
 
     def test_name_matches_the_directory(self):
         for path, text in self.each():
-            meta, _ = _parse_frontmatter(text)
+            meta, _ = parse_frontmatter(text)
             self.assertEqual(meta["name"], path.parent.name)
 
     def test_allowed_tools_is_hyphenated_not_underscored(self):
@@ -150,7 +150,7 @@ class TestFrontmatter(SkillTestCase):
 
     def test_description_and_when_to_use_fit_the_metadata_budget(self):
         for path, text in self.each():
-            meta, _ = _parse_frontmatter(text)
+            meta, _ = parse_frontmatter(text)
             total = len(meta["description"]) + len(meta["when_to_use"])
             self.assertLessEqual(total, METADATA_BUDGET, f"{path}: {total} chars")
 
@@ -164,7 +164,7 @@ class TestManagedMarker(SkillTestCase):
 
     def test_the_marker_is_the_first_line_after_the_frontmatter(self):
         for path, text in self.each():
-            _, body = _parse_frontmatter(text)
+            _, body = parse_frontmatter(text)
             first = next(line for line in body.splitlines() if line.strip())
             self.assertTrue(first.startswith(MARKER), f"{path}: marker not first -> {first!r}")
 
@@ -220,7 +220,7 @@ class TestDecisionRecordWritesOnlyThroughTheTool(unittest.TestCase):
         self.assertIn("never write into `~/knowledge` yourself", _flat(self.text))
 
     def test_it_declares_no_write_tool(self):
-        meta, _ = _parse_frontmatter(self.text)
+        meta, _ = parse_frontmatter(self.text)
         tools = meta["allowed-tools"]
         for banned in ("Write", "Edit"):
             self.assertNotIn(banned, tools,

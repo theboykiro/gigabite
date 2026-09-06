@@ -114,6 +114,25 @@ class TestNoDoubleIndexing(_Base):
         self.assertIn(f"doc_id: {doc.doc_id}", body)
         self.assertIn(f"source: {config.SOURCE_CLAUDE_AI}", body)
 
+    def test_a_legacy_source_label_on_disk_still_indexes_as_the_current_one(self):
+        """Files written before the 'granola' source was renamed keep working.
+
+        60-odd meeting notes on disk say ``source: granola`` and always will —
+        rewriting the user's own content to match an internal rename was never an
+        option, so the translation happens on read (config.LEGACY_SOURCE_IDS).
+        The id is untouched: it is opaque, and it is what links file to document.
+        """
+        (self.knowledge / "acme" / "meetings").mkdir(parents=True, exist_ok=True)
+        (self.knowledge / "acme" / "meetings" / "2026-07-20-kickoff.md").write_text(
+            "---\ntitle: Kickoff\ndate: 2026-07-20\n"
+            "doc_id: granola:83d359daba9b1c83\nsource: granola\n---\n"
+            "# Kickoff\n\nThe widget anchor was agreed here.\n", encoding="utf-8")
+
+        notes.ingest(self.store, root=self.knowledge)
+        row = self.store.get_document("granola:83d359daba9b1c83")
+        self.assertIsNotNone(row, "the doc_id on disk must still resolve")
+        self.assertEqual(row["source"], config.SOURCE_MEETING)
+
     def test_a_note_without_a_doc_id_is_still_its_own_document(self):
         """The guard must not swallow ordinary notes."""
         save.save_note("An ordinary written note about widget.", project="acme",
@@ -202,7 +221,7 @@ class TestIdempotency(_Base):
         self.assertEqual(second.actionable, [])
 
     def test_a_raw_import_is_not_mistaken_for_a_stored_file(self):
-        path = config.SOURCES_DIR / "granola" / "m9.md"
+        path = config.SOURCES_DIR / "meetings" / "m9.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("widget notes", encoding="utf-8")
         self.assertFalse(materialize._is_already_a_file({"ref": str(path)}),
@@ -338,7 +357,7 @@ class TestProjectIsNeverGuessed(_Base):
         """A transcript can name its client well past the old 2,000-char probe."""
         filler = "General discussion of the agenda. " * 200
         self.store.upsert_document(Document(
-            source=config.SOURCE_GRANOLA, native_id="m-late.md",
+            source=config.SOURCE_MEETING, native_id="m-late.md",
             title="Weekly catch up", created_utc="2026-07-20T09:00:00+00:00",
             messages=[Message(seq=0, role="note",
                               text=filler + " Finally: the widget rollout.")],
@@ -357,9 +376,9 @@ class TestProjectIsNeverGuessed(_Base):
 class TestLayers(_Base):
     def test_meetings_join_the_existing_meetings_layer(self):
         self.store.upsert_document(Document(
-            source=config.SOURCE_GRANOLA, native_id="m1.md", title="Widget sync",
+            source=config.SOURCE_MEETING, native_id="m1.md", title="Widget sync",
             project="acme", created_utc="2026-07-05T09:00:00+00:00",
-            ref=str(config.SOURCES_DIR / "granola" / "m1.md"),
+            ref=str(config.SOURCES_DIR / "meetings" / "m1.md"),
             messages=[Message(seq=0, role="note", text="Widget rollout discussed.")],
         ))
         self.store.commit()
@@ -375,13 +394,13 @@ class TestLayers(_Base):
 
 
 class TestRetiringRawImports(_Base):
-    def _granola_export(self, name="m1.md", body="Widget rollout discussed at length."):
-        path = config.SOURCES_DIR / "granola" / name
+    def _meeting_export(self, name="m1.md", body="Widget rollout discussed at length."):
+        path = config.SOURCES_DIR / "meetings" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"---\ntitle: Widget sync\ndate: 2026-07-05\n---\n\n{body}\n",
                         encoding="utf-8")
         doc = Document(
-            source=config.SOURCE_GRANOLA, native_id=name, title="Widget sync",
+            source=config.SOURCE_MEETING, native_id=name, title="Widget sync",
             project="acme", created_utc="2026-07-05T09:00:00+00:00", ref=str(path),
             messages=[Message(seq=0, role="note", text=body)],
         )
@@ -390,14 +409,14 @@ class TestRetiringRawImports(_Base):
         return path, doc
 
     def test_original_is_moved_not_deleted(self):
-        path, doc = self._granola_export()
+        path, doc = self._meeting_export()
         materialize.run(self.store)
         self.assertFalse(path.exists(), "it should no longer be a raw import")
-        kept = config.ORIGINALS_DIR / "imports" / "granola" / "m1.md"
+        kept = config.ORIGINALS_DIR / "imports" / "meetings" / "m1.md"
         self.assertTrue(kept.exists(), "the original must be preserved")
 
     def test_the_document_is_repointed_at_the_readable_file(self):
-        _path, doc = self._granola_export()
+        _path, doc = self._meeting_export()
         plan, _ = materialize.run(self.store)
         self.assertEqual(self.store.document_ref(doc.doc_id),
                          str(plan.actionable[0].path))
@@ -415,7 +434,7 @@ class TestRetiringRawImports(_Base):
         self.assertTrue(shared.exists(), "a multi-document import must stay")
 
     def test_keep_sources_leaves_everything_in_place(self):
-        path, _doc = self._granola_export()
+        path, _doc = self._meeting_export()
         materialize.run(self.store, retire=False)
         self.assertTrue(path.exists())
 
@@ -507,11 +526,11 @@ class TestIntakeWithoutADropBox(_Base):
     def test_provenance_is_recorded(self):
         path, _p, _u = intake.place_text(
             "Widget pricing was agreed.", title="Widget pricing", day="2026-07-06",
-            source=config.SOURCE_GRANOLA, origin="pasted from the clipboard")
+            source=config.SOURCE_MEETING, origin="pasted from the clipboard")
         body = path.read_text(encoding="utf-8")
         self.assertIn("origin: pasted from the clipboard", body)
         self.assertIn("share: private", body)
-        self.assertIn(f"source: {config.SOURCE_GRANOLA}", body)
+        self.assertIn(f"source: {config.SOURCE_MEETING}", body)
 
     def test_placed_text_is_indexed_where_it_was_put(self):
         intake.place_text("Widget pricing was agreed at the review.",
@@ -633,7 +652,7 @@ class TestCliCommands(_Base):
         with mock.patch.object(sys, "stdin", io.StringIO(transcript)):
             rc = self.cli.cmd_paste(self._args(
                 stdin=True, title=None, date=None, project=None,
-                layer=None, source=config.SOURCE_GRANOLA))
+                layer=None, source=config.SOURCE_MEETING))
         self.assertEqual(rc, 0)
         written = [q for q in (self.knowledge / "acme").glob("*.md")
                    if q.name != "_project.md"]
@@ -646,7 +665,7 @@ class TestCliCommands(_Base):
         with mock.patch.object(sys, "stdin", io.StringIO("   ")):
             rc = self.cli.cmd_paste(self._args(
                 stdin=True, title=None, date=None, project=None, layer=None,
-                source=config.SOURCE_GRANOLA))
+                source=config.SOURCE_MEETING))
         self.assertEqual(rc, 1)
 
     def test_paths_command_names_no_retired_folder(self):

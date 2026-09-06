@@ -74,6 +74,45 @@ def word_count(s: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# markdown frontmatter
+# ---------------------------------------------------------------------------
+
+# Every markdown file this tool reads or writes may carry a YAML-ish header. One
+# parser for all of them, here rather than in a source module, because nothing
+# about it belongs to a source: notes, meeting exports, saved notes, project meta
+# and SOPs all use it.
+_FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
+
+
+def parse_frontmatter(text: str) -> tuple[dict, str]:
+    """Split a leading ``---`` block off a markdown file.
+
+    Returns ``(meta, body)``. Keys are lowercased, values stripped of surrounding
+    quotes. Flat scalars only — no YAML dependency, and nothing that needs one.
+    """
+    m = _FRONTMATTER.match(text)
+    if not m:
+        return {}, text
+    meta: dict[str, str] = {}
+    for line in m.group(1).splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            meta[k.strip().lower()] = v.strip().strip('"').strip("'")
+    return meta, text[m.end():]
+
+
+def title_from_markdown(body: str, fallback: str) -> str:
+    """First ``# heading`` if the body opens with one, else ``fallback``."""
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("# "):
+            return line[2:].strip()
+        if line:
+            break
+    return fallback
+
+
+# ---------------------------------------------------------------------------
 # passages
 # ---------------------------------------------------------------------------
 
