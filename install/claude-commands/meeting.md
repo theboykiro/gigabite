@@ -1,15 +1,15 @@
 ---
-description: File a Granola transcript you've copied to the clipboard into gigabite (no terminal)
+description: File a meeting transcript you've copied to the clipboard into gigabite (no terminal)
 argument-hint: (optional — title/date are read from the transcript header)
 allowed-tools: Bash(__GIGABITE_BIN__:*)
 ---
 <!-- gigabite:managed — this file is reinstalled by gigabite's install.sh. Edits here are replaced on the next run; rename it to keep your own version. -->
-The user copied a Granola meeting transcript to their clipboard. File it via
-gigabite — **do not ask them to paste it into chat, and do not read it into the
+The user copied a meeting transcript to their clipboard. File it via gigabite —
+**do not ask them to paste it into chat, and do not read it into the
 conversation**; the CLI reads the clipboard itself and extracts the title and date
-from the transcript's own header (`Meeting Title:` / `Date:`).
+from the transcript's own header (`Meeting Title:` / `Date:`) when it has one.
 
-Usual case — they typed just `/granola` with no arguments. Run:
+Usual case — they typed just `/meeting` with no arguments. Run:
 
 !`__GIGABITE_BIN__ paste`
 
@@ -24,10 +24,10 @@ report the note path the tool prints: that is where the meeting now lives, and i
 the same path either route.
 
 Then report the one-line confirmation the tool prints (title · project · date). If it
-says the clipboard is empty, tell them to copy the transcript in Granola first and
-re-run `/granola`. If it says the file is unfiled, no project could be worked out and
-the note is at the top of `~/Knowledge`: offer to re-run with `--project <name>`, and
-do not guess a project for them.
+says the clipboard is empty, tell them to copy the transcript in their notes app
+first and re-run `/meeting`. If it says the file is unfiled, no project could be
+worked out and the note is at the top of `~/Knowledge`: offer to re-run with
+`--project <name>`, and do not guess a project for them.
 
 If the user pastes a transcript into the chat anyway, use
 `__GIGABITE_BIN__ paste --stdin`; if they hand over a transcript *file*, use

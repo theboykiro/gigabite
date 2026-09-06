@@ -17,7 +17,7 @@ does not already exist, so re-running it never overwrites something you have edi
 
 | Directory | Installs to | What it is |
 |---|---|---|
-| `claude-commands/` | `~/.claude/commands/` | The slash commands — `/gg`, `/search`, `/search-status`, `/calendar`, `/granola`. The placeholder `__GIGABITE_BIN__` is substituted for the real launcher path at install time, because Claude Code needs an absolute path in its `allowed-tools` declaration. |
+| `claude-commands/` | `~/.claude/commands/` | The slash commands — `/gg`, `/search`, `/search-status`, `/calendar`, `/meeting`. The placeholder `__GIGABITE_BIN__` is substituted for the real launcher path at install time, because Claude Code needs an absolute path in its `allowed-tools` declaration. |
 | `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn. The installer also registers it in `~/.claude/settings.json`; remove it there to switch ambient recall off. |
 | `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/agents/` | Starter templates: `core.md`, the capability README, the SOPs, the `gg-*` subagents, the `_project.md` template, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
 | `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled end-of-day job that writes a gated synthesis proposal and runs the decay pass. Nothing it produces is applied automatically. |

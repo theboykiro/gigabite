@@ -209,7 +209,7 @@ def place_text(
     """Write handed-over *text* straight into the store. Returns ``(path, project, triaged)``.
 
     This is the single entry point for content that arrives as text rather than as
-    a file: ``gigabite paste``, ``/granola``, a transcript pasted into a session.
+    a file: ``gigabite paste``, ``/meeting``, a transcript pasted into a session.
     It writes through ``save.save_note``, so the routing guarantee holds however
     the text got here.
 

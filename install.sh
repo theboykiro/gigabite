@@ -111,18 +111,22 @@ install_managed() { # src dest label
   sed "s|__GIGABITE_BIN__|$BIN|g" "$1" > "$2"
   ok "$3"
 }
-for f in gg search search-status calendar granola; do
+for f in gg search search-status calendar meeting; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
   install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
-# /recall-status was renamed to /search-status: it reports on the search index, and
-# "recall" named the mechanism rather than the thing the user is asking about. The
-# old file still works, so leaving it behind would mean two commands for one job.
-# Removed only when it is ours, on the same test as everything else here.
-STALE="$CMD_DIR/recall-status.md"
-if [ -e "$STALE" ] && is_ours "$STALE"; then
-  rm -f "$STALE" && note "removed /recall-status — it is now /search-status"
-fi
+# Commands that have been renamed: /recall-status -> /search-status, because it
+# reports on the search index and "recall" named the mechanism rather than the thing
+# being asked about; /granola -> /meeting, because the tool it came from is one
+# person's habit and the job is filing a meeting. The old file keeps working, so
+# leaving it behind would mean two commands for one job. Removed only when it is
+# ours, on the same test as everything else here.
+for stale_cmd in recall-status granola; do
+  STALE="$CMD_DIR/$stale_cmd.md"
+  if [ -e "$STALE" ] && is_ours "$STALE"; then
+    rm -f "$STALE" && note "removed /$stale_cmd — it has been renamed"
+  fi
+done
 if [ -d "$REPO/install/scaffold/agents" ]; then
   AGENT_DIR="$HOME/.claude/agents"
   mkdir -p "$AGENT_DIR"

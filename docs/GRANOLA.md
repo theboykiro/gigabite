@@ -22,7 +22,7 @@ project's folder whichever one you use, so "where did that meeting go?" has a si
 answer.
 
 The quickest version needs no terminal at all. Copy the transcript in Granola and run
-`/granola` in Claude Code. The command reads your clipboard directly, pulls the title
+`/meeting` in Claude Code. The command reads your clipboard directly, pulls the title
 and date out of the transcript's own header (`Meeting Title:` and `Date:`, with a date
 lacking a year assumed to be this one), detects the project, and writes and indexes
 the note in the same pass — all without the transcript passing through the
@@ -64,6 +64,6 @@ produces code that looks finished and is not.
 ## Which to use
 
 Use the manual route. It has no secrets, no dependency on an undocumented format, and
-no way to break when Granola ships an update — and the `/granola` clipboard path costs
+no way to break when Granola ships an update — and the `/meeting` clipboard path costs
 about three seconds per meeting, which is cheap enough that the discipline it requires
 is not really discipline at all. Revisit the API route when you actually have access.

@@ -60,7 +60,7 @@ ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
 synthesis job through launchd, and builds the initial index.
 
 It also installs the Claude Code slash commands (`/gg`, `/search`,
-`/search-status`, `/calendar`, `/granola`) and the `gg-*` subagents, refreshing its
+`/search-status`, `/calendar`, `/meeting`) and the `gg-*` subagents, refreshing its
 own copies on every run so an update reaches them. If a command or agent of that
 name is already yours, it is left alone and the installer tells you it did so. The
 one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
@@ -107,7 +107,7 @@ invented for it, because a confidently misfiled note is worse than an unfiled on
 |---|---|
 | **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
 | **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
-| **Granola** | Export the meeting as Markdown into `~/Knowledge/<project>/meetings/`. That is the only destination — `/granola` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
+| **Granola** | Export the meeting as Markdown into `~/Knowledge/<project>/meetings/`. That is the only destination — `/meeting` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
 | **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
 | **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
@@ -158,7 +158,7 @@ the slash commands:
 /search <query>                                search everything
 /search-status                                 what is indexed right now
 /calendar                                      after pasting a calendar screenshot
-/granola                                       file the transcript on your clipboard
+/meeting                                       file the transcript on your clipboard
 ```
 
 The terminal is there when you want to work directly against the index, or when
@@ -248,7 +248,7 @@ gigabite/            the package
     notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
-  claude-commands/     /gg, /search, /search-status, /calendar, /granola
+  claude-commands/     /gg, /search, /search-status, /calendar, /meeting
   hooks/               the ambient-recall UserPromptSubmit hook
   scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/agents
   launchd/             the scheduled daily synthesis job

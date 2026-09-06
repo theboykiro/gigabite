@@ -83,7 +83,7 @@ else
   warn "Claude Code is not installed on this Mac."
   note "gigabite will still work in the terminal: gigabite search \"...\" over all your history."
   note "What you will not get is the part that matters most — Claude answering with your"
-  note "own past work already loaded, and the /gg, /search and /granola commands."
+  note "own past work already loaded, and the /gg, /search and /meeting commands."
   note "Install Claude Code, run this again, and the rest switches on. Nothing is lost."
 fi
 

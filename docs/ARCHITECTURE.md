@@ -240,7 +240,7 @@ everything ever recorded. `SYNTHESIS.md` covers both loops in more depth.
 
 **Granola.** Content arrives because you hand it over: an export saved into a
 project's `meetings/` folder, or a copied transcript through `gigabite paste`
-(`/granola`), which routes it to the same place. Nothing in the codebase reads
+(`/meeting`), which routes it to the same place. Nothing in the codebase reads
 Granola's local store — that keeps the integration free of credentials and immune to
 whatever Granola changes next, which for a path used several times a day is worth more
 than saving the export click. A pull from Granola's public API remains the clean
