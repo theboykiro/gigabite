@@ -93,18 +93,37 @@ fi
 say "3/7  Installing Claude Code commands + subagents (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
+# A slash command or agent by one of our names may already be the user's own work.
+# Overwriting it unconditionally spent something they never agreed to risk, and did
+# it silently. So a file that shows no sign of being ours is left exactly as it is.
+#
+# "Ours" is any file carrying the marker, or — because installs predating the marker
+# have none — any file that mentions gigabite at all: a command we wrote embeds the
+# launcher's path, and an agent we wrote names the chain it belongs to. The trade is
+# deliberate. Someone else's file that happens to say "gigabite" is far rarer than an
+# existing install needing its update, and only the second failure is certain.
+is_ours() { grep -qi "gigabite" "$1" 2>/dev/null; }
+install_managed() { # src dest label
+  if [ -e "$2" ] && ! is_ours "$2"; then
+    warn "kept your own $3 — gigabite did not write that file, so it is untouched"
+    return
+  fi
+  sed "s|__GIGABITE_BIN__|$BIN|g" "$1" > "$2"
+  ok "$3"
+}
 for f in gg search recall-status calendar granola; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
-  sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/install/claude-commands/$f.md" > "$CMD_DIR/$f.md"
-  ok "/$f"
+  install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
 if [ -d "$REPO/install/scaffold/agents" ]; then
   AGENT_DIR="$HOME/.claude/agents"
   mkdir -p "$AGENT_DIR"
   for a in "$REPO/install/scaffold/agents/"*.md; do
-    [ -e "$a" ] && cp "$a" "$AGENT_DIR/$(basename "$a")" && ok "subagent $(basename "$a" .md)"
+    [ -e "$a" ] || continue
+    install_managed "$a" "$AGENT_DIR/$(basename "$a")" "subagent $(basename "$a" .md)"
   done
 fi
+
 
 # ---------------------------------------------------------------------------
 say "4/7  Wiring the conversational layer (router protocol + ambient recall)"

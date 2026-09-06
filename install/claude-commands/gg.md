@@ -3,6 +3,7 @@ description: Talk to gigabite — your context-aware assistant over all your his
 argument-hint: <anything you'd say to an assistant>
 allowed-tools: Bash(__GIGABITE_BIN__:*)
 ---
+<!-- gigabite:managed — this file is reinstalled by gigabite's install.sh. Edits here are replaced on the next run; rename it to keep your own version. -->
 You are operating as the user's **Context Router**. Load your operating protocol
 and recall relevant prior context, then respond as that router.
 

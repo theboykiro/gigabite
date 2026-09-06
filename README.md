@@ -59,12 +59,12 @@ protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
 ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
 synthesis job through launchd, and builds the initial index.
 
-Worth knowing before you run it, because "additive" is not the whole truth: the
-slash commands it installs (`/gg`, `/search`, `/recall-status`, `/calendar`,
-`/granola`) and the `gg-*` subagents are rewritten on every run, so if you already
-have a command or an agent by one of those names, yours is replaced. It also
-refreshes `~/Knowledge/README.md`, keeping your old copy alongside it. Everything
-else — your knowledge base, your notes, your own `core.md` — is left alone.
+It also installs the Claude Code slash commands (`/gg`, `/search`,
+`/recall-status`, `/calendar`, `/granola`) and the `gg-*` subagents, refreshing its
+own copies on every run so an update reaches them. If a command or agent of that
+name is already yours, it is left alone and the installer tells you it did so. The
+one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
+beside it. Your knowledge base, your notes and your own `core.md` are never touched.
 
 You need macOS and Python 3.9 or later; the system Python is fine. There is nothing
 to `pip install`. Claude Code is not strictly required — `gigabite search` works on

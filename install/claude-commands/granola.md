@@ -3,6 +3,7 @@ description: File a Granola transcript you've copied to the clipboard into gigab
 argument-hint: (optional — title/date are read from the transcript header)
 allowed-tools: Bash(__GIGABITE_BIN__:*)
 ---
+<!-- gigabite:managed — this file is reinstalled by gigabite's install.sh. Edits here are replaced on the next run; rename it to keep your own version. -->
 The user copied a Granola meeting transcript to their clipboard. File it via
 gigabite — **do not ask them to paste it into chat, and do not read it into the
 conversation**; the CLI reads the clipboard itself and extracts the title and date

@@ -3,6 +3,7 @@ description: Search everything you've discussed — Claude Code, Claude.ai, and 
 argument-hint: <what to search for>
 allowed-tools: Bash(__GIGABITE_BIN__:*)
 ---
+<!-- gigabite:managed — this file is reinstalled by gigabite's install.sh. Edits here are replaced on the next run; rename it to keep your own version. -->
 The user wants to search their entire conversation history for: **$ARGUMENTS**
 
 Refresh the index (fast, incremental) and search:

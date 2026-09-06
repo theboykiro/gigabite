@@ -3,6 +3,7 @@ description: Read a pasted calendar screenshot, file the meetings, and show toda
 argument-hint: (paste a calendar screenshot first)
 allowed-tools: Bash(__GIGABITE_BIN__:*), Write
 ---
+<!-- gigabite:managed — this file is reinstalled by gigabite's install.sh. Edits here are replaced on the next run; rename it to keep your own version. -->
 The user has shared (or is about to share) a screenshot of their calendar. The
 calendar itself has no AI access, so the screenshot is the input — you do the
 reading; gigabite does the filing and prep.

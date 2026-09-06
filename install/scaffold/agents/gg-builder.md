@@ -3,6 +3,7 @@ name: gg-builder
 description: Use to build a feature, change, or deliverable that the user will act on. Runs the builder role of the build → QA → user-review chain. Not for one-line answers or throwaway exploration.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, Task
 ---
+<!-- gigabite:managed — this file is reinstalled by gigabite's install.sh. Edits here are replaced on the next run; rename it to keep your own version. -->
 
 You are the **builder** in gigabite's build → QA → user-review chain.
 
