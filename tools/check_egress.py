@@ -2,20 +2,26 @@
 """Fail if anything in this repository names real client work.
 
 This repository promises to carry no client names. It broke that promise once, in
-the way worth designing against: an a client team called Willow reached a public
-commit as invented-sounding test vocabulary, and no amount of searching for the
-names anyone *remembered* would have found it.
+the way worth designing against: a client's team codename reached a public commit
+as invented-sounding test vocabulary, and no amount of searching for the names
+anyone *remembered* would have found it.
 
 The first version of this script tried to derive the list automatically, keeping
 proper nouns from the knowledge base and discarding ordinary English. It could not
-have caught Willow either, because "willow" IS ordinary English — so are Cedar,
-Harbour and Meadow. Codenames are chosen from the dictionary. That is the point
-of them, and it defeats every heuristic of that shape.
+have caught that codename either, because the codename was itself an ordinary
+English word. Teams are routinely named from the dictionary — weather, mythology,
+birds — which is what defeats every heuristic of this shape. Tested against the
+real case, the automatic version reported nothing.
 
 So the list is maintained by hand, and lives outside the repository where it cannot
 itself leak:
 
     ~/.core/egress-deny.txt     one term per line, '#' for comments
+
+Keeping it out of the tree is not tidiness. A denylist enumerates exactly the words
+you are trying to protect, so committing one publishes the thing it defends. This
+script names no client vocabulary of its own, which is why it is safe to publish --
+and that property is itself checked, since the script is part of the tree it scans.
 
 `--suggest` reads the knowledge base and ranks the proper nouns in client material
 that are not on the list yet, as a triage queue. It is an aid to maintaining the
@@ -94,7 +100,7 @@ def repo_corpus() -> list[tuple[str, str]]:
 def suggest() -> int:
     """Proper nouns in client material that are not on the denylist yet.
 
-    No dictionary filtering, deliberately: that is what hid Willow. Capitalisation
+    No dictionary filtering, deliberately: that is what hid the leak. Capitalisation
     mid-sentence is the only signal used, so the output is noisy by design and is
     meant to be read, not trusted.
     """
