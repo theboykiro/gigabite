@@ -81,10 +81,13 @@ def run_secure_prompt(module, noun: str = "key") -> Optional[int]:
     EOF) before it ran — the two are kept distinct so a caller can tell "the
     prompt failed" apart from "nothing was attempted".
     """
-    print("When you press Enter, macOS's " + bold("security") + " tool will show:")
+    print("When you press Enter, macOS's " + bold("security") + " tool will open a prompt called:")
     print(cyan("    password data for new item:"))
-    print(dim(f"That hidden line is where you PASTE the {noun} (you won't see characters). "
-              "Press Enter, then paste again at ") + cyan("retype password for new item:") + dim(".\n"))
+    print(dim("Ignore the word \"password\" — that's just macOS's generic label for anything "
+              f"stored in the keychain. ") + bold(f"Paste your {noun} there") +
+          dim(" (you won't see characters as you paste — that's expected).\n"
+              "Press Enter, then paste the same ") + bold(noun) + dim(" again at ") +
+          cyan("retype password for new item:") + dim(".\n"))
     try:
         input("Press Enter to open the secure prompt (Ctrl-C to cancel)… ")
     except (EOFError, KeyboardInterrupt):
