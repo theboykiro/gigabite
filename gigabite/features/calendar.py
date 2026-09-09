@@ -64,6 +64,7 @@ def add_meetings(store: Store, meetings: list, *, projects: Optional[list] = Non
             updated_utc=start_iso,
             ref="calendar screenshot",
             extra={k: m[k] for k in ("attendees", "location", "end") if m.get(k)},
+            # No provenance: a calendar entry is one single-role message.
             messages=[Message(seq=0, role="meeting", text=_meeting_text(m), ts_utc=start_iso)],
         )
         if store.upsert_document(doc):

@@ -264,6 +264,42 @@ def _welcome_candidates(store: Store) -> list:
     return docs[:25]
 
 
+def _core_unfinished() -> None:
+    """Say so when the protocol still has `[FILL]` sections, and name the way out.
+
+    The reliable front door for setup (CORE_SETUP §6): the documented install is
+    piped through `bash`, so nothing interactive can run during it, and this brief
+    is the one screen that path is guaranteed to reach. Silent when the protocol
+    is finished — a brief that nags a user with a complete `core.md` is noise.
+    """
+    from .features import core_slots
+
+    path = config.CORE_FILE
+    if not path.exists():
+        return
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    if core_slots.FILL_MARKER not in text:
+        return
+    print(bold("Your operating protocol is still half-written."))
+    print()
+    print(f"  Some sections of {_tilde(path)} are marked [FILL] — how you want")
+    print("  calls made, what counts as done, when to act without asking. Until")
+    print("  they are filled in, you get a generic assistant over your own history.")
+    if _claude_code_present():
+        print()
+        print("    /core-setup      in Claude Code")
+        print(dim("  It asks in plain English, one question at a time, and writes"))
+        print(dim("  nothing you have not approved. Stop whenever you like — it picks"))
+        print(dim("  up where you left off."))
+    else:
+        print(dim(f"  Open {_tilde(path)} and replace the [FILL] sections, or run"))
+        print(dim("  `gigabite core interview` to see what is outstanding."))
+    print()
+
+
 def _welcome_empty() -> None:
     know = _tilde(config.KNOWLEDGE_DIR)
     unindexed = _claude_code_history()
@@ -304,6 +340,8 @@ def _welcome_empty() -> None:
         print(dim("      you run `gigabite ingest` — no filing, no export"))
     print()
     print(dim("  Run `gigabite welcome` again once there is something in there."))
+    print()
+    _core_unfinished()
 
 
 def cmd_welcome(args) -> int:
@@ -377,6 +415,7 @@ def cmd_welcome(args) -> int:
         print(terminal_hit)
 
     print()
+    _core_unfinished()
     print(dim("Also worth knowing:"))
     if _claude_code_present():
         # Demoted rather than dropped. Asking in plain English is the interface
@@ -866,6 +905,152 @@ def cmd_core(args) -> int:
         print(f"(no operating protocol at {path} — run ./install.sh)")
         return 1
     print(path.read_text(encoding="utf-8", errors="replace"), end="")
+    return 0
+
+
+_STATE_COLOUR = {
+    "shipped": dim,
+    "evidenced": green,
+    "thin": yellow,
+    "empty": dim,
+}
+
+
+def cmd_core_coverage(args) -> int:
+    """Report, slot by slot, whether the user's own history can answer it.
+
+    Read-only by construction — the pass queries with recording disabled, so
+    inspecting the corpus cannot disturb the ranking signal it just read.
+    """
+    from .features import core_coverage, core_slots
+    from .store import ReindexRequired
+
+    try:
+        coverages = core_coverage.assess(_open(), limit_per_slot=args.limit)
+    except ReindexRequired as exc:
+        print(yellow("core setup — not ready"))
+        print(f"  {exc}")
+        return 1
+    counts = core_coverage.summarise(coverages)
+
+    print(bold("core setup — coverage"))
+    for cov in coverages:
+        try:
+            title = core_slots.get_slot(cov.slot_id).title
+        except KeyError:
+            title = cov.slot_id
+        paint = _STATE_COLOUR.get(cov.state, dim)
+        line = f"  {paint(cov.state.ljust(9))} {cyan(cov.slot_id.ljust(22))} {title}"
+        if cov.evidence:
+            line += dim(f"  ({len(cov.evidence)} hit{'s' if len(cov.evidence) != 1 else ''})")
+        print(line)
+        if args.verbose:
+            for ev in cov.evidence:
+                print(dim(f"        · {ev.why}"))
+                print(dim(f"          {ev.source} · {ev.title}"))
+
+    print()
+    print("  " + "  ".join(f"{k}: {v}" for k, v in counts.items()))
+    outstanding = counts.get("thin", 0) + counts.get("empty", 0)
+    if outstanding:
+        print(dim(f"\n{outstanding} slot(s) still to answer — run 'gigabite core propose'."))
+    else:
+        print(dim("\nevery slot has evidence or ships filled."))
+    return 0
+
+
+def cmd_core_propose(args) -> int:
+    """Write a reviewable proposal. Never touches core.md.
+
+    The protocol is the constitutional layer, so the write gate is absolute:
+    this command only ever writes into the proposals directory, and applying
+    anything requires per-slot approval from the user.
+    """
+    from .features import core_proposal
+    from .store import ReindexRequired
+
+    try:
+        path = core_proposal.write_proposal(_open(), limit_per_slot=args.limit)
+    except ReindexRequired as exc:
+        print(yellow("core setup — not ready"))
+        print(f"  {exc}")
+        return 1
+    print(bold("core setup — proposal written"))
+    print(f"  {path}")
+    print(dim("\nnothing was written to your protocol. Review the file, tick the"))
+    print(dim("slots you approve, and apply them deliberately."))
+    return 0
+
+
+def cmd_core_interview(args) -> int:
+    """What the setup interview still has to ask. Read-only.
+
+    The interview itself is `/core-setup` in Claude Code — gigabite has no model
+    (CORE_SETUP §4), so the CLI half only retrieves. `--json` is what that command
+    consumes; the plain output is for someone standing in a terminal.
+    """
+    from .features import core_interview
+
+    plan = core_interview.plan()
+    if args.json:
+        print(json.dumps(plan, indent=2, ensure_ascii=False))
+        return 0
+
+    print(bold("core setup — the interview"))
+    print(f"  {plan['core_path']}")
+    for slot in plan["slots"]:
+        if slot["status"] == "shipped":
+            continue
+        paint = green if slot["status"] == "answered" else (
+            dim if slot["status"] == "declined" else yellow)
+        mark = "required" if slot["required"] and slot["status"] == "unanswered" else ""
+        print(f"  {paint(slot['status'].ljust(10))} {cyan(slot['id'].ljust(22))} "
+              f"{slot['title']}{dim('  ' + mark) if mark else ''}")
+    print()
+    if plan["remaining_required"]:
+        print(f"  {plan['remaining_required']} section(s) still marked [FILL].")
+        print(dim("  Run /core-setup in Claude Code — it asks these in plain English,"))
+        print(dim("  one at a time, and writes nothing you have not approved."))
+    else:
+        print(dim("  Nothing outstanding — every section is answered or ships filled."))
+    return 0
+
+
+def cmd_core_apply(args) -> int:
+    """Write the slots the user approved. Only ever called with their approval.
+
+    Input is JSON on stdin or in a file: `{"answers": {slot_id: body}, "declined": [...]}`.
+    There is no "apply everything" — a slot absent from `answers` renders as it
+    was, which for an unanswered one means `[FILL]`.
+    """
+    from .features import core_interview
+
+    raw = sys.stdin.read() if args.file in (None, "-") else \
+        Path(args.file).read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw or "{}")
+    except ValueError as exc:
+        print(yellow(f"core setup — could not read the approved answers: {exc}"))
+        return 1
+    if not isinstance(payload, dict):
+        print(yellow("core setup — expected a JSON object with an 'answers' key"))
+        return 1
+    answers = payload.get("answers") or {}
+    if not isinstance(answers, dict):
+        print(yellow("core setup — 'answers' must be an object of slot id -> text"))
+        return 1
+
+    result = core_interview.apply_answers(answers, declined=payload.get("declined") or ())
+    if result["unknown_slots"]:
+        print(yellow("  ignored unknown slot(s): " + ", ".join(result["unknown_slots"])))
+    if not result["written"]:
+        print(yellow("core setup — nothing approved, so nothing was written"))
+        return 0
+    print(bold("core setup — protocol updated"))
+    print(f"  {result['core_path']}")
+    print(dim(f"  answers recorded in {result['answers_path']} — a later run resumes"))
+    if result["remaining_required"]:
+        print(dim(f"  still [FILL]: {', '.join(result['remaining_required'])}"))
     return 0
 
 
@@ -1598,6 +1783,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     pco = sub.add_parser("core", help="print the operating protocol (~/.core/core.md)")
     pco.set_defaults(func=cmd_core)
+    cosub = pco.add_subparsers(dest="core_command")
+
+    pcc = cosub.add_parser("coverage", help="which protocol slots your own history can answer")
+    pcc.add_argument("--limit", type=int, default=5, help="evidence hits gathered per slot")
+    pcc.add_argument("--verbose", action="store_true", help="show the matching evidence")
+    pcc.set_defaults(func=cmd_core_coverage)
+
+    pcp = cosub.add_parser("propose", help="write a reviewable core.md proposal (never applies it)")
+    pcp.add_argument("--limit", type=int, default=5, help="evidence hits gathered per slot")
+    pcp.set_defaults(func=cmd_core_propose)
+
+    pci = cosub.add_parser("interview",
+                           help="which protocol slots the setup interview still has to ask")
+    pci.add_argument("--json", action="store_true",
+                     help="emit the plan for /core-setup to consume")
+    pci.set_defaults(func=cmd_core_interview)
+
+    pca = cosub.add_parser("apply", help="write the slots the user approved in /core-setup")
+    pca.add_argument("--file", help="JSON file of approved answers ('-' or omitted = stdin)")
+    pca.set_defaults(func=cmd_core_apply)
 
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)

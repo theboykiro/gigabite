@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_har
 from _harness import TempRoot, doc  # noqa: F401  (must precede any gigabite import)
 
 from gigabite import cli, config  # noqa: E402
-from gigabite.features import save  # noqa: E402
+from gigabite.features import core_slots, save  # noqa: E402
 from gigabite.store import Store, connect  # noqa: E402
 
 
@@ -265,6 +265,60 @@ class TestWithoutClaudeCode(WelcomeCase):
         _code, out = run("welcome")
         self.assertIn("empty", out.lower())
         self.assertNotIn("every Claude Code session", out)
+
+
+class TestTheUnfinishedProtocolNotice(WelcomeCase):
+    """The brief is the front door for core setup (CORE_SETUP §6).
+
+    The documented install is piped through `bash`, so nothing interactive can run
+    during it and this is the one screen that path reliably reaches. It must say so
+    when the protocol is unfinished — and say nothing at all when it isn't, because
+    a brief that nags a user with a complete `core.md` is noise.
+    """
+
+    def write_core(self, text: str) -> None:
+        config.CORE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.CORE_FILE.write_text(text, encoding="utf-8")
+
+    def test_it_names_the_command_while_fill_markers_remain(self):
+        self.write_core(core_slots.render_core_md({}))
+        _code, out = run("welcome")
+        self.assertIn("[FILL]", out)
+        self.assertIn("/core-setup", out)
+
+    def test_it_stays_quiet_once_the_protocol_is_finished(self):
+        answers = {s.id: "- a line" for s in core_slots.SLOTS
+                   if s.kind != "shipped" and s.id != "autonomy.grid"}
+        answers["autonomy.grid"] = {"local_reversible": "act_and_report",
+                                    "local_destructive": "confirm_once_per_class",
+                                    "outward_facing": "confirm_every_time"}
+        rendered = core_slots.render_core_md(answers)
+        self.assertNotIn("[FILL]", rendered)   # the fixture, not the assertion
+        self.write_core(rendered)
+        _code, out = run("welcome")
+        self.assertNotIn("/core-setup", out)
+        self.assertNotIn("half-written", out)
+
+    def test_it_says_nothing_when_there_is_no_protocol_file_to_judge(self):
+        self.assertFalse(config.CORE_FILE.exists())
+        _code, out = run("welcome")
+        self.assertNotIn("/core-setup", out)
+
+    def test_the_empty_index_brief_carries_the_same_notice(self):
+        self.write_core(core_slots.render_core_md({}))
+        for path in self.root.glob("*"):
+            shutil.rmtree(path) if path.is_dir() else path.unlink()
+        _code, out = run("welcome")
+        self.assertIn("empty", out.lower())
+        self.assertIn("/core-setup", out)
+
+    def test_without_claude_code_it_does_not_name_a_command_that_cannot_run(self):
+        self.write_core(core_slots.render_core_md({}))
+        shutil.rmtree(config.CLAUDE_CODE_PROJECTS_DIR, ignore_errors=True)
+        _code, out = run("welcome")
+        self.assertIn("[FILL]", out)
+        self.assertNotIn("/core-setup", out)
+        self.assertIn("gigabite core interview", out)
 
 
 if __name__ == "__main__":

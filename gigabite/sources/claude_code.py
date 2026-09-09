@@ -56,6 +56,29 @@ def _attachment_text(ev: dict) -> str:
     return ""
 
 
+# Roles that could be a human speaking. Everything else is the model's.
+_USER_ROLES = {"user", "human"}
+
+
+def _origin(ev: dict, role: str, content) -> str:
+    """Provenance for one transcript event (see util.ORIGIN_*).
+
+    This is the whole point of parsing rather than post-processing. A Claude Code
+    session stores tool results, hook output and compaction notices under
+    ``role="user"``, and once the content blocks are flattened to a string they
+    are indistinguishable from something the user typed. Here they are still
+    labelled — by the event (``toolUseResult``, ``isMeta``, a compact summary) or
+    by the block types — so the answer is read off the transcript rather than
+    guessed from the text later.
+    """
+    if role not in _USER_ROLES:
+        return util.ORIGIN_NONE
+    if ev.get("toolUseResult") is not None or ev.get("isMeta") or ev.get("isCompactSummary"):
+        # Harness-authored, whatever the blocks happen to look like.
+        return util.ORIGIN_REPLAYED
+    return util.message_origin(content)
+
+
 def parse_session_file(path: Path) -> Optional[Document]:
     """Parse one .jsonl session into a Document, or None if it has no content."""
     # Identity is the FILE, not the sessionId in events: subagent transcripts
@@ -102,10 +125,15 @@ def parse_session_file(path: Path) -> Optional[Document]:
             if etype == "attachment":
                 text = util.clean_text(_attachment_text(ev))
                 role = "attachment"
+                # A file the harness read in on the user's behalf. Its words are
+                # the file's, not the user's, so it is replayed by definition.
+                origin = util.ORIGIN_REPLAYED
             else:
                 msg = ev.get("message") or {}
                 role = msg.get("role") or etype
-                text = util.clean_text(util.coalesce_blocks(msg.get("content")))
+                content = msg.get("content")
+                text = util.clean_text(util.coalesce_blocks(content))
+                origin = _origin(ev, role, content)
 
             if not text:
                 continue
@@ -113,7 +141,8 @@ def parse_session_file(path: Path) -> Optional[Document]:
             if ts:
                 first_ts = first_ts or ts
                 last_ts = ts
-            messages.append(Message(seq=seq, role=role, text=text, ts_utc=ts))
+            messages.append(Message(seq=seq, role=role, text=text, ts_utc=ts,
+                                    origin=origin))
             seq += 1
 
     if not messages:

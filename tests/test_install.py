@@ -52,7 +52,7 @@ UNINSTALL = REPO / "uninstall.sh"
 
 # The step whose output is the payload: everything above it is what got quietened,
 # and everything from it down (the ingest summary, then `welcome`) is left alone.
-INDEX_STEP = "7/8"
+INDEX_STEP = "8/9"
 # `welcome`'s first line, in the only state a fresh fake HOME can be in: nothing
 # indexed, because there is nothing on this machine to index.
 WELCOME_FIRST = "gigabite is installed"
@@ -60,23 +60,25 @@ WELCOME_FIRST = "gigabite is installed"
 # Measured, not guessed. A quiet install of a fresh HOME prints 14 lines before the
 # index step — six of them the step headings themselves, which stay by design:
 #
-#   1/7 heading, store paths
-#   2/7 heading, linked + PATH, "open a new terminal" (the way to use what was made)
-#   3/7 heading, "5 commands, 3 subagents, 3 skills"
-#   4/7 heading, router + hook (with the way to switch the hook off)
-#   5/7 heading, scheduled, "disable with: launchctl bootout ..."
-#   6/8 heading, the integrations menu — a note pointing at `gigabite integrations`
+#   1/9 heading, store paths
+#   2/9 heading, linked + PATH, "open a new terminal" (the way to use what was made)
+#   3/9 heading, "6 commands, 3 subagents, 3 skills"
+#   4/9 heading, router + hook (with the way to switch the hook off)
+#   5/9 heading, scheduled, "disable with: launchctl bootout ..."
+#   6/9 heading, the integrations menu — a note pointing at `gigabite integrations`
 #       when stdin isn't a terminal (as here), the real prompt when it is
+#   7/9 heading, and one line about the protocol — either "already filled in" or the
+#       instruction to run /core-setup later, for the same no-terminal reason
 #
 # The budget is one line above that. Anything that reintroduces a per-item loop adds
 # three or more and fails here, which is the point of a number rather than a
 # description. Raising it is a decision about a first-time reader's attention, so it
 # should be made deliberately, in a commit that says so.
-QUIET_PREAMBLE_MAX = 15
-# The same count taken to `welcome`'s first line, so the step 7 ingest summary and
-# the step 8 heading are inside the bound too — that is the scroll a new user
+QUIET_PREAMBLE_MAX = 17
+# The same count taken to `welcome`'s first line, so the step 8 ingest summary and
+# the step 9 heading are inside the bound too — that is the scroll a new user
 # actually does before reaching the screen written for them.
-QUIET_TO_WELCOME_MAX = 26
+QUIET_TO_WELCOME_MAX = 28
 
 
 def strip_ansi(text: str) -> str:
@@ -204,12 +206,12 @@ class TestQuietByDefault(InstallCase):
             "%d lines before the welcome screen, budget %d:\n%s"
             % (len(pre), QUIET_TO_WELCOME_MAX, "\n".join(pre)))
 
-    def test_all_eight_numbered_steps_still_announce_themselves(self):
-        for step in ("1/7", "2/7", "3/7", "4/7", "5/7", "6/8", "7/8", "8/8"):
+    def test_all_nine_numbered_steps_still_announce_themselves(self):
+        for step in ("1/9", "2/9", "3/9", "4/9", "5/9", "6/9", "7/9", "8/9", "9/9"):
             self.assertIn(step, self.out)
 
     def test_the_per_item_confirmations_are_collapsed_into_a_count(self):
-        self.assertIn("5 commands, 3 subagents, 3 skills", self.out)
+        self.assertIn("6 commands, 3 subagents, 3 skills", self.out)
         for gone in ("/search-status", "subagent gg-builder", "skill meeting-prep",
                      "seeded .core/core.md"):
             self.assertNotIn(gone, "\n".join(self.preamble(self.out)),
@@ -283,7 +285,7 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
         self.assertEqual(digest, hashlib.sha256(mine.read_bytes()).hexdigest(),
                          "overwrote a file gigabite did not write")
         # And the count tells the truth about it rather than claiming five.
-        self.assertIn("4 commands, 3 subagents, 3 skills", out)
+        self.assertIn("5 commands, 3 subagents, 3 skills", out)
 
     def test_an_agent_of_the_users_own_is_reported_as_kept_in_the_quiet_run(self):
         mine = self.sandbox.write(".claude/agents/gg-builder.md",

@@ -14,12 +14,13 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from . import config, util
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 # Ranking penalty applied to the user's own Claude Code transcripts.
 #
@@ -65,12 +66,28 @@ TRANSCRIPT_RANK_PENALTY = 0.70
 MAX_HITS_PER_DOC = 2
 
 
+class ReindexRequired(RuntimeError):
+    """The index predates a schema change that cannot be backfilled in place.
+
+    Raised by readers whose answer would otherwise be wrong-but-plausible on an
+    un-upgraded index — message provenance is the case that forced it: the column
+    exists after migration but is unpopulated until every document has been
+    re-parsed from its source file, and a coverage pass run in between would
+    report "your history says nothing" rather than an error.
+    """
+
+
 @dataclass
 class Message:
     seq: int
     role: str
     text: str
     ts_utc: str = ""
+    # Where the text came from: util.ORIGIN_TYPED / ORIGIN_REPLAYED / ORIGIN_NONE.
+    # Sources that have no typed/replayed distinction to make (meetings, notes,
+    # calendar entries — one role per document, nothing replayed into them) leave
+    # this empty rather than assert an origin they cannot know.
+    origin: str = util.ORIGIN_NONE
 
 
 @dataclass
@@ -104,7 +121,7 @@ class Document:
         h.update(self.title.encode("utf-8"))
         for m in self.messages:
             h.update(b"\x00")
-            h.update(f"{m.seq}|{m.role}|{m.ts_utc}|".encode("utf-8"))
+            h.update(f"{m.seq}|{m.role}|{m.ts_utc}|{m.origin}|".encode("utf-8"))
             h.update(m.text.encode("utf-8"))
         return h.hexdigest()
 
@@ -128,6 +145,31 @@ def connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000")
     init_schema(conn)
     return conn
+
+
+# Held as a constant because an FTS5 table cannot be ALTERed: adding a column
+# means dropping and recreating it, so the migration needs the same DDL the
+# initial create uses, not a second copy of it that can drift.
+_FTS_DDL = """
+        CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
+            text,
+            title,
+            doc_id  UNINDEXED,
+            source  UNINDEXED,
+            project UNINDEXED,
+            role    UNINDEXED,
+            ts_utc  UNINDEXED,
+            seq     UNINDEXED,
+            origin  UNINDEXED,
+            tokenize = 'porter unicode61'
+        );
+"""
+
+# An un-backfilled message is one whose `origin` is NULL, and that is the whole
+# of the bookkeeping — see ``Store.provenance_pending``. There is deliberately no
+# meta flag for it: a flag is a second copy of a fact the rows already state, and
+# the two drifted apart the moment an ingest command finished without every
+# source actually having re-read its files.
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
@@ -177,21 +219,15 @@ def init_schema(conn: sqlite3.Connection) -> None:
             role   TEXT,
             ts_utc TEXT,
             text   TEXT,
+            -- No DEFAULT, on purpose. NULL means "never written", which is what
+            -- makes an un-backfilled row distinguishable from ORIGIN_NONE ('' —
+            -- legitimately not applicable, as on an assistant turn). A default
+            -- of '' collapses the two and the distinction cannot be recovered.
+            origin TEXT,
             PRIMARY KEY (doc_id, seq)
         );
-
-        CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
-            text,
-            title,
-            doc_id  UNINDEXED,
-            source  UNINDEXED,
-            project UNINDEXED,
-            role    UNINDEXED,
-            ts_utc  UNINDEXED,
-            seq     UNINDEXED,
-            tokenize = 'porter unicode61'
-        );
         """
+        + _FTS_DDL
     )
     _migrate(conn)
     cur = conn.execute("SELECT value FROM meta WHERE key='schema_version'")
@@ -202,6 +238,26 @@ def init_schema(conn: sqlite3.Connection) -> None:
             (str(SCHEMA_VERSION),),
         )
     conn.commit()
+
+
+def _set_aside(conn: sqlite3.Connection) -> None:
+    """Copy the database to `gigabite.db.pre-v<N>-<date>` before a destructive step.
+
+    The corpus is not reproducible from the repo, and migration runs unattended —
+    the ambient recall hook and the nightly job both open the index, so the first
+    thing to touch it after an upgrade is usually not a person. Same convention as
+    ``refresh_doc`` in install.sh: set aside, never destroy, and never overwrite an
+    existing set-aside (a second migration must not eat the first one's copy).
+    """
+    src = next((r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), "")
+    if not src:                                   # :memory: — nothing to copy
+        return
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    dest = Path(f"{src}.pre-v{SCHEMA_VERSION}-{stamp}")
+    if dest.exists():
+        return
+    with sqlite3.connect(str(dest)) as out:       # backup(), so WAL content comes too
+        conn.backup(out)
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -215,6 +271,20 @@ def _migrate(conn: sqlite3.Connection) -> None:
     row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
     version = int(row["value"]) if row and str(row["value"]).isdigit() else 1
 
+    if row is None and not conn.execute(
+            "SELECT 1 FROM documents LIMIT 1").fetchone():
+        # A database this call has just created: the tables were made at the
+        # current version, so there is nothing to migrate and nothing to flag.
+        # Without this a fresh index would inherit the upgrade's pending marker.
+        conn.commit()
+        return
+
+    if version < SCHEMA_VERSION:
+        # Everything below rewrites data in place and cannot be undone, so the
+        # pre-migration file is set aside first (finding: the index was upgraded
+        # unattended, by a hook, with no copy to go back to).
+        _set_aside(conn)
+
     if version < 2:
         # v1 stored one FTS row per message; v2 stores passages and keeps the
         # verbatim messages separately. The rows cannot be converted in place, so
@@ -225,12 +295,90 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("DELETE FROM messages")
         conn.execute("DELETE FROM sync_state")
         conn.execute("UPDATE documents SET content_hash = NULL")
+
+    if version < 3:
+        # v3 records message provenance (util.ORIGIN_*). The information exists
+        # only in the raw transcripts, so it cannot be recovered from what is
+        # stored — every document has to be re-parsed from its source file.
+        #
+        # Nothing is thrown away to achieve that. `messages` takes an additive
+        # column; `fts` has to be recreated because FTS5 cannot ALTER, so it is
+        # rebuilt from the surviving messages and search keeps working meanwhile.
+        # Clearing `sync_state` and `content_hash` makes the next ingest re-read
+        # and rewrite every document, which is what fills the column in.
+        #
+        # Until that happens the column is NULL, which would make a
+        # provenance-filtered query answer "nothing" instead of failing — so
+        # readers that would be wrong in that window raise ReindexRequired. The
+        # column is added without a DEFAULT so those rows stay distinguishable
+        # from a genuine ORIGIN_NONE; see ``Store.provenance_pending``.
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(messages)")}
+        if "origin" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN origin TEXT")
+        conn.execute("DROP TABLE IF EXISTS fts")
+        conn.executescript(_FTS_DDL)
+        _rebuild_fts_from_messages(conn)
+        conn.execute("DELETE FROM sync_state")
+        conn.execute("UPDATE documents SET content_hash = NULL")
+
+    if version < 4:
+        # v3 added `origin` with DEFAULT '', so every pre-existing row read as
+        # ORIGIN_NONE ("not applicable") the instant the column appeared, and a
+        # separate meta flag carried the "not backfilled yet" fact instead. The
+        # flag could be cleared while the rows were still blank; the rows could
+        # not say so themselves. v4 removes the flag and makes NULL mean it.
+        #
+        # Any '' written under v3 is therefore untrustworthy — it may be a real
+        # ORIGIN_NONE or an un-backfilled row, and nothing distinguishes them —
+        # so it goes back to NULL and is re-read from the source file. The cost
+        # is one re-ingest; the alternative is a corpus that reports itself
+        # backfilled when none of it is.
+        conn.execute("UPDATE messages SET origin = NULL WHERE origin = ''")
+        if "origin" in {r["name"] for r in conn.execute("PRAGMA table_info(fts)")}:
+            conn.execute("UPDATE fts SET origin = NULL WHERE origin = ''")
+        conn.execute("DELETE FROM meta WHERE key='provenance_backfill_pending'")
+        conn.execute("DELETE FROM sync_state")
+        conn.execute("UPDATE documents SET content_hash = NULL")
+
+    if version < SCHEMA_VERSION:
         conn.execute(
             "INSERT INTO meta(key,value) VALUES('schema_version',?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (str(SCHEMA_VERSION),),
         )
     conn.commit()
+
+
+def _rebuild_fts_from_messages(conn: sqlite3.Connection) -> None:
+    """Repopulate the retrieval index from the verbatim messages already stored.
+
+    Used when the FTS table has to be recreated for a schema change. It keeps an
+    upgraded index searchable straight away, including documents whose source
+    file has since been deleted, which a rebuild-from-disk would silently lose.
+    """
+    docs = conn.execute(
+        "SELECT doc_id, title, source, project FROM documents"
+    ).fetchall()
+    for d in docs:
+        rows = conn.execute(
+            "SELECT seq, role, ts_utc, text, origin FROM messages "
+            "WHERE doc_id=? ORDER BY seq", (d["doc_id"],)
+        ).fetchall()
+        if not rows:
+            continue
+        msgs = [Message(seq=r["seq"], role=r["role"] or "", text=r["text"] or "",
+                        ts_utc=r["ts_utc"] or "", origin=r["origin"] or "")
+                for r in rows]
+        conn.executemany(
+            """INSERT INTO fts (text, title, doc_id, source, project, role,
+                                ts_utc, seq, origin)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            [
+                (p.text, d["title"], d["doc_id"], d["source"], d["project"],
+                 p.role, p.ts_utc, p.seq, p.origin)
+                for p in util.passages(msgs)
+            ],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +470,10 @@ class Store:
         )
         # The verbatim record, used to reproduce the document.
         self.conn.executemany(
-            "INSERT INTO messages (doc_id, seq, role, ts_utc, text) VALUES (?,?,?,?,?)",
+            "INSERT INTO messages (doc_id, seq, role, ts_utc, text, origin) "
+            "VALUES (?,?,?,?,?,?)",
             [
-                (doc.doc_id, m.seq, m.role, m.ts_utc, m.text)
+                (doc.doc_id, m.seq, m.role, m.ts_utc, m.text, m.origin or "")
                 for m in doc.messages
                 if m.text and m.text.strip()
             ],
@@ -332,12 +481,13 @@ class Store:
         # The retrieval index, normalised to even passages so documents from
         # different sources compete on the same terms. See util.passages.
         self.conn.executemany(
-            """INSERT INTO fts (text, title, doc_id, source, project, role, ts_utc, seq)
-               VALUES (?,?,?,?,?,?,?,?)""",
+            """INSERT INTO fts (text, title, doc_id, source, project, role,
+                                ts_utc, seq, origin)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             [
                 (
                     p.text, doc.title, doc.doc_id, doc.source, doc.project,
-                    p.role, p.ts_utc, p.seq,
+                    p.role, p.ts_utc, p.seq, p.origin,
                 )
                 for p in util.passages(doc.messages)
             ],
@@ -354,6 +504,24 @@ class Store:
 
     def commit(self) -> None:
         self.conn.commit()
+
+    # -- schema state -------------------------------------------------------
+
+    def provenance_pending(self) -> bool:
+        """True while any message still has no recorded provenance.
+
+        Asked of the data, not of a flag. A migration adds `origin` as NULL and
+        an ingest fills it in per document, so "is the backfill done" is exactly
+        "is there a row left with a NULL origin" — it becomes false when the last
+        message has been re-read, and it cannot be turned off early.
+
+        The flag this replaces was cleared when an ingest *command* returned,
+        which is not the same event: sources that scanned zero files still
+        counted, so the guard disarmed with more than half the corpus blank and
+        nothing left to detect it with.
+        """
+        return self.conn.execute(
+            "SELECT 1 FROM messages WHERE origin IS NULL LIMIT 1").fetchone() is not None
 
     # -- sync bookkeeping ---------------------------------------------------
 
@@ -381,12 +549,20 @@ class Store:
         raw: bool = False,
         sources: Optional[Iterable[str]] = None,
         project: Optional[str] = None,
+        origins: Optional[Iterable[str]] = None,
         limit: int = 20,
         include_historical: bool = False,
         record: bool = True,
     ) -> list[dict]:
+        """`origins=` constrains provenance (util.ORIGIN_*) in SQL, like `sources=`.
+
+        A passage is labelled with the origin of the messages it covers, typed
+        winning a mix (util.passages), so `origins=(ORIGIN_TYPED,)` narrows to
+        passages that contain something the human actually typed.
+        """
         if raw:
-            rows = self._run_match(query, sources, project, limit, include_historical)
+            rows = self._run_match(query, sources, project, limit, include_historical,
+                                   origins=origins)
         else:
             # "All terms" is a claim about the *document*, not about one passage.
             #
@@ -402,19 +578,20 @@ class Store:
             # candidates, while ranking still happens at passage level so the
             # best passage is what surfaces. Falls back to any-term when nothing
             # contains the lot.
-            docs = self._docs_with_all_terms(query, sources, project, include_historical)
+            docs = self._docs_with_all_terms(query, sources, project,
+                                             include_historical, origins=origins)
             or_match = util.to_fts_query(query, "OR")
             rows = self._run_match(or_match, sources, project, limit,
-                                   include_historical, only_docs=docs)
+                                   include_historical, only_docs=docs, origins=origins)
             if not rows:
                 rows = self._run_match(or_match, sources, project, limit,
-                                       include_historical)
+                                       include_historical, origins=origins)
         if record and rows:
             self.record_access({r["doc_id"] for r in rows})
         return rows
 
     def _docs_with_all_terms(self, query, sources, project,
-                             include_historical=False) -> Optional[set]:
+                             include_historical=False, origins=None) -> Optional[set]:
         """Documents containing every (non-stop-word) term, anywhere within them.
 
         Returns None when the question does not apply — an empty query, or a
@@ -440,6 +617,10 @@ class Store:
             if project:
                 where.append("fts.project = ?")
                 params.append(project)
+            if origins:
+                origs = list(origins)
+                where.append("fts.origin IN (%s)" % ",".join("?" * len(origs)))
+                params.extend(origs)
             sql = ("SELECT DISTINCT fts.doc_id AS doc_id FROM fts "
                    "JOIN documents d ON d.doc_id = fts.doc_id "
                    f"WHERE {' AND '.join(where)}")
@@ -450,7 +631,7 @@ class Store:
         return common or None
 
     def _run_match(self, match, sources, project, limit, include_historical=False,
-                   only_docs=None) -> list[dict]:
+                   only_docs=None, origins=None) -> list[dict]:
         if not match.strip():
             return []
         where = ["fts MATCH ?"]
@@ -468,6 +649,10 @@ class Store:
         if project:
             where.append("fts.project = ?")
             where_params.append(project)
+        if origins:
+            origs = list(origins)
+            where.append("fts.origin IN (%s)" % ",".join("?" * len(origs)))
+            where_params.extend(origs)
 
         # Params bind in order of appearance, and the penalty sits in SELECT,
         # which precedes WHERE.
@@ -528,6 +713,7 @@ class Store:
                 fts.source AS source,
                 fts.project AS project,
                 fts.role   AS role,
+                fts.origin AS origin,
                 fts.ts_utc AS ts_utc,
                 fts.seq    AS seq,
                 d.title    AS title,
@@ -565,7 +751,8 @@ class Store:
         # From `messages`, not `fts`: FTS rows are passages, which merge and split
         # the originals for retrieval. Callers here want the conversation as written.
         msgs = self.conn.execute(
-            "SELECT seq, role, ts_utc, text FROM messages WHERE doc_id=? ORDER BY seq",
+            "SELECT seq, role, ts_utc, text, origin FROM messages WHERE doc_id=? "
+            "ORDER BY seq",
             (doc_id,),
         ).fetchall()
         doc["messages"] = [dict(m) for m in msgs]

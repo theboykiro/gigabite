@@ -207,6 +207,7 @@ def document_from_note(path: Path, root: Path) -> Optional[Document]:
         updated_utc=created,
         ref=str(path),
         extra=extra,
+        # No provenance: a filed note or document is one single-role message.
         messages=[Message(seq=0, role=role, text=body, ts_utc=created)],
         doc_id_override=declared,
     )

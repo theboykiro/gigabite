@@ -2,7 +2,7 @@
 # gigabite installer — idempotent, additive, non-destructive.
 #   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
-#   • installs /search and /search-status Claude Code commands (user-level)
+#   • installs /search, /search-status and /core-setup commands (user-level)
 #   • installs the gg-* subagents and the gigabite skills (user-level)
 #   • offers to enable the "AI brain" integrations (Granola, more soon)
 #   • builds the initial index
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 # Every per-item confirmation goes through here. On the success path the installer
-# prints one line per numbered step, because step 7 is the only screen written for
+# prints one line per numbered step, because the last step is the only screen written for
 # a first-time reader, and a wall of green ticks is what they scroll past to miss
 # it. Nothing is dropped, only gated: --verbose (or GIGABITE_VERBOSE=1) restores
 # the lot, which is what to ask someone for when their install misbehaves.
@@ -56,7 +56,7 @@ BIN_DIRS="${GIGABITE_BIN_DIRS:-/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin
 LAUNCHCTL="${GIGABITE_LAUNCHCTL:-launchctl}"
 
 # ---------------------------------------------------------------------------
-say "1/7  Creating the local store layout"
+say "1/9  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
 mkdir -p "$CORE_DIR/capability"    # `paths` above created the knowledge layout
 ok "core: $CORE_DIR  ·  knowledge: $KNOW_DIR"
@@ -99,7 +99,7 @@ if [ -d "$REPO/install/scaffold/sops" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-say "2/7  Putting gigabite on your PATH"
+say "2/9  Putting gigabite on your PATH"
 INSTALLED=""
 OLD_IFS="$IFS"
 IFS=:
@@ -132,7 +132,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "3/7  Installing Claude Code commands, subagents + skills (user-level)"
+say "3/9  Installing Claude Code commands, subagents + skills (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
 # A slash command or agent by one of our names may already be the user's own work.
@@ -159,7 +159,7 @@ install_managed() { # src dest label
   detail ok "$3"
   WROTE=$((WROTE + 1))
 }
-for f in gg search search-status calendar meeting; do
+for f in gg search search-status calendar meeting core-setup; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
   install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
@@ -209,7 +209,7 @@ ok "$CMD_N commands, $AGENT_N subagents, $SKILL_N skills"
 
 
 # ---------------------------------------------------------------------------
-say "4/7  Wiring the conversational layer (router protocol + ambient recall)"
+say "4/9  Wiring the conversational layer (router protocol + ambient recall)"
 # Router constitution: keep a marker-bounded managed block in ~/.claude/CLAUDE.md in
 # sync with the scaffold. Only the block is touched; the user's own content is kept.
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
@@ -296,7 +296,7 @@ esac
 ok "router protocol + ambient recall (remove the hook from ~/.claude/settings.json to disable)"
 
 # ---------------------------------------------------------------------------
-say "5/7  Scheduling the gated end-of-day synthesis (launchd)"
+say "5/9  Scheduling the gated end-of-day synthesis (launchd)"
 DAILY="$REPO/bin/gigabite-daily"; chmod +x "$DAILY"
 LOG="$HOME/Library/Logs/gigabite-synthesis.log"
 LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist"
@@ -312,7 +312,7 @@ fi
 note "disable with: launchctl bootout gui/$(id -u)/com.gigabite.synthesis"
 
 # ---------------------------------------------------------------------------
-say "6/8  Enabling the \"AI brain\" integrations (Granola, more soon)"
+say "6/9  Enabling the \"AI brain\" integrations (Granola, more soon)"
 if [ -t 0 ]; then
   "$BIN" integrations
 else
@@ -320,11 +320,33 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "7/8  Building the initial index"
+say "7/9  Personalising the operating protocol"
+# The protocol ships with sections marked [FILL], and an install that leaves them
+# there leaves the user with a generic assistant. The interview that fills them in
+# is a conversation, so it lives in Claude Code, not here.
+#
+# Same guard as the integrations step, for the same reason: the documented install
+# is `curl … | bash`, so stdin is a consumed pipe with no terminal behind it, and
+# anything that waits for a keystroke hangs the install outright. Deferred with a
+# printed instruction instead. `|| true` because `set -e` is on and a protocol that
+# is merely unfinished must not abort an otherwise good install.
+CORE_FILL=0
+grep -q '\[FILL\]' "$CORE_DIR/core.md" 2>/dev/null && CORE_FILL=1
+if [ "$CORE_FILL" = 0 ]; then
+  ok "your protocol is already filled in — left untouched"
+elif [ -t 0 ] && [ -d "$HOME/.claude" ]; then
+  "$BIN" core interview || true
+  note "run /core-setup in Claude Code to answer these — nothing is written without you"
+else
+  note "core.md still has [FILL] sections — run /core-setup in Claude Code to fill them in"
+fi
+
+# ---------------------------------------------------------------------------
+say "8/9  Building the initial index"
 "$BIN" ingest || warn "ingest reported issues (see above)"
 
 # ---------------------------------------------------------------------------
-say "8/8  Done"
+say "9/9  Done"
 echo
 # `status` reports on a database; this reports on the user's own work and hands
 # them one command that is verified to find something in it. Read-only, and

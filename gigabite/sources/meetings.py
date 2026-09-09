@@ -46,6 +46,8 @@ def document_from_markdown(path: Path) -> Optional[Document]:
         updated_utc=created,
         ref=str(path),
         extra={"file": str(path), **{k: v for k, v in meta.items() if k != "title"}},
+        # No provenance: a meeting is one single-role document, with nothing
+        # replayed into it and no typed/assistant distinction to record.
         messages=[Message(seq=0, role="note", text=body, ts_utc=created)],
     )
 

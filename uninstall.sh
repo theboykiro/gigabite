@@ -205,7 +205,7 @@ step_claude_files() {
   local f a s skill
   # The five current commands, plus the two that were renamed away and may still
   # be sitting there from an older install.
-  for f in gg search search-status calendar meeting recall-status granola; do
+  for f in gg search search-status calendar meeting core-setup recall-status granola; do
     remove_managed "$CMD_DIR/$f.md" "/$f"
   done
   for a in gg-builder gg-researcher gg-reviewer; do

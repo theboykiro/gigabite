@@ -262,7 +262,7 @@ class TestInstallerWiring(unittest.TestCase):
         self.assertIn('install_managed "$s" "$SKILL_DIR/$skill/SKILL.md"', self.sh)
 
     def test_the_step_heading_mentions_skills(self):
-        heading = next(l for l in self.sh.splitlines() if l.startswith('say "3/7'))
+        heading = next(l for l in self.sh.splitlines() if l.startswith('say "3/9'))
         self.assertIn("skills", heading)
 
     def test_the_summary_block_mentions_skills(self):

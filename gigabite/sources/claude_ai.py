@@ -69,6 +69,27 @@ def _msg_role(m: dict) -> str:
     return "user" if sender in ("human", "user") else ("assistant" if sender else "user")
 
 
+def _msg_origin(m: dict, role: str) -> str:
+    """Provenance for one claude.ai message (see util.ORIGIN_*).
+
+    Weaker than the Claude Code case, and that is a property of the export rather
+    than a shortcut: a browser conversation has no tool results replayed under
+    the human's role, so a human message is typed unless its own blocks say
+    otherwise (which `util.message_origin` decides), and an attachment is the
+    file's prose rather than the user's.
+    """
+    if role != "user":
+        return util.ORIGIN_NONE
+    if isinstance(m.get("text"), str) and m["text"].strip():
+        return util.ORIGIN_TYPED
+    content = m.get("content")
+    if content:
+        return util.message_origin(content)
+    if m.get("attachments"):
+        return util.ORIGIN_REPLAYED
+    return util.ORIGIN_TYPED
+
+
 def _msg_text(m: dict) -> str:
     if isinstance(m.get("text"), str) and m["text"].strip():
         return util.clean_text(m["text"])
@@ -100,12 +121,14 @@ def conversation_to_document(conv: dict, ref: str) -> Optional[Document]:
         text = _msg_text(m)
         if not text:
             continue
+        role = _msg_role(m)
         messages.append(
             Message(
                 seq=i,
-                role=_msg_role(m),
+                role=role,
                 text=text,
                 ts_utc=util.to_iso_utc(m.get("created_at")),
+                origin=_msg_origin(m, role),
             )
         )
     if not messages:

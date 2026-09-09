@@ -33,8 +33,95 @@ def clean_text(s: Any) -> str:
     return s.strip()
 
 
-def coalesce_blocks(content: Any) -> str:
-    """Flatten a message 'content' field to searchable text.
+# ---------------------------------------------------------------------------
+# provenance
+# ---------------------------------------------------------------------------
+
+# Where a piece of message text came from.
+#
+# A Claude Code transcript stores tool results, hook output and harness
+# scaffolding under ``role="user"`` — they are replayed *to* the model on the
+# user's side of the conversation, not typed by anyone. The raw JSONL still says
+# which is which (a `tool_result` block, an `isMeta` event, a `<system-reminder>`
+# span), and flattening the blocks to one string is where that is lost. So the
+# distinction is decided here, at parse time, and carried on the message rather
+# than guessed later from substrings the flattening has already removed.
+#
+# Two values plus a third that means the question does not apply: an assistant
+# turn, a meeting note or a filed document has no typed/replayed distinction to
+# make, and claiming one would be an invention.
+ORIGIN_TYPED = "typed"          # the human typed (or pasted) it
+ORIGIN_REPLAYED = "replayed"    # tool output / injected scaffolding under a user role
+ORIGIN_NONE = ""                # not applicable: assistant turns, single-role documents
+
+# Openers of the spans the harness injects into a user turn. A message may be
+# *entirely* one of these (a slash command, a compaction caveat), or carry one
+# appended to prose the user really did type — which is why the marker locates a
+# span rather than condemning the whole message.
+_INJECTED_MARKERS = (
+    "<system-reminder",
+    "<function_results",
+    "Caveat: The messages below",
+)
+
+# The harness wraps its injections in hyphenated lowercase tags — system-reminder,
+# command-name, local-command-stdout, user-prompt-submit-hook, task-notification.
+# Matching the *convention* rather than listing the tags is what keeps this honest:
+# a literal list is a guess about a vocabulary that grows, and every tag it misses
+# becomes a false "you wrote" quote. Measured against a real corpus, a list built
+# from the tags known at the time still let `task-notification` (25 turns) and
+# `create-pr-command` (8) through as the user's own words.
+#
+# The hyphen is the discriminator: HTML someone might genuinely type (`<div>`,
+# `<p>`, `<Component>`) has no hyphen, and if this ever does misfire the cost is
+# one turn not counted as evidence, which is the cheap direction to be wrong in.
+_INJECTED_TAG = re.compile(r"<[a-z][a-z0-9]*(?:-[a-z0-9]+)+[\s>]")
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One run of message text with a single origin."""
+    text: str
+    origin: str
+
+
+def _injected_at(text: str) -> int:
+    """Index of the first injected span in *text*, or -1.
+
+    A hyphenated tag only counts when the message *opens* with one: the harness
+    always injects at the start of the turn, whereas prose mentioning `<my-tag>`
+    partway through is someone writing about a tag, not a tag being injected.
+    """
+    found = [i for i in (text.find(m) for m in _INJECTED_MARKERS) if i != -1]
+    if _INJECTED_TAG.match(text.lstrip()):
+        found.append(len(text) - len(text.lstrip()))
+    return min(found) if found else -1
+
+
+def _text_segments(text: str) -> list[Segment]:
+    """Split one authored string into typed prose and injected scaffolding.
+
+    Claude Code appends a `<system-reminder>` block to messages the user really
+    did type. Condemning the whole message for containing one is the
+    false-negative half of the bug this exists to fix, so the prose before the
+    marker stays typed and only the remainder is replayed.
+    """
+    if not text:
+        return []
+    cut = _injected_at(text)
+    if cut == -1:
+        return [Segment(text, ORIGIN_TYPED)]
+    head, tail = text[:cut], text[cut:]
+    out: list[Segment] = []
+    if head.strip():
+        out.append(Segment(head, ORIGIN_TYPED))
+    if tail.strip():
+        out.append(Segment(tail, ORIGIN_REPLAYED))
+    return out
+
+
+def coalesce_segments(content: Any) -> list[Segment]:
+    """Flatten a message 'content' field to text, keeping each part's origin.
 
     Handles the several shapes Claude uses:
       - a plain string
@@ -43,30 +130,67 @@ def coalesce_blocks(content: Any) -> str:
     we keep human/assistant prose and thinking.
     """
     if content is None:
-        return ""
+        return []
+    if isinstance(content, str):
+        return _text_segments(content)
+    if isinstance(content, dict):
+        return coalesce_segments([content])
+    if not isinstance(content, list):
+        return []
+
+    out: list[Segment] = []
+    for block in content:
+        if isinstance(block, str):
+            out.extend(_text_segments(block))
+            continue
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype == "text":
+            out.extend(_text_segments(str(block.get("text", ""))))
+        elif btype == "thinking":
+            # The model's own reasoning: searchable, but nobody typed it.
+            out.append(Segment(str(block.get("thinking", "")), ORIGIN_NONE))
+        elif btype == "tool_result":
+            # Tool results can carry pasted/returned text worth searching, but
+            # nothing inside one was typed however human-looking it reads — a
+            # file the Read tool printed is the file's prose, not the user's.
+            for seg in coalesce_segments(block.get("content")):
+                out.append(Segment(seg.text, ORIGIN_REPLAYED))
+        # tool_use / image / redacted_thinking -> skip
+    return out
+
+
+def coalesce_blocks(content: Any) -> str:
+    """Flatten a message 'content' field to searchable text.
+
+    Origin-blind, and deliberately so: everything a message carried stays in the
+    index, including tool output, because it is worth searching. Use
+    ``coalesce_segments`` or ``message_origin`` when you need to know who wrote it.
+    """
     if isinstance(content, str):
         return content
-    parts: list[str] = []
-    if isinstance(content, list):
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-                continue
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type")
-            if btype == "text":
-                parts.append(str(block.get("text", "")))
-            elif btype == "thinking":
-                parts.append(str(block.get("thinking", "")))
-            elif btype == "tool_result":
-                # tool results can carry pasted/returned text worth searching
-                inner = block.get("content")
-                parts.append(coalesce_blocks(inner))
-            # tool_use / image / redacted_thinking -> skip
-    elif isinstance(content, dict):
-        return coalesce_blocks([content])
-    return "\n".join(p for p in parts if p and p.strip())
+    return "\n".join(s.text for s in coalesce_segments(content) if s.text.strip())
+
+
+def message_origin(content: Any) -> str:
+    """One origin for a whole message: typed if any part of it was.
+
+    Per message, not per segment, because the message is the unit of authorship
+    the rest of the system already works in — `messages` rows, `show`, and the
+    rendered transcripts all reproduce whole turns, and splitting one turn into
+    two rows to carry two origins would fragment that verbatim record. The two
+    cases that matter both survive the reduction: a message that is *only*
+    replayed tool output has no typed segment and comes out replayed, while a
+    typed message with a system-reminder appended keeps its typed segment and
+    comes out typed.
+    """
+    origins = {s.origin for s in coalesce_segments(content) if s.text.strip()}
+    if ORIGIN_TYPED in origins:
+        return ORIGIN_TYPED
+    if ORIGIN_REPLAYED in origins:
+        return ORIGIN_REPLAYED
+    return ORIGIN_NONE
 
 
 def word_count(s: str) -> int:
@@ -188,6 +312,7 @@ class Passage:
     role: str           # role of the first message it covers
     text: str
     ts_utc: str = ""
+    origin: str = ""    # ORIGIN_* of the first message it covers, like `role`
     first_msg: int = 0  # seq of the first message contributing to this passage
     last_msg: int = 0   # seq of the last
 
@@ -214,17 +339,27 @@ def passages(
     buf_ts = ""
     buf_first = 0
     buf_last = 0
+    buf_origins: list[str] = []
 
     def flush() -> None:
-        nonlocal buf, buf_words, buf_role, buf_ts, buf_first, buf_last
+        nonlocal buf, buf_words, buf_role, buf_ts, buf_first, buf_last, buf_origins
         if not buf:
             return
         text = "\n".join(buf).strip()
         if text:
+            # `role` is the first message's; `origin` is the union, typed winning.
+            # A passage may merge a typed turn with the tool output that followed
+            # it, and an origin filter is a way of *finding* candidate evidence —
+            # callers re-check the individual message before quoting it. So the
+            # label errs towards including a passage that contains typed words,
+            # never towards hiding one.
+            origin = (ORIGIN_TYPED if ORIGIN_TYPED in buf_origins
+                      else (buf_origins[0] if buf_origins else ORIGIN_NONE))
             out.append(Passage(seq=len(out), role=buf_role, text=text, ts_utc=buf_ts,
-                               first_msg=buf_first, last_msg=buf_last))
+                               first_msg=buf_first, last_msg=buf_last, origin=origin))
         buf, buf_words = [], 0
         buf_role, buf_ts = "", ""
+        buf_origins = []
 
     for m in messages:
         text = (m.text or "").strip()
@@ -239,13 +374,15 @@ def passages(
             flush()
             for piece in _split_long(text, target, hard_max):
                 out.append(Passage(seq=len(out), role=m.role, text=piece,
-                                   ts_utc=m.ts_utc, first_msg=m.seq, last_msg=m.seq))
+                                   ts_utc=m.ts_utc, first_msg=m.seq, last_msg=m.seq,
+                                   origin=getattr(m, "origin", ORIGIN_NONE) or ORIGIN_NONE))
             continue
 
         if buf and buf_words + n > target:
             flush()
         if not buf:
             buf_role, buf_ts, buf_first = m.role, m.ts_utc, m.seq
+        buf_origins.append(getattr(m, "origin", ORIGIN_NONE) or ORIGIN_NONE)
         buf.append(text)
         buf_words += n
         buf_last = m.seq
