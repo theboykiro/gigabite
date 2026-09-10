@@ -564,30 +564,68 @@ class Store:
             rows = self._run_match(query, sources, project, limit, include_historical,
                                    origins=origins)
         else:
-            # "All terms" is a claim about the *document*, not about one passage.
-            #
-            # Before passages existed, a note was a single row, so requiring every
-            # term in one row and requiring them in one document were the same
-            # thing. Once documents are split for ranking they stop being the
-            # same, and the strict reading gets it wrong: remembering four things
-            # from one meeting would find nothing, because the four terms are
-            # spread across four passages. Measured, that cost 9.9 points of
-            # top-1 on bag-of-terms queries and 14.3 on Granola meetings.
-            #
-            # So the term requirement is applied at document level to pick the
-            # candidates, while ranking still happens at passage level so the
-            # best passage is what surfaces. Falls back to any-term when nothing
-            # contains the lot.
-            docs = self._docs_with_all_terms(query, sources, project,
-                                             include_historical, origins=origins)
-            or_match = util.to_fts_query(query, "OR")
-            rows = self._run_match(or_match, sources, project, limit,
-                                   include_historical, only_docs=docs, origins=origins)
+            # Adjacency first. A pasted half-remembered sentence is identifying
+            # only as a contiguous span; tokenised into the ladder below it
+            # becomes a search for its commonest words, which is why verbatim
+            # quotes retrieved the wrong document. Tried first and only kept when
+            # it matches something, so short and half-remembered queries — where
+            # the words are never adjacent — fall straight through to the ladder
+            # and score exactly as before.
+            rows = self._run_match(util.to_fts_phrase(query), sources, project,
+                                   limit, include_historical, origins=origins)
             if not rows:
-                rows = self._run_match(or_match, sources, project, limit,
-                                       include_historical, origins=origins)
+                rows = self._search_ladder(query, sources, project, limit,
+                                           include_historical, origins)
+        if not rows and not include_historical:
+            # Decay archives a document by flipping `active` to 0, and every pass
+            # above filters `d.active = 1` — so without this an archived document
+            # is unreachable at any rank, ever. `include_historical` was never the
+            # gap: it does what it says, but it is opt-in (`search --all`), so
+            # nothing reached archived material unless the caller asked by name.
+            # The CLI had this retry inline; every other caller — recall routing,
+            # the calendar prep, the eval harness — did not, which is most of the
+            # ways the user actually searches. It lives here now so all of them
+            # get it, and `record_access` below restores whatever it returns.
+            rows = self.search(query, raw=raw, sources=sources, project=project,
+                               origins=origins, limit=limit,
+                               include_historical=True, record=False)
+            for r in rows:
+                # Flagged so a caller can say where the answer came from. Without
+                # it the CLI could not tell: record_access below makes these rows
+                # active, so by the time anyone looks they are indistinguishable.
+                r["historical"] = True
         if record and rows:
             self.record_access({r["doc_id"] for r in rows})
+        return rows
+
+    def _search_ladder(self, query, sources, project, limit,
+                       include_historical=False, origins=None) -> list[dict]:
+        """All-terms-in-one-document, then any-term. The half-remembered path.
+
+        "All terms" is a claim about the *document*, not about one passage.
+
+        Before passages existed, a note was a single row, so requiring every term
+        in one row and requiring them in one document were the same thing. Once
+        documents are split for ranking they stop being the same, and the strict
+        reading gets it wrong: remembering four things from one meeting would find
+        nothing, because the four terms are spread across four passages. Measured,
+        that cost 9.9 points of top-1 on bag-of-terms queries and 14.3 on Granola
+        meetings.
+
+        So the term requirement is applied at document level to pick the
+        candidates, while ranking still happens at passage level so the best
+        passage is what surfaces. Falls back to any-term when nothing contains the
+        lot. This is what carries short and half-remembered queries — do not
+        remove it in favour of the phrase pass, which cannot match them at all.
+        """
+        docs = self._docs_with_all_terms(query, sources, project,
+                                         include_historical, origins=origins)
+        or_match = util.to_fts_query(query, "OR")
+        rows = self._run_match(or_match, sources, project, limit,
+                               include_historical, only_docs=docs, origins=origins)
+        if not rows:
+            rows = self._run_match(or_match, sources, project, limit,
+                                   include_historical, origins=origins)
         return rows
 
     def _docs_with_all_terms(self, query, sources, project,

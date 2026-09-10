@@ -77,18 +77,31 @@ def _doc_texts(conn) -> dict[str, list[str]]:
     return out
 
 
-def build_queries(conn, per_doc: int = 2) -> list[dict]:
+def build_queries(conn, per_doc: int = 2, *, archived_targets: bool = False) -> list[dict]:
     """Generate known-item queries whose correct answer is a specific document.
 
     A term only qualifies if it is *distinctive*: it must appear in at most three
     documents corpus-wide. Without that filter the 'bag' queries are ambiguous by
     construction and every ranking looks equally bad.
+
+    Archived targets are excluded by default. A default search only reaches an
+    archived document through the no-active-matches fallback, so including them
+    in the headline set measures decay coverage and ranking at the same time and
+    tells you nothing clean about either — it depressed every figure here by
+    roughly 32 points. Evaluating with ``include_historical=True`` would have
+    hidden the opposite way: it bypasses the fallback, so a search that cannot
+    reach archived material at all still scores full marks. Pass
+    ``archived_targets=True`` (CLI ``--archived-targets``) to measure the
+    fallback deliberately, as its own run.
     """
     rng = random.Random(SEED)
     texts = _doc_texts(conn)
     meta = {
         r["doc_id"]: dict(r)
-        for r in conn.execute("SELECT doc_id, source, title, project FROM documents")
+        for r in conn.execute(
+            "SELECT doc_id, source, title, project, active FROM documents"
+        )
+        if archived_targets or r["active"]
     }
 
     df: Counter = Counter()
@@ -268,12 +281,16 @@ def main() -> int:
     ap.add_argument("--json", dest="json_out", default=None, help="write results to this file")
     ap.add_argument("--baseline", default=None, help="compare against a previous --json run")
     ap.add_argument("--failures", type=int, default=0, help="print this many misses")
+    ap.add_argument("--archived-targets", action="store_true",
+                    help="also generate queries whose answer is an archived document "
+                         "(measures the no-active-matches fallback, not ranking)")
     args = ap.parse_args()
 
     conn = S.connect(Path(args.db) if args.db else config.DB_PATH)
     st = S.Store(conn)
 
-    queries = build_queries(conn, per_doc=args.per_doc)
+    queries = build_queries(conn, per_doc=args.per_doc,
+                            archived_targets=args.archived_targets)
     if not queries:
         print("no queries could be generated — is the index empty?", file=sys.stderr)
         return 1

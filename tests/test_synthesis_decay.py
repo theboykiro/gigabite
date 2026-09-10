@@ -84,13 +84,31 @@ class TestDecay(unittest.TestCase):
         st.commit()
         decay.run(st, window_days=30, dry_run=False)
 
-        # archived -> excluded from default search
-        self.assertFalse(st.search("quantum widgets"))
+        # archived -> out of the active set (still reachable via the fallback,
+        # which is the next test)
+        archived = {d["doc_id"] for d in st.iter_documents(include_historical=False)}
+        self.assertNotIn(stale.doc_id, archived)
         # re-access restores it
         st.record_access([stale.doc_id])
         active = {d["doc_id"] for d in st.iter_documents(include_historical=False)}
         self.assertIn(stale.doc_id, active)
         self.assertTrue(st.search("quantum widgets"))
+
+    def test_a_real_search_reaches_archived_material_and_restores_it(self):
+        """Decay hides a document from ranking; it does not delete it.
+
+        With nothing active to answer with, the search falls back across
+        archived documents and `record_access` brings back whatever it returned.
+        """
+        st = fresh_store("decay_fallback")
+        stale = _doc("stale", "Stale doc", updated_days_ago=60, text="quantum widgets")
+        st.upsert_document(stale)
+        st.commit()
+        decay.run(st, window_days=30, dry_run=False)
+
+        rows = st.search("quantum widgets")
+        self.assertEqual([r["doc_id"] for r in rows], [stale.doc_id])
+        self.assertTrue(st.get_document(stale.doc_id)["active"])
     def test_restore_and_status(self):
         st = fresh_store("decay_status")
         stale = _doc("stale", "Stale doc", updated_days_ago=60)

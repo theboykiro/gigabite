@@ -79,17 +79,11 @@ def cmd_search(args) -> int:
         project=args.project, limit=args.limit,
         include_historical=args.all,
     )
-    if not hits and not args.all:
-        # transparent restore-on-access: retry across archived docs; a matching
-        # archived hit is restored to active by the store's record_access.
-        hits = store.search(
-            query, raw=args.raw,
-            sources=[args.source] if args.source else None,
-            project=args.project, limit=args.limit,
-            include_historical=True,
-        )
-        if hits:
-            print(dim("(no active matches — searched archived; matches are now restored)\n"))
+    if any(h.get("historical") for h in hits):
+        # Store.search fell back across archived documents because nothing active
+        # matched, and record_access has restored what it returned. Say so: the
+        # results are older than the ones a default search normally shows.
+        print(dim("(no active matches — searched archived; matches are now restored)\n"))
     if args.json:
         print(json.dumps(hits, indent=2, ensure_ascii=False))
         return 0

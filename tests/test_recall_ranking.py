@@ -158,3 +158,162 @@ class TestRouteContext(_IndexBase):
         # falls through to keywords, which name the project that does exist
         self.assertEqual(out["context"]["project"], "acme")
         self.assertTrue(out["hits"], "recall returned nothing")
+
+
+class TestPhraseMatching(unittest.TestCase):
+    """Adjacency is what makes a remembered span identifying.
+
+    Quoting each word separately and OR-ing them searches for the span's
+    commonest words, which is a different question with a different answer.
+    """
+
+    SPAN = "the migration window closes before the second billing cycle"
+
+    def setUp(self):
+        self.st = _harness.scratch_store("phrase_match")
+        # The decoy holds every word of the span, densely and out of order, and
+        # nothing else — so it wins on OR'd terms. It never puts them in that
+        # order, so it cannot match the span itself.
+        decoy = " ".join(["billing cycle migration window closes second"] * 6)
+        for i in range(8):                      # a corpus, so bm25 has real IDF
+            self.st.upsert_document(Document(
+                source=config.SOURCE_NOTE, native_id=f"filler{i}", title=f"Other {i}",
+                messages=[Message(0, "note", f"unrelated note {i} on staffing and leave")]))
+        self.st.upsert_document(Document(
+            source=config.SOURCE_NOTE, native_id="decoy", title="Terms",
+            messages=[Message(0, "note", decoy)]))
+        # The source states the span once, buried in ordinary prose, which is
+        # what a real document looks like and what bm25 penalises on length.
+        filler = " ".join(f"paragraph {i} of the cutover plan covering rollout steps"
+                          for i in range(10))
+        self.st.upsert_document(Document(
+            source=config.SOURCE_NOTE, native_id="source", title="Cutover",
+            messages=[Message(0, "note", f"{filler}. {self.SPAN}. {filler}")]))
+        self.st.commit()
+
+    def _top(self, query):
+        rows = self.st.search(query, limit=10, record=False)
+        return rows[0]["doc_id"] if rows else None
+
+    def test_phrase_query_retrieves_its_source(self):
+        want = util.doc_id(config.SOURCE_NOTE, "source")
+        self.assertEqual(self._top(self.SPAN), want,
+                         "contiguous span did not retrieve the document it came from")
+
+    def test_the_or_ladder_alone_would_have_missed_it(self):
+        """Pins the premise: without adjacency the decoy wins, so the pass earns its place."""
+        or_match = util.to_fts_query(self.SPAN, "OR")
+        rows = self.st._run_match(or_match, None, None, 10)
+        self.assertEqual(rows[0]["doc_id"], util.doc_id(config.SOURCE_NOTE, "decoy"))
+
+    def test_bag_query_still_works(self):
+        """The fallback ladder must survive. Out-of-order words are never adjacent."""
+        self.assertEqual(self._top("cutover rollout steps paragraph"),
+                         util.doc_id(config.SOURCE_NOTE, "source"))
+
+    def test_short_query_still_works(self):
+        self.assertEqual(self._top("cutover"), util.doc_id(config.SOURCE_NOTE, "source"))
+
+    def test_partly_remembered_span_falls_back_rather_than_returning_nothing(self):
+        """One wrong word breaks the phrase; the ladder still has to answer."""
+        rows = self.st.search("the migration window shuts before the second billing cycle",
+                              limit=10, record=False)
+        self.assertTrue(rows, "a near-miss span returned nothing at all")
+
+
+class TestPhraseQuerySyntax(unittest.TestCase):
+    def test_phrase_is_one_quoted_span(self):
+        self.assertEqual(util.to_fts_phrase("migration window closes"),
+                         '"migration window closes"')
+
+    def test_single_token_has_no_phrase(self):
+        self.assertEqual(util.to_fts_phrase("migration"), "")
+        self.assertEqual(util.to_fts_phrase(""), "")
+
+    def test_punctuation_and_quotes_cannot_break_the_match(self):
+        """Every span must be a legal MATCH expression, or search raises."""
+        st = _harness.scratch_store("phrase_syntax")
+        st.upsert_document(Document(
+            source=config.SOURCE_NOTE, native_id="n1", title="T",
+            messages=[Message(0, "note", "some ordinary content")]))
+        st.commit()
+        for hostile in ('he said "yes" then NOT no',
+                        'a OR b AND (c) -- ;drop',
+                        'quote " unbalanced',
+                        '*(){}[]^:"',
+                        "it's a near-miss span"):
+            with self.subTest(hostile):
+                st.search(hostile, limit=5, record=False)   # must not raise
+
+
+class TestArchivedFallback(unittest.TestCase):
+    """Decay's promise: archived material is reachable when nothing active matches."""
+
+    def setUp(self):
+        self.st = _harness.scratch_store("archived_fallback")
+        self.st.upsert_document(Document(
+            source=config.SOURCE_NOTE, native_id="old", title="Retired",
+            messages=[Message(0, "note", "the seasonal surcharge model we retired")]))
+        self.st.commit()
+        self.old = util.doc_id(config.SOURCE_NOTE, "old")
+        self.st.set_active(self.old, False)
+
+    def test_archived_document_is_returned_when_nothing_active_matches(self):
+        rows = self.st.search("seasonal surcharge model", limit=5, record=False)
+        self.assertTrue(rows, "archived document was unreachable at any rank")
+        self.assertEqual(rows[0]["doc_id"], self.old)
+
+    def test_active_documents_outrank_archived_ones(self):
+        self.st.upsert_document(Document(
+            source=config.SOURCE_NOTE, native_id="new", title="Current",
+            messages=[Message(0, "note", "the seasonal surcharge model we use now")]))
+        self.st.commit()
+        rows = self.st.search("seasonal surcharge model", limit=5, record=False)
+        self.assertEqual(rows[0]["doc_id"], util.doc_id(config.SOURCE_NOTE, "new"))
+        # decay's point: an active answer means archived material stays archived
+        self.assertNotIn(self.old, {r["doc_id"] for r in rows})
+
+    def test_returning_an_archived_document_restores_it(self):
+        rows = self.st.search("seasonal surcharge model", limit=5)   # record=True
+        self.assertTrue(rows)
+        self.assertTrue(self.st.get_document(self.old)["active"])
+
+    def test_record_false_leaves_it_archived(self):
+        self.st.search("seasonal surcharge model", limit=5, record=False)
+        self.assertFalse(self.st.get_document(self.old)["active"])
+
+
+class TestEvalHarnessTargets(unittest.TestCase):
+    """The yardstick has to be answerable, or ranking is tuned against noise.
+
+    `build_queries` used to pick targets from `documents` with no `active`
+    filter, so it generated questions whose answer decay had already put out of
+    the default search's reach — every headline figure came out ~32 points low
+    and the number moved with the decay job rather than with the ranking.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+        import eval_recall
+        self.eval_recall = eval_recall
+        self.st = _harness.scratch_store("eval_targets")
+        words = "quarterly rebate schedule renegotiated warehouse throughput"
+        for native, extra in (("live", "kept current"), ("stale", "left untouched")):
+            self.st.upsert_document(Document(
+                source=config.SOURCE_NOTE, native_id=native, title=f"Doc {native}",
+                messages=[Message(0, "note", f"{words} {extra}. {words} again {extra}.")]))
+        self.st.commit()
+        self.archived = util.doc_id(config.SOURCE_NOTE, "stale")
+        self.st.set_active(self.archived, False)
+
+    def test_no_query_targets_an_archived_document(self):
+        targets = {q["expect"] for q in self.eval_recall.build_queries(self.st.conn)}
+        self.assertNotIn(self.archived, targets)
+        self.assertIn(util.doc_id(config.SOURCE_NOTE, "live"), targets)
+
+    def test_archived_targets_are_available_on_request(self):
+        """Measuring the decay fallback deliberately is a separate, opt-in run."""
+        targets = {q["expect"]
+                   for q in self.eval_recall.build_queries(self.st.conn,
+                                                           archived_targets=True)}
+        self.assertIn(self.archived, targets)

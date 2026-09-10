@@ -571,6 +571,26 @@ def to_fts_query(raw: str, op: str = "AND", *, drop_stopwords: Optional[bool] = 
     return joiner.join(tokens)
 
 
+def to_fts_phrase(raw: str) -> str:
+    """The query as one contiguous FTS5 phrase — `"w1 w2 w3"` — or '' if too short.
+
+    `to_fts_query` quotes each word on its own, which is what makes the AND/OR
+    ladder work but throws away adjacency, the one property that makes a
+    remembered span identifying rather than a bag of its commonest words.
+    Measured on real spans, matching them as a phrase resolves to a single
+    document about two-thirds of the time; the same words OR'd do not.
+
+    Returns '' for fewer than two tokens, where a phrase is just the term and the
+    ladder already covers it. Tokens come from `fts_tokens`, which matches word
+    characters only, so nothing that could break out of the quoting survives into
+    the phrase.
+    """
+    words = [_bare(t) for t in fts_tokens(raw)]
+    if len(words) < 2:
+        return ""
+    return '"%s"' % " ".join(w.replace('"', '""') for w in words)
+
+
 def chunks(seq: Iterable, n: int):
     buf = []
     for item in seq:
