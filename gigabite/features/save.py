@@ -132,6 +132,25 @@ def _first_line(text: str) -> str:
     return ""
 
 
+_MAX_SLUG_LEN = 60
+
+
+def _truncate_slug(slug: str, max_len: int = _MAX_SLUG_LEN) -> str:
+    """Cap a slug so ``{date}-{slug}.md`` never exceeds filesystem name limits.
+
+    Without this, a title-less save of a long paragraph (the whole text becomes
+    the slug via ``_first_line``) can produce a 200+ char filename and fail with
+    ``OSError: File name too long``. Cuts at the last hyphen inside the limit so
+    words aren't chopped mid-word.
+    """
+    if len(slug) <= max_len:
+        return slug
+    truncated = slug[:max_len].rstrip("-")
+    if "-" in truncated:
+        truncated = truncated.rsplit("-", 1)[0]
+    return truncated or slug[:max_len]
+
+
 def _unique_path(directory: Path, base: str) -> Path:
     """A non-colliding ``{base}.md`` in *directory* (append -2, -3, … if taken)."""
     candidate = directory / f"{base}.md"
@@ -215,7 +234,7 @@ def save_note(
     date = util.short_date(created)
 
     heading = title or _first_line(text) or "note"
-    slug = slugify(heading) or "note"
+    slug = _truncate_slug(slugify(heading) or "note")
     path = _unique_path(dest, f"{date}-{slug}")
 
     body = util.clean_text(text)
