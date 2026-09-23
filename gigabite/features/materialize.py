@@ -15,11 +15,9 @@ Three things make it safe to run against real content:
 **Nothing is guessed.** The project comes from the document's own recorded project
 when it has one, otherwise from the same keyword routing every other intake uses,
 and otherwise from nowhere — the document is left in the index and skipped, unless
-``--include-unfiled`` says to write it under ``personal/`` (``config.PERSONAL_PROJECT``),
-which is where a conversation with no working context actually belongs. A caller
-that means something narrower than that — "routing simply failed, don't call it
-personal" — passes ``unfiled_project=config.UNFILED_PROJECT`` and gets the same
-knowledge-root landing spot every other unrouted intake uses.
+``--include-unfiled`` says to write it anyway. It then lands loose at the top of the
+knowledge base (``config.UNFILED_PROJECT``), the same spot every other unrouted
+intake uses: visible, indexed, one drag from being filed.
 
 **Nothing is duplicated.** This is the whole difficulty. A rendering written into a
 project folder is a markdown file in the knowledge base, so the notes ingester
@@ -187,17 +185,12 @@ def _known_projects() -> set:
 
 
 UNRESOLVED = ("no project resolved — re-run with --project to place these, "
-              f"or --include-unfiled to file them under {config.PERSONAL_PROJECT}/")
-
-# Layers ``personal/`` is described as holding, so its _project.md matches the
-# shape materialize actually writes into it.
-PERSONAL_LAYERS = sorted(set(DEFAULT_LAYERS.values()))
+              "or --include-unfiled to leave them at the top of the knowledge base")
 
 
 def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
          layer: Optional[str] = None, limit: Optional[int] = None,
-         include_unfiled: bool = False,
-         unfiled_project: str = config.PERSONAL_PROJECT) -> Plan:
+         include_unfiled: bool = False) -> Plan:
     """Decide what would be written, touching nothing.
 
     Documents are considered oldest first so a run is reproducible and a ``--limit``
@@ -206,18 +199,11 @@ def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
     *project* forces one for the whole run: the tool still never guesses, but you
     can assert what you know ("these ten imports are all client meetings") in one
     command. Without it, a document whose project cannot be resolved is skipped
-    rather than written, unless *include_unfiled* says to file it under
-    *unfiled_project*. Skipping by default is deliberate: a document nothing can
+    rather than written, unless *include_unfiled* says to write it loose at the
+    knowledge root (``config.UNFILED_PROJECT``). Skipping by default is deliberate: a document nothing can
     place is usually a routing gap worth seeing, and the flag is how you say "no,
     these really have no project" — a statement about the content, not a fallback
     the tool should reach for on its own.
-
-    *unfiled_project* defaults to ``config.PERSONAL_PROJECT`` — "no project"
-    read as a fact about the content, per ``--include-unfiled``'s own contract.
-    A caller for whom that reading is wrong (nothing was asserted; routing over
-    real working content simply came up empty, e.g. a Granola meeting) passes
-    ``config.UNFILED_PROJECT`` instead, so the result lands at the knowledge root
-    like any other unrouted intake rather than being called personal.
     """
     done = materialized_doc_ids()
     projects = _known_projects()
@@ -247,8 +233,6 @@ def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
             if item.triaged and not include_unfiled:
                 item.skip = UNRESOLVED
             else:
-                if item.triaged:
-                    item.project = unfiled_project
                 item.layer = (layer if layer is not None
                               else DEFAULT_LAYERS.get(src, ""))
                 written += 1
@@ -327,12 +311,7 @@ def apply(store, p: Plan) -> List[Item]:
         # resolves to the knowledge root (see save._dest_dir) — so no project
         # directory is created for it, matching intake.place_file/place_text.
         if item.project != config.UNFILED_PROJECT:
-            savemod.ensure_project(
-                item.project,
-                # personal/ is described by the layers materialize writes into it,
-                # and by no keywords at all, so nothing is routed there implicitly.
-                layers=PERSONAL_LAYERS if item.project == config.PERSONAL_PROJECT else None,
-            )
+            savemod.ensure_project(item.project)
         item.path = savemod.save_note(
             body, item.project,
             layer=item.layer or None,
@@ -347,8 +326,11 @@ def apply(store, p: Plan) -> List[Item]:
         )
         # The rendering will not be re-indexed (sources.notes defers to whichever
         # file owns the document), so the row is told where it now lives. Without
-        # this, `search --project personal` misses files sitting in personal/.
-        store.set_document_project(item.doc_id, item.project)
+        # this, `search --project acme` misses files sitting in acme/. A file left
+        # at the knowledge root is indexed with an empty project, like any loose
+        # file — never with the sentinel's own spelling.
+        store.set_document_project(
+            item.doc_id, "" if item.project == config.UNFILED_PROJECT else item.project)
         written.append(item)
     return written
 
@@ -423,11 +405,10 @@ def retire_sources(store, *, dry_run: bool = False) -> List[dict]:
 def run(store, *, source: Optional[str] = None, project: Optional[str] = None,
         layer: Optional[str] = None, limit: Optional[int] = None,
         dry_run: bool = False, retire: bool = True,
-        include_unfiled: bool = False,
-        unfiled_project: str = config.PERSONAL_PROJECT) -> tuple:
+        include_unfiled: bool = False) -> tuple:
     """Plan and (unless *dry_run*) apply. Returns ``(plan, retired)``."""
     p = plan(store, source=source, project=project, layer=layer, limit=limit,
-             include_unfiled=include_unfiled, unfiled_project=unfiled_project)
+             include_unfiled=include_unfiled)
     if not dry_run:
         apply(store, p)
     retired = retire_sources(store, dry_run=dry_run) if retire else []

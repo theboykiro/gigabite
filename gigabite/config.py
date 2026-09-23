@@ -112,18 +112,6 @@ BINDINGS_FILE = MACHINE_DIR / "bindings.json"
 # name however it is spelt.
 UNFILED_PROJECT = "(unfiled)"
 
-# The project for content that has no project: a chat about bike suspension, the
-# weather, what to watch. It is a real folder rather than a sentinel, because
-# "unrouted" and "personal" are different facts and only one of them is worth a
-# name — a note the tool could not place is a routing failure to fix, while a
-# conversation about a bike is filed exactly where it belongs.
-#
-# Nothing routes here on its own: its ``_project.md`` carries no keywords, so
-# keyword matching can never select it. It is only ever chosen deliberately, by
-# ``materialize --include-unfiled`` or by naming it, which is what keeps it from
-# becoming the drawer everything ambiguous gets swept into.
-PERSONAL_PROJECT = "personal"
-
 # Top-level folder names used by layouts before ``.gigabite/`` existed. Skipped by
 # the notes ingester so a store that has not been migrated yet is never indexed
 # twice — once from the raw export and once from the folder it sat in.

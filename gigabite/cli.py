@@ -536,7 +536,7 @@ def cmd_materialize(args) -> int:
 
     triaged = sum(1 for i in plan.actionable if i.triaged)
     print(dim(f"\n{len(plan.actionable)} materialized "
-              f"({triaged} with no project, filed under {config.PERSONAL_PROJECT}/), "
+              f"({triaged} with no project, left at the top of the knowledge base), "
               f"{len(plan.skipped)} skipped, {len(moved)} original(s) retired."))
     if not args.dry_run and plan.actionable:
         ingest_mod.run(store, sources=[config.SOURCE_NOTE])
@@ -604,8 +604,7 @@ def cmd_granola_sync(args) -> int:
     # ~/Knowledge (config.UNFILED_PROJECT), same as any other unrouted intake, so
     # it's one drag away from the right project folder instead of gone.
     plan, _retired = materialize.run(store, source=config.SOURCE_MEETING,
-                                     include_unfiled=True,
-                                     unfiled_project=config.UNFILED_PROJECT)
+                                     include_unfiled=True)
     for item in plan.actionable:
         if item.triaged:
             print(f"  {yellow('?')} {item.title}: no project resolved — "
@@ -1040,7 +1039,7 @@ def build_parser() -> argparse.ArgumentParser:
     pmz.add_argument("--layer", help="layer to file them under (default: per source)")
     pmz.add_argument("--include-unfiled", action="store_true",
                      help="also write documents with no resolvable project, "
-                          f"under {config.PERSONAL_PROJECT}/")
+                          "loose at the top of the knowledge base")
     pmz.add_argument("--limit", type=int, help="stop after N documents")
     pmz.add_argument("--keep-sources", action="store_true",
                      help="leave raw imports in place even once they are readable files")
