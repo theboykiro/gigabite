@@ -34,7 +34,7 @@ import os
 import re
 from typing import Optional
 
-from .. import config
+from .. import config, util
 from . import bindings
 
 # An explicit project marker: '@project' or '@project:layer'.
@@ -388,6 +388,50 @@ def resolve_register(prompt: str, *, previous_was_correction: bool = False,
     return out(BRIEF, "ambiguous", "no clear signal; defaulting to full recall")
 
 
+# The recall gate: which hits the hook injects (`inject: true` on a hit).
+#
+# It used to be the hook's `score < -1.0` on raw bm25. bm25's idf collapses on a
+# small corpus, so on a new install an exact match scored about -5e-06 and nothing
+# was ever injected, while the same document scored -30 in a 120-session index.
+# No absolute score means the same thing on both, so the gate is built from two
+# ratios instead:
+#
+#   coverage  share of the prompt's meaningful words (stop words dropped, each
+#             weighted by idf — see Store.term_coverage) that the passage holds.
+#             A hit that matched only "the", or only a word most of the index
+#             contains, covers ~nothing and is never injected.
+#   relative  a hit's score against the best hit's. Only applied when the project
+#             was resolved by a keyword in the prompt: a binding or an @marker is
+#             the user saying which project this is, so scope is already the
+#             precision guard and the top hits that clear coverage go in.
+INJECT_MIN_COVERAGE = 0.5
+INJECT_MIN_RELATIVE = 0.5
+_SCOPED_BY_USER = ("binding", "explicit")
+
+
+def mark_injectable(store, prompt: str, hits: list, confidence: str) -> list:
+    """Set ``inject`` on every hit (in place) and return *hits*. Never raises."""
+    for h in hits:
+        h["inject"] = False
+    try:
+        terms = util.meaningful_terms(prompt)
+        cover = store.term_coverage(terms, [h.get("rowid") for h in hits])
+    except Exception:
+        return hits
+    scores = [h["score"] for h in hits if isinstance(h.get("score"), (int, float))]
+    best = min(scores) if scores else 0.0
+    for h in hits:
+        if cover.get(h.get("rowid"), 0.0) < INJECT_MIN_COVERAGE:
+            continue
+        if confidence not in _SCOPED_BY_USER:
+            score = h.get("score")
+            if not isinstance(score, (int, float)) or best >= 0 \
+                    or score / best < INJECT_MIN_RELATIVE:
+                continue
+        h["inject"] = True
+    return hits
+
+
 def route(store, prompt: str, *, limit: int = 6,
           cwd: Optional[str] = None,
           previous_was_correction: bool = False,
@@ -437,6 +481,10 @@ def route(store, prompt: str, *, limit: int = 6,
     it is pure and the project registry is on disk; here the answer is already in
     hand, so it costs nothing to use. It only ever moves `spar` up to `brief`, never
     the other way.
+
+    Every hit carries ``inject``: whether the recall hook should put it in the
+    turn (``mark_injectable``). ``hits`` itself is unfiltered, so a caller that
+    wants everything the search found still gets it.
     """
     register = resolve_register(prompt,
                                 previous_was_correction=previous_was_correction,
@@ -459,5 +507,7 @@ def route(store, prompt: str, *, limit: int = 6,
         return {"context": ctx, "hits": [], "register": register,
                 "ask": bindings.ask_for(here, projects, session_id)}
 
-    hits = store.search(prompt, project=project, limit=limit)
+    hits = mark_injectable(store, prompt,
+                           store.search(prompt, project=project, limit=limit),
+                           ctx["confidence"])
     return {"context": ctx, "hits": hits, "register": register, "ask": None}

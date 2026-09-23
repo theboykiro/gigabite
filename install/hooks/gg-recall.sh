@@ -2,7 +2,7 @@
 # gigabite UserPromptSubmit hook — ambient recall.
 # On each prompt, retrieve strongly-relevant prior context from the local index
 # and inject it so the conversation is answered WITH your history loaded.
-# Silent unless there's a genuinely strong hit, so it never derails other work.
+# Silent unless a hit genuinely matches the prompt, so it never derails other work.
 #
 # Reads the hook JSON on stdin; prints a compact recall block to stdout (which
 # Claude Code adds to the turn's context). Never fails the prompt: always exit 0.
@@ -48,9 +48,15 @@ except Exception:
 # says nothing about the register should behave the way it did before it existed.
 if (d.get("register") or {}).get("mode") == "spar":
     raise SystemExit(0)
-hits = d.get("hits") or []
-# bm25 scores are negative; more negative = stronger. Only inject strong hits.
-strong = [h for h in hits if isinstance(h.get("score"), (int, float)) and h["score"] < -1.0]
+hits = [h for h in (d.get("hits") or []) if isinstance(h, dict)]
+# The router decides which hits are worth injecting (`inject`, see
+# features/routing.py: coverage of the prompt's meaningful words, plus a relative
+# score check when the project came from a keyword). A binary too old to set it
+# falls back to the absolute bm25 cut-off it was shipped with.
+if any("inject" in h for h in hits):
+    strong = [h for h in hits if h.get("inject") is True]
+else:
+    strong = [h for h in hits if isinstance(h.get("score"), (int, float)) and h["score"] < -1.0]
 if not strong:
     # Nothing recalled. When the turn resolved to no project at all, the router
     # hands back a one-time question instead — asking which project this folder is

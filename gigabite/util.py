@@ -547,6 +547,37 @@ def _bare(token: str) -> str:
     return (m.group(1) if m else token).lower()
 
 
+def meaningful_terms(raw: str) -> list[str]:
+    """The query's words that can carry meaning: lower-cased, de-duplicated, stop
+    words and single characters dropped. Bare words, not FTS tokens."""
+    out: list[str] = []
+    for tok in fts_tokens(raw):
+        word = _bare(tok)
+        if len(word) < 2 or word in _STOPWORDS or word in out:
+            continue
+        out.append(word)
+    return out
+
+
+_MARKED = re.compile("\u00ab([^\u00ab\u00bb]*)\u00bb")
+_WORDS = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def unmark_stopwords(snippet: str) -> str:
+    """Drop the «» highlight from a span made only of stop words.
+
+    snippet() marks every matched token, and the any-term pass matches stop
+    words, so "what did we decide" came back highlighting «we» and «the». The
+    words stay; only the emphasis on words that carry no meaning goes.
+    """
+    def keep(m):
+        words = _WORDS.findall(m.group(1))
+        if words and all(w.lower() in _STOPWORDS for w in words):
+            return m.group(1)
+        return m.group(0)
+    return _MARKED.sub(keep, snippet or "")
+
+
 def to_fts_query(raw: str, op: str = "AND", *, drop_stopwords: Optional[bool] = None) -> str:
     """Turn a natural-language query into a safe FTS5 MATCH expression.
 

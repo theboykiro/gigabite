@@ -125,7 +125,8 @@ class TestRouteJsonContract(CliTestCase):
         d = self.payload("what", "did", "we", "decide", "about", "widget", "pricing")
         self.assertTrue(d["hits"], "expected the corpus to match this prompt")
         for hit in d["hits"]:
-            for key in ("score", "doc_id", "title", "source", "created_utc", "snippet"):
+            for key in ("score", "doc_id", "title", "source", "created_utc", "snippet",
+                        "inject"):
                 self.assertIn(key, hit, f"gg-recall.sh reads {key!r} off every hit")
 
     def test_scores_are_negative_numbers(self):
@@ -139,10 +140,11 @@ class TestRouteJsonContract(CliTestCase):
             self.assertLess(s, 0)
 
     def test_at_least_one_hit_clears_the_hook_threshold(self):
-        """A canary on the -1.0 cut-off. If ranking drifts such that nothing ever
-        clears it, ambient recall is dead and nothing else in the suite notices."""
+        """A canary on the recall gate (`inject`). If it drifts such that nothing
+        ever clears it, ambient recall is dead and nothing else in the suite
+        notices."""
         d = self.payload("widget", "pricing", "anchor", "decision")
-        self.assertTrue([h for h in d["hits"] if h["score"] < -1.0])
+        self.assertTrue([h for h in d["hits"] if h["inject"] is True])
 
     def test_json_is_a_single_line(self):
         """The hook captures stdout into a shell variable and json.loads it once."""

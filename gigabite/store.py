@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -758,6 +759,7 @@ class Store:
                 d.created_utc AS created_utc,
                 d.updated_utc AS updated_utc,
                 d.ref      AS ref,
+                fts.rowid  AS rowid,
                 snippet(fts, 0, '«', '»', ' … ', 12) AS snippet
             FROM fts
             JOIN documents d ON d.doc_id = fts.doc_id
@@ -775,9 +777,59 @@ class Store:
         for r in hydrated:
             d = dict(r)
             d["score"] = scores[(d["doc_id"], d["seq"])]
+            # The OR pass keeps stop words (they can only add candidates), so
+            # snippet() marks them too — «we» «the» — which reads as noise.
+            d["snippet"] = util.unmark_stopwords(d.get("snippet") or "")
             out.append(d)
         out.sort(key=lambda d: d["score"])
         return out
+
+    def term_coverage(self, terms, rowids) -> dict:
+        """``{rowid: share of the query's term weight that passage contains}``.
+
+        *terms* are bare words (already stripped of stop words by the caller);
+        *rowids* are the ``rowid`` of search hits. Each term is weighted by an
+        always-positive BM25 idf over every indexed passage, so a word that is in
+        most of the index counts for almost nothing and a rare one for a lot. On
+        a tiny index every weight is about equal and this is plain term coverage.
+
+        This is what the recall gate uses instead of a raw bm25 cut-off: bm25's
+        own idf collapses to ~0 when the corpus is a handful of passages (an exact
+        match scored -5e-06 on a two-session index), so no absolute score works on
+        both a new install and a large one. Coverage is a ratio, and means the
+        same thing on both.
+        """
+        rowids = [r for r in rowids if isinstance(r, int)]
+        words = []
+        for t in terms:
+            if t and t not in words:
+                words.append(t)
+        if not words or not rowids:
+            return {r: 0.0 for r in rowids}
+        try:
+            total = self.conn.execute("SELECT count(*) FROM fts_docsize").fetchone()[0]
+        except sqlite3.Error:
+            total = self.conn.execute("SELECT count(*) FROM fts").fetchone()[0]
+        marks = ",".join("?" * len(rowids))
+        weight_sum = 0.0
+        got = {r: 0.0 for r in rowids}
+        for w in words:
+            match = '"%s"' % w.replace('"', '""')
+            try:
+                df = self.conn.execute(
+                    "SELECT count(*) FROM fts WHERE fts MATCH ?", (match,)).fetchone()[0]
+                present = {row[0] for row in self.conn.execute(
+                    f"SELECT rowid FROM fts WHERE fts MATCH ? AND rowid IN ({marks})",
+                    (match, *rowids))}
+            except sqlite3.Error:
+                continue
+            weight = math.log(1.0 + (total - df + 0.5) / (df + 0.5))
+            weight_sum += weight
+            for r in present:
+                got[r] += weight
+        if weight_sum <= 0:
+            return {r: 0.0 for r in rowids}
+        return {r: v / weight_sum for r, v in got.items()}
 
     def get_document(self, doc_id: str) -> Optional[dict]:
         row = self.conn.execute(
