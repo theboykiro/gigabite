@@ -77,19 +77,8 @@ Code comes from git, but your content does not. `~/.core` and `~/Knowledge` are
 local, and they rebuild themselves as you add sources again. Re-run `./install.sh`
 at any point to pick up changes to the tool.
 
-### If you installed an earlier version
-
-The layout has moved on since earlier releases, and `gigabite relocate` brings an
-existing store up to date in one pass — `--dry-run` first if you want to see every
-move before it happens. Earlier
-releases kept the knowledge base hidden at `~/.knowledge`, which is precisely why it
-was hard to find and trust; it is now `~/Knowledge`, an ordinary folder you can open
-in Finder. Making it visible exposed the second problem: the tool's own furniture was
-visible with it, so all of it now sits behind one hidden `.gigabite/` directory, and
-the staging folder that used to sit alongside the projects is gone — you put a file
-where it belongs instead. Nothing is deleted by the migration; the index is rebuilt
-afterwards because it is derived data. If you would rather keep the stores elsewhere,
-`GIGABITE_KNOWLEDGE_DIR` and `GIGABITE_CORE_DIR` override both paths.
+If you would rather keep the stores elsewhere, `GIGABITE_KNOWLEDGE_DIR` and
+`GIGABITE_CORE_DIR` override both paths.
 
 ### Uninstalling
 
@@ -201,9 +190,8 @@ gigabite status                                 # what is indexed
 gigabite paths                                  # where everything lives
 ```
 
-Three more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
-from scratch, `gigabite relocate` brings an older layout up to date, and
-`gigabite route` resolves context and recalls passages as JSON, which is what the
+Two more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
+from scratch, and `gigabite route` resolves context and recalls passages as JSON, which is what the
 ambient hook calls underneath. Run `gigabite --help`, or
 `gigabite <command> --help`, for the full flag list on any of them.
 
@@ -261,8 +249,7 @@ gigabite/            the package
   util.py              text extraction, time parsing, FTS query safety
   ingest.py            runs every source in order; notes last, and why
   cli.py               the `gigabite` command
-  features/            save · intake · routing · materialize · relocate ·
-                       calendar · synthesis · decay · sops
+  features/            save · intake · routing · materialize · calendar · sops
   sources/
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)

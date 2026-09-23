@@ -91,10 +91,6 @@ SOURCES_DIR = MACHINE_DIR / "imports"
 SOURCES_CLAUDE_AI = SOURCES_DIR / "claude_ai"
 SOURCES_MEETINGS = SOURCES_DIR / "meetings"
 
-# Decayed knowledge: still indexed and retrievable, just no longer in the way
-# (ARCHITECTURE §6).
-HISTORICAL_DIR = MACHINE_DIR / "archive"
-
 # Originals preserved by a migration: the "before" copy of a file that has been
 # rewritten into the current layout. Nothing here is indexed; it exists only so a
 # migration can be undone by hand.
@@ -201,6 +197,5 @@ def ensure_dirs() -> None:
         SOURCES_DIR,
         SOURCES_CLAUDE_AI,
         SOURCES_MEETINGS,
-        HISTORICAL_DIR,
     ):
         d.mkdir(parents=True, exist_ok=True)

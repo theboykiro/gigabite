@@ -698,7 +698,7 @@ class TestNoArguments(CliTestCase):
 class TestHelpSurface(CliTestCase):
     """Commands cut before alpha must be gone from --help and must not dispatch."""
 
-    REMOVED = ("run", "policy", "connect", "audit", "synthesize", "decay")
+    REMOVED = ("run", "policy", "connect", "audit", "synthesize", "decay", "relocate")
 
     def _help(self):
         # format_help() rather than run("--help"), which exits via SystemExit.

@@ -55,7 +55,7 @@ from gigabite.store import Document, Message, Store, connect  # noqa: E402
 _DERIVED = (
     "KNOWLEDGE_DIR", "CORE_DIR", "CORE_FILE", "MACHINE_DIR", "INDEX_DIR", "DB_PATH",
     "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_MEETINGS",
-    "HISTORICAL_DIR", "ORIGINALS_DIR", "ALIASES_FILE",
+    "ORIGINALS_DIR", "ALIASES_FILE",
     "BINDINGS_FILE",
     "INBOX_CLAUDE_AI", "INBOX_MEETINGS", "INBOX_DIR",
     "CLAUDE_CODE_PROJECTS_DIR",
@@ -120,7 +120,6 @@ def _repoint(knowledge: Path, core: Path) -> None:
     config.SOURCES_DIR = config.MACHINE_DIR / "imports"
     config.SOURCES_CLAUDE_AI = config.SOURCES_DIR / "claude_ai"
     config.SOURCES_MEETINGS = config.SOURCES_DIR / "meetings"
-    config.HISTORICAL_DIR = config.MACHINE_DIR / "archive"
     config.ORIGINALS_DIR = config.MACHINE_DIR / "originals"
     config.ALIASES_FILE = config.MACHINE_DIR / "aliases.json"
     config.BINDINGS_FILE = config.MACHINE_DIR / "bindings.json"

@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__, config, ingest as ingest_mod, util
-from .features import relocate
 from .store import Store, connect
 
 # ---- tiny ANSI helpers (auto-disabled when piped) --------------------------
@@ -1022,37 +1021,6 @@ def _projects_for_paths() -> list:
     return savemod.list_projects()
 
 
-def cmd_relocate(args) -> int:
-    """Move a pre-existing ~/Knowledge to the visible ~/Knowledge layout."""
-    p = relocate.plan()
-    print(bold("relocate knowledge base"))
-    for line in relocate.describe(p):
-        print(line)
-
-    if not p.actionable:
-        print(dim("\nnothing to do — the layout is already current."))
-        return 0
-    if p.warnings:
-        print("\nrefusing to continue while the warnings above stand.")
-        return 1
-    if args.dry_run:
-        print(dim("\ndry run — nothing was moved. Re-run without --dry-run to apply."))
-        return 0
-
-    for line in relocate.apply(p):
-        print(f"  {line}")
-    config.ensure_dirs()
-
-    # The index stores absolute paths in `ref` and keys its incremental sync on
-    # them, so it goes stale the moment the files move. Everything it holds is
-    # derived from those files, so the honest response is to rebuild rather than
-    # rewrite paths in place.
-    print(dim("\nindex paths are now stale; rebuilding…"))
-    rc = cmd_reindex(argparse.Namespace())
-    print(f"\nknowledge base is now at {bold(str(config.KNOWLEDGE_DIR))}")
-    return rc
-
-
 # ---------------------------------------------------------------------------
 # parser
 # ---------------------------------------------------------------------------
@@ -1124,14 +1092,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     pr = sub.add_parser("reindex", help="clear and rebuild the index")
     pr.set_defaults(func=cmd_reindex)
-
-    prl = sub.add_parser(
-        "relocate",
-        help="bring an older ~/Knowledge layout up to date (one folder, machinery hidden)",
-    )
-    prl.add_argument("--dry-run", action="store_true",
-                     help="show what would move, change nothing")
-    prl.set_defaults(func=cmd_relocate)
 
     pl = sub.add_parser("claude-login", help="securely store your claude.ai session token in the keychain")
     pl.set_defaults(func=cmd_claude_login)
