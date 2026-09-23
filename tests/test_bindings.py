@@ -32,6 +32,11 @@ What is pinned here:
   N. `.claude`/`CLAUDE.md` do not turn a shelf of client checkouts into a lending
      root, and the ask never names such a shelf as the folder to bind;
   O. editor-project state (`.idea`, `.vscode`, `.vs`) and `.env` are not inert.
+  P. a symlinked checkout counts as a body of work too, so a shelf cannot hide
+     a second client behind a link — at bind time and at lookup time — while a
+     broken symlink still counts as nothing to worry about;
+  Q. a manifest name match is case-insensitive, so a lower-case `makefile`
+     separates a package from a bound ancestor exactly like `Makefile` does.
 
     python3 -m unittest discover -s tests        (from the repo root)
 """
@@ -678,6 +683,33 @@ class TestAMarkerThatIsNotADotEntryStillSeparates(BindingCase):
         self.assertEqual(out["ask"]["dir"], os.path.realpath(path))
 
 
+class TestAManifestNameMatchIsCaseInsensitiveToo(BindingCase):
+    """Fifth round, second finding: `_looks_like_a_manifest` compared a scanned
+    name against `MANIFESTS` with a literal `in` — the one marker check in the
+    module that was not case-insensitive. Every other one goes through
+    `Path.exists()` on this case-insensitive-by-default filesystem, including
+    the `CLAUDE.md`/`claude.md` fix above. A nested `makefile` (lower case — a
+    valid GNU Make filename) was invisible to it, so a bound root's binding
+    wrongly reached past a package that carried one, exactly as if the package
+    had no manifest of its own.
+    """
+
+    def test_a_lower_case_makefile_separates_a_package_from_its_bound_ancestor(self):
+        root = self.root.parent / "root-with-a-lower-case-manifest-child"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "package.json").write_text("{}", encoding="utf-8")
+        bindings.bind(str(root), "alpha")
+        pkg = root / "pkg"
+        pkg.mkdir(parents=True, exist_ok=True)
+        (pkg / "makefile").write_text("build:\n\techo hi\n", encoding="utf-8")
+        self.assertEqual(bindings.lookup(str(pkg)), (False, None),
+                          "a package's own manifest must separate it, "
+                          "whatever case the filename is on disk")
+        out = self.route(cwd=str(pkg))
+        self.assertIsNone(out["context"]["project"])
+        self.assertEqual(out["hits"], [], "an unresolved turn recalls nothing")
+
+
 class TestAssistantStateDoesNotMakeARoot(BindingCase):
     """Fourth round, finding 2: `.claude`/`CLAUDE.md` made a shelf lend.
 
@@ -805,6 +837,65 @@ class TestAStaleBindingStopsLendingOnceItBecomesAShelf(BindingCase):
         out = self.route(cwd=str(shelf))
         self.assertIsNone(out["context"]["project"])
         self.assertEqual(out["hits"], [], "another client's documents")
+
+
+class TestASymlinkedCheckoutCountsAsABodyOfWorkToo(BindingCase):
+    """Fifth round, first finding: `_holds_several_bodies_of_work` filtered
+    children with `entry.is_dir(follow_symlinks=False)`, which is `False` for
+    a symlink no matter what it points to. A shelf holding a manifest, a
+    plain checkout and a *symlinked* second checkout — the identical shape
+    `TestAManifestDoesNotMakeAShelfLendEither` already covers with two plain
+    checkouts — counted only one body of work and refused nothing, and the
+    same blind spot reopened the staleness bug at `lookup` for the symlinked
+    case specifically.
+    """
+
+    def _real_checkout(self, name):
+        target = self.root.parent / "elsewhere" / name
+        (target / ".git").mkdir(parents=True, exist_ok=True)
+        return target
+
+    def shelf(self):
+        """A manifest, a plain checkout, and a *symlinked* second checkout."""
+        path = self.root.parent / "shelf-with-a-symlinked-checkout"
+        (path / "clientA" / ".git").mkdir(parents=True, exist_ok=True)
+        target = self._real_checkout("clientC")
+        (path / "clientC_link").symlink_to(target, target_is_directory=True)
+        (path / "Makefile").write_text("build:\n\techo hi\n", encoding="utf-8")
+        return str(path)
+
+    def test_refuse_reason_refuses_it_directly(self):
+        self.assertIsNotNone(bindings.refuse_reason(self.shelf()))
+
+    def test_a_single_tenant_shelf_stops_lending_once_it_grows_a_symlinked_checkout(self):
+        shelf = self.root.parent / "shelf-that-grows-a-symlink"
+        (shelf / "clientA" / ".git").mkdir(parents=True, exist_ok=True)
+        (shelf / "Makefile").write_text("build:\n\techo hi\n", encoding="utf-8")
+        # Single-tenant: refuse_reason allows it, same as any ordinary root.
+        self.assertIsNone(bindings.refuse_reason(str(shelf)))
+        bindings.bind(str(shelf), "alpha")
+        self.assertEqual(bindings.lookup(str(shelf)), (True, "alpha"))
+
+        # A second, unrelated checkout appears later — reached through a
+        # symlink this time, not a plain directory.
+        target = self._real_checkout("clientB")
+        (shelf / "clientB_link").symlink_to(target, target_is_directory=True)
+
+        self.assertEqual(bindings.lookup(str(shelf)), (False, None),
+                         "a stale binding must not keep serving the old "
+                         "project just because the second checkout is a link")
+        out = self.route(cwd=str(shelf))
+        self.assertIsNone(out["context"]["project"])
+        self.assertEqual(out["hits"], [], "another client's documents")
+
+    def test_a_broken_symlink_is_not_a_body_of_work(self):
+        """Nothing is reachable through it, so a shelf with one real checkout,
+        a manifest and a dangling symlink is still single-tenant."""
+        shelf = self.root.parent / "shelf-with-a-broken-symlink"
+        (shelf / "clientA" / ".git").mkdir(parents=True, exist_ok=True)
+        (shelf / "Makefile").write_text("build:\n\techo hi\n", encoding="utf-8")
+        (shelf / "gone_link").symlink_to(self.root.parent / "does-not-exist")
+        self.assertIsNone(bindings.refuse_reason(str(shelf)))
 
 
 class TestEditorProjectStateIsNotInert(BindingCase):

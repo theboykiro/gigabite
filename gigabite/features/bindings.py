@@ -225,13 +225,36 @@ def _holds_several_bodies_of_work(path: Path) -> bool:
     children — never deep, never recursive into what is beneath one of them — and
     it stops at the second hit. See ``_is_shelf``, which is what every caller
     actually goes through, for the tree-root exemption and for who calls it.
+
+    A symlinked checkout counts exactly like a real one: children are asked
+    ``is_dir(follow_symlinks=True)``, not ``False``. A shelf with a manifest, a
+    plain checkout and a *symlinked* second checkout used to see only one body
+    of work — the symlink was simply invisible to the count, no matter what it
+    pointed at — which is the same leak this function exists to catch, just
+    reached through a link instead of a plain directory.
+
+    Three edge shapes, decided deliberately rather than left to fall out of
+    whatever the stdlib happens to do: a symlink that resolves to nothing (broken) is
+    not a body of work and is deliberately not counted — there is no directory
+    there, ``is_dir`` says so on its own without raising, and nothing is
+    reachable through it for another client's material to hide in, so leaving
+    it out costs nothing. A symlink that resolves to a real directory *outside*
+    this shelf is still counted: what matters is what is reachable from here,
+    not where the bytes physically live, and the one-level check below
+    (``_is_askable``/``_is_own_work`` on the symlink path) already goes through
+    ``Path.exists()`` and ``scandir``, which follow a symlink the same way for
+    a real child or a linked one — this does not walk any further into the
+    target than a real child already gets walked. A symlink cycle raises
+    ``OSError`` on the stat, which the ``scandir`` loop below does not catch
+    inline, so it falls through to the same conservative return as any other
+    unreadable entry: cannot see inside, do not name it.
     """
     seen = 0
     try:
         with os.scandir(path) as entries:          # closed even on the early return
             for entry in entries:
                 if entry.name.startswith(".") or \
-                        not entry.is_dir(follow_symlinks=False):
+                        not entry.is_dir(follow_symlinks=True):
                     continue
                 child = path / entry.name
                 if _is_askable(child) or _is_own_work(child)[0]:
@@ -261,10 +284,6 @@ def _is_shelf(path: Path) -> bool:
     this is exactly ``_holds_several_bodies_of_work``.
     """
     return not _is_tree_root(path) and _holds_several_bodies_of_work(path)
-
-
-def _looks_like_a_manifest(name: str) -> bool:
-    return name in MANIFESTS or name.endswith(MANIFEST_SUFFIXES)
 
 
 def _is_own_work(path: Path) -> tuple[bool, bool]:
@@ -297,7 +316,16 @@ def _is_own_work(path: Path) -> tuple[bool, bool]:
     * a manifest-looking file separates, **weakly** — see ``_lends``. A manifest
       is a real signal of its own build, but it is also what every package of a
       monorepo carries, and asking once per ``Makefile`` is the nagging failure
-      wearing a different hat.
+      wearing a different hat. The exact filenames in ``MANIFESTS`` are checked
+      with ``Path.exists()`` against *path*, same as ``SEPARATORS`` above and
+      for the same reason: a literal ``name in MANIFESTS`` compared against the
+      scanned listing missed a lower-case ``makefile`` (a valid GNU Make
+      filename), so a package's own build file failed to weakly separate it
+      and a bound ancestor's binding wrongly reached past it — invisible in
+      exactly the way the ``CLAUDE.md``/``claude.md`` case was, fixed the same
+      way. ``MANIFEST_SUFFIXES`` has no one fixed filename to ask ``exists()``
+      about, so those are still matched against the scanned name, lower-cased
+      on both sides.
     * anything else — plain files, plain directories, an empty folder — does not
       separate.
 
@@ -307,15 +335,15 @@ def _is_own_work(path: Path) -> tuple[bool, bool]:
     try:
         if any((path / m).exists() for m in SEPARATORS):
             return True, True                      # incl. `_darcs`, `claude.md`
+        weak = any((path / m).exists() for m in MANIFESTS)
         names = [entry.name for entry in os.scandir(path)]
     except OSError:
         return True, True                          # cannot see inside: do not inherit
-    weak = False
     for name in names:
         if name.startswith("."):
             if name not in INERT_DOT_ENTRIES:
                 return True, True
-        elif _looks_like_a_manifest(name):
+        elif name.lower().endswith(MANIFEST_SUFFIXES):
             weak = True
     return weak, False
 
