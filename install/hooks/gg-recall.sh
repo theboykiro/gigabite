@@ -43,7 +43,7 @@ try:
     d = json.loads(os.environ.get("GG_JSON", ""))
 except Exception:
     raise SystemExit(0)
-# The register router (AUTONOMY §7): a sparring turn gets nothing injected. An
+# The register router (features/routing.py): a sparring turn gets nothing injected. An
 # absent or unrecognised mode falls back to injecting, because a stale binary that
 # says nothing about the register should behave the way it did before it existed.
 if (d.get("register") or {}).get("mode") == "spar":

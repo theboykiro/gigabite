@@ -212,7 +212,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
         -- The verbatim conversation. FTS holds passages (see util.passages),
         -- which merge and split messages for even retrieval units; this table
-        -- keeps the real messages so `show`, decay and synthesis can reproduce a
+        -- keeps the real messages so `doc` and `materialize` can reproduce a
         -- document exactly as it was written.
         CREATE TABLE IF NOT EXISTS messages (
             doc_id TEXT NOT NULL,
@@ -291,7 +291,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # verbatim messages separately. The rows cannot be converted in place, so
         # clear the derived data and the ingest signatures — the next ingest
         # rebuilds everything from the files on disk, which remain the source of
-        # truth. Documents rows are kept so access/decay history survives.
+        # truth. Documents rows are kept so access history survives.
         conn.execute("DELETE FROM fts")
         conn.execute("DELETE FROM messages")
         conn.execute("DELETE FROM sync_state")
@@ -415,7 +415,7 @@ class Store:
 
         Used when a raw export is retired in favour of the readable rendering of
         it (features.materialize): the document is the same document, so its
-        access and decay history must survive, but the file that owns it changes.
+        access history must survive, but the file that owns it changes.
         """
         self.conn.execute("UPDATE documents SET ref=? WHERE doc_id=?", (ref, doc_id))
         self.conn.commit()
@@ -578,15 +578,11 @@ class Store:
                 rows = self._search_ladder(query, sources, project, limit,
                                            include_historical, origins)
         if not rows and not include_historical:
-            # Decay archives a document by flipping `active` to 0, and every pass
-            # above filters `d.active = 1` — so without this an archived document
-            # is unreachable at any rank, ever. `include_historical` was never the
-            # gap: it does what it says, but it is opt-in (`search --all`), so
-            # nothing reached archived material unless the caller asked by name.
-            # The CLI had this retry inline; every other caller — recall routing,
-            # the calendar prep, the eval harness — did not, which is most of the
-            # ways the user actually searches. It lives here now so all of them
-            # get it, and `record_access` below restores whatever it returns.
+            # An archived document has `active` = 0 (the old decay job set it;
+            # nothing archives any more, but an older index may still hold some),
+            # and every pass above filters `d.active = 1` — so without this an
+            # archived document is unreachable at any rank. It lives here so every
+            # caller gets it, and `record_access` below restores whatever it returns.
             rows = self.search(query, raw=raw, sources=sources, project=project,
                                origins=origins, limit=limit,
                                include_historical=True, record=False)

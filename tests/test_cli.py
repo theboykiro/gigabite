@@ -10,9 +10,9 @@ because the shipped slash commands are thin wrappers around these:
 filters, output shape and exit codes were all unverified.
 
 These are **characterisation** tests: they pin what the commands do today so that
-the changes queued in ROADMAP item 8 — taking the inline ingest out of `/search`,
-stopping index writes on the recall path — are refactors with a safety net rather
-than rewrites of untested code.
+later changes — taking the inline ingest out of `/search`, stopping index writes on
+the recall path — are refactors with a safety net rather than rewrites of untested
+code.
 
 The most load-bearing tests here are `TestRouteJsonContract`. `install/hooks/gg-recall.sh`
 parses `route --json` and reads exactly six keys off each hit. It also swallows every
@@ -296,7 +296,7 @@ class TestTheRecallHook(CliTestCase):
 
     def test_it_exits_zero_when_the_binary_is_missing(self):
         """A moved install directory must degrade to no recall, never to a broken
-        prompt. This is the failure mode ROADMAP item 8 names."""
+        prompt."""
         hook = self.install_hook(str(self.bin_dir / "does-not-exist"))
         code, out = self.prompt("what did we decide about widget pricing", hook=hook)
         self.assertEqual(code, 0)
