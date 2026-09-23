@@ -404,7 +404,7 @@ def resolve_register(prompt: str, *, previous_was_correction: bool = False,
 #             was resolved by a keyword in the prompt: a binding or an @marker is
 #             the user saying which project this is, so scope is already the
 #             precision guard and the top hits that clear coverage go in.
-INJECT_MIN_COVERAGE = 0.5
+INJECT_MIN_COVERAGE = 0.25
 INJECT_MIN_RELATIVE = 0.5
 _SCOPED_BY_USER = ("binding", "explicit")
 
