@@ -226,6 +226,14 @@ class TestTheGateWorksOnASmallIndex(HookCase):
         self.assertIn("Catalogue caching strategy", out)
         self.assertNotIn("Checkout button colour", out)
 
+    def test_a_word_the_index_has_never_seen_does_not_outweigh_the_ones_it_has(self):
+        """"conclude" is in no session. Weighted by raw idf it became the heaviest
+        term in the prompt, and the session holding both other words fell just
+        under half coverage — found by the end-to-end run, not by the fixture."""
+        run("project", "bind", "acme", "--dir", str(self.work))
+        out = self.fire("what did we conclude about caching the catalogue?")
+        self.assertIn("Catalogue caching strategy", out)
+
     def test_a_prompt_that_only_shares_stop_words_injects_nothing(self):
         run("project", "bind", "acme", "--dir", str(self.work))
         out = self.fire("what should we do about the weekend rota?")

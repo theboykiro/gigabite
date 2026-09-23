@@ -781,8 +781,6 @@ def cmd_project(args) -> int:
                 print(yellow(f"can't create project: {e}"))
                 return 1
             print(green(f"✓ created project {real}"))
-            print(dim(f"  add routing keywords any time: "
-                      f"gigabite project add {real} --keywords <a,b>"))
         key = bindings.bind(target, real)
         print(green(f"✓ bound to {real}: {key}"))
         _retag_sessions(key)

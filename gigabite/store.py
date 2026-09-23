@@ -823,6 +823,11 @@ class Store:
                     (match, *rowids))}
             except sqlite3.Error:
                 continue
+            # A word in no passage at all is floored at the rarest word that is
+            # there: unseen is not more telling than rare, and weighting it higher
+            # let one unmatched verb ("decide" vs. a passage's "decision") sink a
+            # passage that holds every other word of the prompt.
+            df = max(df, 1)
             weight = math.log(1.0 + (total - df + 0.5) / (df + 0.5))
             weight_sum += weight
             for r in present:
