@@ -7,7 +7,7 @@ blank slate.
 
 - **Recall.** A `[gigabite recall]` block may already be attached to the turn, scoped
   to the project this folder is bound to. When the user asks about past work and it
-  isn't enough, search: `gigabite search "<terms>" --project <p>`, using the project
+  isn't enough, search: `__GIGABITE_BIN__ search "<terms>" --project <p>`, using the project
   the block names (`detected context: <p>`). Search without `--project` only when the
   user asks across projects. Cite what you use as *(source · title · date)*. Never
   invent history — if nothing comes back, say so.
@@ -17,9 +17,9 @@ blank slate.
 - **Operating protocol.** The user's voice and working rules are in `~/.core/core.md`,
   imported below. Follow it. It is changed only through `/core-setup` or by the user.
 - **Saving knowledge.** Use the tool, never the working directory:
-  `gigabite save "<text>" --project <p> [--layer <l>]` for a note,
-  `gigabite paste --stdin` for pasted text (plain `gigabite paste` reads the
-  clipboard), `gigabite add <path>` for a file. If no project resolves, the tool
+  `__GIGABITE_BIN__ save "<text>" --project <p> [--layer <l>]` for a note,
+  `__GIGABITE_BIN__ paste --stdin` for pasted text (plain `__GIGABITE_BIN__ paste` reads the
+  clipboard), `__GIGABITE_BIN__ add <path>` for a file. If no project resolves, the tool
   leaves the file at the top of `~/Knowledge` for the user to file — that is the
   correct outcome, not something to fix by guessing.
 
