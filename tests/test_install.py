@@ -364,6 +364,9 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
                     .glob("replaced-*"))
         self.assertEqual(1, len(kept), kept)
         self.assertIn("an old map", kept[0].read_text(encoding="utf-8"))
+        # The folder's guide is the same file as docs/KNOWLEDGE.md, so they can't drift.
+        self.assertEqual((REPO / "docs/KNOWLEDGE.md").read_text(encoding="utf-8"),
+                         (self.sandbox.home / "Knowledge/README.md").read_text(encoding="utf-8"))
 
     def test_it_says_so_when_it_could_not_find_a_writable_path_directory(self):
         out = self.install(extra_env={"GIGABITE_BIN_DIRS": "/dev/null/nowhere"})
@@ -683,7 +686,7 @@ class TestPreflight(InstallCase):
 
     def test_a_clone_under_desktop_is_warned_about(self):
         clone = self.sandbox.home / "Desktop" / "gigabite"
-        for part in ("install.sh", "bin", "gigabite", "install"):
+        for part in ("install.sh", "bin", "gigabite", "install", "docs"):
             src = REPO / part
             if src.is_dir():
                 shutil.copytree(str(src), str(clone / part),

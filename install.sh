@@ -134,7 +134,7 @@ refresh_doc() { # src dest
   cp "$1" "$2"
 }
 copy_if_absent "$REPO/install/scaffold/core.md"              "$CORE_DIR/core.md"
-refresh_doc    "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
+refresh_doc    "$REPO/docs/KNOWLEDGE.md"                   "$KNOW_DIR/README.md"
 
 # ---------------------------------------------------------------------------
 say "2/8  Putting gigabite on your PATH"

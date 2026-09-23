@@ -33,6 +33,10 @@ without a `_project.md` isn't recognised as a project when Claude recalls.
 - **Text is read in full.** PDFs, images and other files are kept and found by name and
   date, but their contents aren't read.
 
+## Find things
+
+Type `/search` in Claude Code, followed by a few words. It searches every project at once.
+
 ## Keep it tidy
 
 - **Move a file to another project** and it belongs to that project from then on.

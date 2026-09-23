@@ -40,31 +40,34 @@ The installer puts `gigabite` on your `PATH`, adds a managed block to
 and `/core-setup`, creates `~/Knowledge` and `~/.core`, and builds the first index. It's
 safe to re-run, and it never overwrites your notes or your `core.md`.
 
-## How to use it
+## How it works
 
-1. **Restart Claude Code** after installing.
-2. **Open Claude Code in a project folder.** On your first real question there, Claude asks
-   which project the folder belongs to. Answer it and Claude runs `gigabite project bind <name>`, which
-   creates the project if it's new. For a folder that isn't project work, the answer is
-   `gigabite project bind --none`. Once you've answered, that folder is never asked
-   about again. If you ignore the question, it comes back once per session.
-3. **Then just talk.** Relevant past sessions, chats and notes from *that project only*
-   are added to your prompt automatically, and Claude cites them. To reach another
-   project for one prompt, name it: `@acme what did we decide about pricing?`
-4. **Search across everything** with `/search <words>` in Claude Code, or
-   `gigabite search "<words>"` in a terminal.
-5. **Once:** run `/core-setup` to teach it your voice and working rules. It fills in
-   `~/.core/core.md`, which is loaded into every session. You can also edit that file
-   by hand.
+The [Quickstart](docs/QUICKSTART.md) walks a new user through first use, and
+[docs/KNOWLEDGE.md](docs/KNOWLEDGE.md) covers the Knowledge folder. The reference:
 
-The index refreshes in the background whenever a Claude Code session starts. Your notes
-live in `~/Knowledge`, one folder per project, and you can open it in Finder. To add
-something, drop a file into `~/Knowledge/<project>/`, or run `gigabite add <file>` or
-`gigabite paste` (paste reads a copied transcript from your clipboard).
+- **Recall follows the message.** When a message mentions a project's name or one of its
+  keywords (the `keywords:` line in `~/Knowledge/<project>/_project.md`), that project's
+  past sessions, chats and notes are added to the prompt, and Claude cites them. Start a
+  message with `@project` to pick one explicitly. A message that points at no project
+  recalls nothing. That's deliberate: without a project, recall can't know which
+  client's history is safe to show.
+- **Search across everything** with `/search <words>` in Claude Code, or
+  `gigabite search "<words>"` in a terminal.
+- **Your protocol:** `/core-setup` fills in `~/.core/core.md`, which is loaded into every
+  session. You can also edit that file by hand.
+- **Adding knowledge:** drop a file into `~/Knowledge/<project>/`, or run
+  `gigabite add <file>` or `gigabite paste` (paste reads a copied transcript from your
+  clipboard). The index refreshes in the background whenever a Claude Code session starts.
 
-If you start Claude Code from your home folder (`~`), nothing is recalled unless your
-prompt names a project. This is deliberate: with no project, recall can't know which
-client's history is safe to show.
+### Linking a folder to a project (optional)
+
+If a folder only ever holds one project's work, link it: `gigabite project bind <name>`
+in that folder (or add `--dir <folder>`). Every message there then recalls that project,
+even ones that don't name it, and the link takes precedence over keywords. Claude offers
+to do this in folders that look like a code workspace (a git repo, a package
+manifest, a `CLAUDE.md` or `.claude/`). `gigabite project bind --none` marks a folder as
+not project work, and `--forget` drops the link. Folders inside `~/Knowledge` and your
+home folder can't be linked.
 
 ## Import your claude.ai chats
 
@@ -97,13 +100,12 @@ daily pull at 19:00. The installer offers this step when you run it in a termina
 
 ## Troubleshooting
 
-- **Nothing gets recalled.** Did you restart Claude Code after installing? Is the folder
-  bound to a project? Run `gigabite project bind <name>` in it (or add `--dir <folder>`). Started from `~`? Open
-  the project folder, or put `@project` in your prompt. Claude only asks in folders that
-  look like a project (a git repo, a package manifest, a `CLAUDE.md` or `.claude/`); bind
-  any other folder by hand. Short replies like "ok, go on" never trigger recall.
-- **Bound the wrong project.** Run `gigabite project bind <right-name>` in the folder,
-  or `gigabite project bind --forget` to be asked again.
+- **Nothing gets recalled.** Did you restart Claude Code after installing? Does the
+  message mention the project's name or a keyword, or start with `@project`? Run
+  `gigabite project list` to see each project's keywords. Short replies like "ok, go on"
+  never trigger recall.
+- **A linked folder recalls the wrong project.** Run `gigabite project bind <right-name>`
+  in the folder, or `gigabite project bind --forget` to remove the link.
 - **`gigabite: command not found`.** Open a new terminal window: the installer added
   gigabite to your `PATH` in `.zshrc` / `.bash_profile`. Or run
   `~/gigabite/bin/gigabite` directly.
