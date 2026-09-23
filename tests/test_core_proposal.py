@@ -160,7 +160,7 @@ class TestApplyProposal(_harness.TempRoot):
         differently-named escape hatch would be the same bug.
         """
         params = set(inspect.signature(core_proposal.apply_proposal).parameters)
-        self.assertEqual(params, {"approved", "core_path"}, params)
+        self.assertEqual(params, {"approved", "core_path", "sections"}, params)
 
         before = self._seed_core("the user's own protocol\n")
         target = core_proposal.apply_proposal({"tone.cut": "- replaced."})

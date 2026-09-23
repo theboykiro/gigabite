@@ -269,12 +269,15 @@ def plan() -> dict:
 # ---------------------------------------------------------------------------
 
 def apply_answers(answers: Mapping, *, declined=(), core_path=None) -> dict:
-    """Merge newly approved answers into the record and re-render `core.md`.
+    """Merge newly approved answers into the record and write them into `core.md`.
 
     *answers* is only ever the slots the user approved, one at a time, in the
     interview. Merging with the record is what makes a second run a resumption:
-    the earlier answers render exactly as they did, and nothing already approved
-    is asked about again.
+    nothing already approved is asked about again.
+
+    Only the sections the *newly* approved slots render into are replaced in an
+    existing file, so hand edits anywhere else survive. If the file's section
+    headings cannot be found, it is rendered whole and `rewritten_whole` says so.
 
     Writing still goes through `core_proposal.apply_proposal`, which sets the
     existing file aside first and remains the only writer of `core.md`.
@@ -297,7 +300,13 @@ def apply_answers(answers: Mapping, *, declined=(), core_path=None) -> dict:
 
     target = Path(core_path) if core_path is not None else _core_file()
     existed = target.exists()
-    core_proposal.apply_proposal(merged, core_path=target)
+    touched = core_slots.sections_for(set(merged) & set(dict(answers)))
+    rewritten_whole = False
+    if existed and touched:
+        before = target.read_text(encoding="utf-8", errors="replace")
+        rewritten_whole = core_slots.splice_sections(before, merged, touched) is None
+    if touched:
+        core_proposal.apply_proposal(merged, core_path=target, sections=touched)
 
     rendered = target.read_text(encoding="utf-8", errors="replace") if target.exists() else ""
     remaining = [s.id for s in core_slots.SLOTS
@@ -305,8 +314,10 @@ def apply_answers(answers: Mapping, *, declined=(), core_path=None) -> dict:
                  and s.id not in merged]
     return {
         "core_path": str(target),
-        "written": bool(merged),
-        "replaced_existing": existed and bool(merged),
+        "written": bool(touched),
+        "replaced_existing": existed and bool(touched),
+        "rewritten_whole": rewritten_whole,
+        "previous_copy_dir": str(config.ORIGINALS_DIR) if existed and touched else None,
         "answers_path": str(answers_path()),
         "answered": sorted(merged),
         "declined": sorted(declined_ids),

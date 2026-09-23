@@ -8,7 +8,8 @@ Claude Code, and this module is the half that decides what reaches disk.
 cannot do so without an explicit `approved` mapping handed to it by a caller
 acting on user approval. Approval is **per slot**: `approved` carries only the
 slots the user accepted — the rest render as they were (`[FILL]` for the stated
-ones), which is a visible gap rather than an invented answer.
+ones), which is a visible gap rather than an invented answer. An existing file is
+spliced, section by section, so the user's own edits elsewhere survive.
 
 **Set aside, never destroy.** If a `core.md` already exists, it is moved to a
 dated copy under `config.ORIGINALS_DIR` before the new one is written — the same
@@ -60,13 +61,20 @@ def set_aside(core_path: Path) -> Path | None:
     return kept
 
 
-def apply_proposal(approved: Mapping[str, str], *, core_path=None) -> Path:
+def apply_proposal(approved: Mapping[str, str], *, core_path=None,
+                   sections=None) -> Path:
     """Write `core.md` from the slots the user approved. The only writer here.
 
     `approved` maps slot_id -> the final markdown body for that slot and must be
     supplied explicitly by a caller acting on user approval. There is no default,
     no inference and no "apply everything" path: a slot absent from the mapping
     is rendered as it was, which for a stated slot means `[FILL]`.
+
+    An existing file is edited, not regenerated: only the numbered sections in
+    *sections* (default: the ones the approved slots render into) are replaced,
+    so whatever the user wrote elsewhere survives (`core_slots.splice_sections`).
+    A file whose structure cannot be recognised is rendered whole instead —
+    `core_interview.apply_answers` reports when that happened.
 
     An empty mapping is a no-op — it returns the path without touching the file,
     so "the user approved nothing" can never truncate an existing protocol.
@@ -82,7 +90,13 @@ def apply_proposal(approved: Mapping[str, str], *, core_path=None) -> Path:
     if not approved:
         return target
 
-    body = core_slots.render_core_md(dict(approved))
+    body = None
+    if target.exists():
+        wanted = core_slots.sections_for(approved) if sections is None else sections
+        existing = target.read_text(encoding="utf-8", errors="replace")
+        body = core_slots.splice_sections(existing, dict(approved), wanted)
+    if body is None:
+        body = core_slots.render_core_md(dict(approved))
 
     set_aside(target)
     target.parent.mkdir(parents=True, exist_ok=True)

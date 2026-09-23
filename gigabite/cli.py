@@ -947,6 +947,11 @@ def cmd_core_apply(args) -> int:
         return 0
     print(bold("core setup — protocol updated"))
     print(f"  {result['core_path']}")
+    if result.get("rewritten_whole"):
+        print(yellow("  its numbered section headings were not recognisable, so it was "
+                     "rewritten whole"))
+    if result.get("previous_copy_dir"):
+        print(dim(f"  previous version kept in {result['previous_copy_dir']}"))
     print(dim(f"  answers recorded in {result['answers_path']} — a later run resumes"))
     if result["remaining_required"]:
         print(dim(f"  still [FILL]: {', '.join(result['remaining_required'])}"))
