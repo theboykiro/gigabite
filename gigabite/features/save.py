@@ -78,7 +78,7 @@ def _safe_folder(name: str, kind: str = "name") -> str:
 # ---------------------------------------------------------------------------
 
 def _project_meta(project: str, keywords: List[str], layers: List[str]) -> str:
-    """Render a filled _project.md (mirrors install/scaffold/_project.md structure)."""
+    """Render a filled _project.md."""
     return (
         "---\n"
         f"project: {project}\n"

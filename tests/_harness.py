@@ -57,7 +57,6 @@ _DERIVED = (
     "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_MEETINGS",
     "ORIGINALS_DIR", "ALIASES_FILE",
     "BINDINGS_FILE",
-    "INBOX_CLAUDE_AI", "INBOX_MEETINGS", "INBOX_DIR",
     "CLAUDE_CODE_PROJECTS_DIR",
 )
 
@@ -123,9 +122,6 @@ def _repoint(knowledge: Path, core: Path) -> None:
     config.ORIGINALS_DIR = config.MACHINE_DIR / "originals"
     config.ALIASES_FILE = config.MACHINE_DIR / "aliases.json"
     config.BINDINGS_FILE = config.MACHINE_DIR / "bindings.json"
-    config.INBOX_CLAUDE_AI = config.SOURCES_CLAUDE_AI
-    config.INBOX_MEETINGS = config.SOURCES_MEETINGS
-    config.INBOX_DIR = config.SOURCES_DIR
     # NOT derived from KNOWLEDGE_DIR — it points at ~/.claude/projects, so
     # without this a test that runs `ingest` reads the user's real Claude
     # Code transcripts: slow, and it makes results depend on their history.

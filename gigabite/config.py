@@ -105,11 +105,6 @@ ALIASES_FILE = MACHINE_DIR / "aliases.json"
 # state about their own machine, not knowledge, so it lives with the machinery.
 BINDINGS_FILE = MACHINE_DIR / "bindings.json"
 
-# Older names for the two import paths, kept so an out-of-tree caller keeps working.
-INBOX_CLAUDE_AI = SOURCES_CLAUDE_AI
-INBOX_MEETINGS = SOURCES_MEETINGS
-INBOX_DIR = SOURCES_DIR
-
 # Sentinel project meaning "not resolved". Content saved under it lands at the
 # knowledge root: no folder is invented, nothing new appears in Finder, and the
 # file is one drag away from being filed. Matched by identity before any
