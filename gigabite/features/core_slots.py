@@ -453,7 +453,7 @@ def get_slot(slot_id: str) -> Slot:
 _HEADER = """# Core Protocol
 
 *The constitutional layer. Loaded in full, every session, project-agnostic.*
-*Local only — lives in `~/.core/`, backed up to iCloud, never pushed anywhere.*
+*Local only — lives in `~/.core/`, backed up by your OS's file sync, never pushed anywhere.*
 
 This file governs **how** the system works regardless of what you're working on.
 Project knowledge (the **what**) lives in `~/Knowledge/` and loads per task."""

@@ -121,7 +121,7 @@ on what you ask for rather than having to be invoked by name.
 
 ## Security posture
 
-Content is local and iCloud-backed, and only code reaches GitHub. Credentials live in
+Content is local and cloud-sync-backed, and only code reaches GitHub. Credentials live in
 the macOS keychain and are retrieved at runtime. Every stored note carries an explicit
 egress marker, so sharing is always a deliberate per-item act. Any step that would
 send text off the device is expected to check its payload for confidential content

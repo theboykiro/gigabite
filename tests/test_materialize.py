@@ -695,7 +695,7 @@ class TestGranolaPullThenMaterialize(_Base):
             "id": "g1", "title": "Vendor check-in",
             "created_at": "2026-07-09T09:00:00Z",
             "summary_markdown": "Widget rollout timeline confirmed for next sprint.",
-            "transcript": [{"source": "Kiril", "text": "the widget rollout stays on track"}],
+            "transcript": [{"source": "Alex", "text": "the widget rollout stays on track"}],
         },
     }
 
@@ -725,6 +725,78 @@ class TestGranolaPullThenMaterialize(_Base):
         self.assertEqual(item.project, "acme")
         self.assertEqual(item.layer, "meetings")
         self.assertIn("acme/meetings/", item.path.as_posix())
+
+
+class TestGranolaSyncUnfiledMeeting(_Base):
+    """A Granola meeting that routing genuinely can't place must not vanish.
+
+    Before this fix, `gigabite granola-sync` called `materialize.run()` with
+    `include_unfiled` left at its default (False), so an unrouted meeting was
+    just skipped — never written anywhere, index-only — while the printed
+    hint named `--project`/`--include-unfiled` flags that `granola-sync` has
+    never accepted. Both are wrong: the flags don't exist on this command, and
+    real content was being silently discarded.
+    """
+
+    NOTES_PAGE = {"notes": [{"id": "g2", "updated_at": "2026-09-09T09:00:00Z"}],
+                  "hasMore": False}
+    DETAIL = {
+        "g2": {
+            "id": "g2", "title": "Standup 9th Sept",
+            "created_at": "2026-09-09T09:00:00Z",
+            "summary_markdown": "Quick sync, nothing client-specific came up today.",
+            "transcript": [{"source": "Alex", "text": "just a status check-in"}],
+        },
+    }
+
+    def _fake_get(self, path, token):
+        if path.startswith("/notes/"):
+            note_id = path.split("/notes/")[1].split("?")[0]
+            return self.DETAIL[note_id]
+        return self.NOTES_PAGE
+
+    def setUp(self):
+        super().setUp()
+        self._orig_get = granola_live._get
+        granola_live._get = self._fake_get
+        self.addCleanup(lambda: setattr(granola_live, "_get", self._orig_get))
+        from gigabite import cli
+        self.cli = cli
+        self._orig_db = (config.DB_PATH, config.INDEX_DIR)
+        config.INDEX_DIR = config.MACHINE_DIR / "index"
+        config.DB_PATH = self.db
+        self.addCleanup(self._restore_db)
+
+    def _restore_db(self):
+        config.DB_PATH, config.INDEX_DIR = self._orig_db
+
+    def test_an_unresolved_meeting_lands_at_the_knowledge_root(self):
+        import argparse
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = self.cli.cmd_granola_sync(argparse.Namespace(force=False))
+        self.assertEqual(rc, 0)
+
+        loose = [q for q in self.knowledge.iterdir()
+                 if q.is_file() and q.suffix == ".md"]
+        self.assertEqual(len(loose), 1,
+                         "an unrouted meeting must be written, not dropped")
+        self.assertIn("status check-in", loose[0].read_text(encoding="utf-8"))
+
+        out = buf.getvalue()
+        self.assertNotIn("--project", out,
+                         "granola-sync has no --project flag; don't tell the user it does")
+        self.assertNotIn("--include-unfiled", out,
+                         "granola-sync has no --include-unfiled flag either")
+
+    def test_second_sync_does_not_duplicate_the_unfiled_note(self):
+        import argparse
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.cli.cmd_granola_sync(argparse.Namespace(force=False))
+            self.cli.cmd_granola_sync(argparse.Namespace(force=False))
+        loose = [q for q in self.knowledge.iterdir()
+                 if q.is_file() and q.suffix == ".md"]
+        self.assertEqual(len(loose), 1, "a second sync must not write it twice")
 
 
 if __name__ == "__main__":

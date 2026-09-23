@@ -122,6 +122,11 @@ ORIGINALS_DIR = MACHINE_DIR / "originals"
 # config, edited rarely, read on every ingest.
 ALIASES_FILE = MACHINE_DIR / "aliases.json"
 
+# Which project a working directory belongs to, once the user has said so — and
+# the record that they were asked, so they are never asked about it twice. User
+# state about their own machine, not knowledge, so it lives with the machinery.
+BINDINGS_FILE = MACHINE_DIR / "bindings.json"
+
 # Older names for the two import paths, kept so an out-of-tree caller keeps working.
 INBOX_CLAUDE_AI = SOURCES_CLAUDE_AI
 INBOX_MEETINGS = SOURCES_MEETINGS

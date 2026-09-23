@@ -250,16 +250,16 @@ class TestTheRecallHook(CliTestCase):
         path.chmod(0o755)
         return path
 
-    def fire(self, payload, hook=None):
+    def fire(self, payload, hook=None, cwd=None):
         env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
         proc = subprocess.run(["/bin/bash", str(hook or self.hook)],
-                              input=payload, env=env,
+                              input=payload, env=env, cwd=cwd,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               universal_newlines=True)
         return proc.returncode, proc.stdout
 
-    def prompt(self, text, hook=None):
-        return self.fire(json.dumps({"prompt": text}), hook=hook)
+    def prompt(self, text, hook=None, cwd=None):
+        return self.fire(json.dumps({"prompt": text}), hook=hook, cwd=cwd)
 
     def test_a_research_prompt_injects_the_recall_block(self):
         code, out = self.prompt("what did we decide about the widget pricing anchor")
@@ -307,6 +307,218 @@ class TestTheRecallHook(CliTestCase):
             code, out = self.fire(payload)
             self.assertEqual(code, 0, repr(payload))
             self.assertEqual(out, "", repr(payload))
+
+
+class TestTheHookAsksWhenNothingResolves(TestTheRecallHook):
+    """The other half of the scoped-recall fix: an unplaceable folder says so.
+
+    `route` returns no hits when no project resolves, which is correct and leaves
+    the hook silent — and silence from a tool with a memory is indistinguishable
+    from a tool without one. Run against a checkout that names no project, the
+    hook must ask which project it is, once, and never break a prompt doing it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.work = Path(tempfile.mkdtemp(prefix="gigabite-work-"))
+        self.addCleanup(shutil.rmtree, str(self.work), True)
+        (self.work / ".git").mkdir()
+
+    def test_it_asks_which_project_an_unplaceable_folder_is(self):
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("gigabite project bind", out)
+        self.assertIn("acme", out, "the ask lists the projects that exist")
+        self.assertNotIn("[gigabite recall", out, "it recalled nothing, and says so")
+        self.assertNotIn("self-serve segment", out, "no other project's material")
+
+    def test_it_is_silent_once_the_folder_is_bound(self):
+        run("project", "bind", "acme", "--dir", str(self.work))
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(self.work))
+        self.assertEqual(code, 0)
+        self.assertNotIn("project bind", out)
+
+    def test_binding_to_nothing_is_silent_too(self):
+        run("project", "bind", "--none", "--dir", str(self.work))
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(self.work))
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+
+    def test_corrupt_binding_state_does_not_break_the_prompt(self):
+        config.BINDINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.BINDINGS_FILE.write_text("{not json", encoding="utf-8")
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("gigabite project bind", out)
+
+    def test_a_sparring_turn_is_still_not_interrupted(self):
+        code, out = self.prompt("yeah that makes sense", cwd=str(self.work))
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+
+    def test_it_asks_once_and_then_stops_asking(self):
+        """The hook fires on every prompt, so "ask once" has to be a mechanism.
+
+        Three turns in the same unbound checkout, one question.
+        """
+        asks = []
+        for _ in range(3):
+            code, out = self.prompt("what did we decide about the release train",
+                                    cwd=str(self.work))
+            self.assertEqual(code, 0)
+            asks.append("gigabite project bind" in out)
+        self.assertEqual(asks, [True, False, False])
+
+    def test_forgetting_brings_the_question_back(self):
+        self.prompt("what did we decide about the release train", cwd=str(self.work))
+        run("project", "bind", "--forget", "--dir", str(self.work))
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("gigabite project bind", out)
+
+    def test_a_checkout_inside_a_bound_folder_is_asked_about_not_captured(self):
+        """Binding a parent folder must not silently swallow the repos under it."""
+        inner = self.work / "clientb"
+        (inner / ".git").mkdir(parents=True)
+        run("project", "bind", "acme", "--dir", str(self.work))
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(inner))
+        self.assertEqual(code, 0)
+        self.assertIn("gigabite project bind", out)
+        self.assertNotIn("self-serve segment", out, "no material from the parent")
+
+    def test_a_scratch_directory_is_left_alone(self):
+        """No git repo, no manifest, nothing: a question here is worse than silence."""
+        plain = Path(tempfile.mkdtemp(prefix="gigabite-scratch-"))
+        self.addCleanup(shutil.rmtree, str(plain), True)
+        code, out = self.prompt("what did we decide about the release train",
+                                cwd=str(plain))
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "")
+
+
+class TestProjectBind(CliTestCase):
+    """`gigabite project bind` — the command the assistant runs with the answer."""
+
+    def setUp(self):
+        super().setUp()
+        self.work = Path(tempfile.mkdtemp(prefix="gigabite-work-"))
+        self.addCleanup(shutil.rmtree, str(self.work), True)
+        (self.work / ".git").mkdir()
+
+    def bindings(self):
+        from gigabite.features import bindings as mod
+        return mod.load()
+
+    def test_it_records_the_directory_against_the_project(self):
+        code, out = run("project", "bind", "acme", "--dir", str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("acme", out)
+        self.assertEqual(self.bindings(), {os.path.realpath(self.work): "acme"})
+
+    def test_none_records_that_this_is_not_project_work(self):
+        code, _out = run("project", "bind", "--none", "--dir", str(self.work))
+        self.assertEqual(code, 0)
+        self.assertEqual(self.bindings(), {os.path.realpath(self.work): None})
+
+    def test_it_refuses_a_project_that_does_not_exist_and_creates_nothing(self):
+        code, out = run("project", "bind", "newthing", "--dir", str(self.work))
+        self.assertEqual(code, 1)
+        self.assertIn("gigabite project add newthing", out)
+        self.assertEqual(self.bindings(), {})
+        self.assertFalse((self.root / "newthing").exists(),
+                         "a folder name is not a project")
+
+    def test_it_needs_a_name_or_none(self):
+        code, _out = run("project", "bind", "--dir", str(self.work))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.bindings(), {})
+
+    def test_rebinding_replaces_the_answer(self):
+        run("project", "bind", "--none", "--dir", str(self.work))
+        run("project", "bind", "acme", "--dir", str(self.work))
+        self.assertEqual(self.bindings(), {os.path.realpath(self.work): "acme"})
+
+    def test_it_refuses_the_home_directory(self):
+        """A binding covers what is under it, so $HOME is a machine-wide binding:
+        every session anywhere would resolve to that one project."""
+        code, out = run("project", "bind", "acme", "--dir", str(config.HOME))
+        self.assertEqual(code, 1)
+        self.assertIn("won't bind", out)
+        self.assertEqual(self.bindings(), {})
+
+    def test_it_refuses_the_filesystem_root(self):
+        code, _out = run("project", "bind", "acme", "--dir", "/")
+        self.assertEqual(code, 1)
+        self.assertEqual(self.bindings(), {})
+
+    def test_it_refuses_a_directory_that_does_not_exist(self):
+        gone = str(self.work / "nope" / "missing")
+        code, out = run("project", "bind", "acme", "--dir", gone)
+        self.assertEqual(code, 1)
+        self.assertIn("no such directory", out)
+        self.assertEqual(self.bindings(), {})
+
+    def test_it_refuses_a_dot_directory(self):
+        hidden = self.work / ".config" / "thing"
+        hidden.mkdir(parents=True)
+        code, _out = run("project", "bind", "acme", "--dir", str(hidden))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.bindings(), {})
+
+    def test_it_refuses_inside_the_knowledge_base(self):
+        code, _out = run("project", "bind", "acme", "--dir", str(self.root / "acme"))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.bindings(), {})
+
+    def test_none_is_refused_in_those_places_too(self):
+        code, _out = run("project", "bind", "--none", "--dir", str(config.HOME))
+        self.assertEqual(code, 1)
+        self.assertEqual(self.bindings(), {})
+
+    def test_forget_removes_the_binding(self):
+        run("project", "bind", "acme", "--dir", str(self.work))
+        code, out = run("project", "bind", "--forget", "--dir", str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("forgotten", out)
+        self.assertEqual(self.bindings(), {})
+
+    def test_forget_on_an_unknown_directory_is_not_an_error(self):
+        code, _out = run("project", "bind", "--forget", "--dir", str(self.work))
+        self.assertEqual(code, 0)
+
+
+class TestRouteShowsTheAsk(CliTestCase):
+    """`gigabite route` by hand printed "no prior context found" and hid the ask."""
+
+    def setUp(self):
+        super().setUp()
+        self.work = Path(tempfile.mkdtemp(prefix="gigabite-work-"))
+        self.addCleanup(shutil.rmtree, str(self.work), True)
+        (self.work / ".git").mkdir()
+        here = os.getcwd()
+        self.addCleanup(os.chdir, here)
+        os.chdir(str(self.work))
+
+    def test_the_human_output_shows_the_question(self):
+        code, out = run("route", "what", "did", "we", "decide", "about", "the",
+                        "release", "train")
+        self.assertEqual(code, 0)
+        self.assertIn("gigabite project bind", out)
+        self.assertNotIn("no prior context found", out)
+
+    def test_it_spends_the_question_like_the_hook_does(self):
+        run("route", "what", "did", "we", "decide", "about", "the", "release", "train")
+        code, out = run("route", "what", "did", "we", "decide", "about", "the",
+                        "release", "train")
+        self.assertEqual(code, 0)
+        self.assertNotIn("gigabite project bind", out)
+        self.assertIn("no prior context found", out)
 
 
 # ---------------------------------------------------------------------------

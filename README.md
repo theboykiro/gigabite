@@ -303,12 +303,12 @@ you would use to relocate them yourself.
 The separation between code and content is the one rule this project will not bend
 on, and it is a client-confidentiality boundary rather than a preference. Only code
 belongs in git. Your operating protocol in `~/.core` and your knowledge base in
-`~/Knowledge` stay on the device, backed up by iCloud, and the repository must remain
-free of client names, stakeholders, and internal detail — including in examples. Every
-note gigabite writes carries an explicit `share: private` marker, so that sharing
-anything later is a deliberate act and never a side effect.
+`~/Knowledge` stay on the device, backed up by your OS's file sync, and the repository
+must remain free of client names, stakeholders, and internal detail — including in
+examples. Every note gigabite writes carries an explicit `share: private` marker, so
+that sharing anything later is a deliberate act and never a side effect.
 
-That leaves one thing worth your attention. iCloud is a sync, not a version history,
+That leaves one thing worth your attention. File sync is a sync, not a version history,
 and your knowledge base will become the most valuable thing on the machine long
 before you notice. Set up a real versioned backup for `~/Knowledge` — the note in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) covers the reasoning. Everything else

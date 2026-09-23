@@ -39,6 +39,15 @@ hits = d.get("hits") or []
 # bm25 scores are negative; more negative = stronger. Only inject strong hits.
 strong = [h for h in hits if isinstance(h.get("score"), (int, float)) and h["score"] < -1.0]
 if not strong:
+    # Nothing recalled. When the turn resolved to no project at all, the router
+    # hands back a one-time question instead — asking which project this folder is
+    # beats vanishing, because silence reads as "no memory of this" and a fresh
+    # install has no projects to resolve to. Absent on every other path, including
+    # a binary too old to know about it.
+    ask = d.get("ask")
+    text = (ask or {}).get("text") if isinstance(ask, dict) else None
+    if isinstance(text, str) and text:
+        print(text)
     raise SystemExit(0)
 ctx = d.get("context") or {}
 out = ["[gigabite recall — prior context from your own history; cite as source · title · date if used]"]

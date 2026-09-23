@@ -31,7 +31,7 @@ and local-file-native, and means there is exactly one place to look when somethi
 misbehaves.
 
 **Local-first, with nothing sensitive web-facing.** Content lives on the device and is
-backed up to iCloud. Only code reaches GitHub. This is a client-confidentiality
+backed up by your OS's file sync. Only code reaches GitHub. This is a client-confidentiality
 boundary rather than a preference, and it is why several features here are shaped
 more awkwardly than they would otherwise be.
 
@@ -75,7 +75,7 @@ every call rather than conditionally assembled.
 It lives at `~/.core/core.md`, with supporting capability files alongside it in
 `~/.core/capability/`. That supporting knowledge — frameworks, methods, command
 templates, SOPs — is always available and is emphatically **not** a project; it never
-resolves as one. The whole directory is iCloud-synced and never committed.
+resolves as one. The whole directory is cloud-synced and never committed.
 
 ### 2.2 Project context
 
@@ -141,16 +141,58 @@ An **explicit marker** in the message — `@project` or `@project:layer` — win
 outright, matched case-insensitively against known projects and accepted as written if
 it names one that does not exist yet. Failing that, **conversation continuity**
 applies: if the thread has already established a context and the new message does not
-signal a switch, stay where you are. Failing that, **keyword matching** scores the
-message against the `keywords:` set held in each project's `_project.md`, and the
-highest-scoring project wins. If none of those resolves it, the search runs
-**unscoped** rather than guessing; a single disambiguating question is acceptable
-when the ambiguity genuinely matters, but the default is to load and proceed.
+signal a switch, stay where you are. Failing that, the **working directory** is
+consulted — but only through a **binding the user made**, never through its name.
+Matching the folder's basename against the project registry read `clientB/docs/alpha`
+as the `alpha` project and injected `alpha`'s material into another repo's session: a
+folder name is not a project (§4), for retrieval exactly as for filing. The binding is
+a signal for a *turn* only; content being filed never takes a project from the shell's
+location. Failing that, **keyword matching** scores the message against the
+`keywords:` set held in each project's `_project.md`, and the highest-scoring project
+wins. If none of those resolves it, the turn is **ambiguous** and recall retrieves
+nothing at all.
+
+**A binding outranks a keyword**, and only an `@marker` outranks a binding. A keyword
+used to win, which meant a passing mention of one body of work inside another's bound
+directory pulled the first one's passages into the session — the same leak as the
+folder-name case, through the prompt instead of the path. A binding is something the
+user deliberately said about this folder; a keyword is a word in a sentence. The
+`@marker` still wins because it is the same class of signal and narrower: it is the
+user overriding scope for one turn, deliberately. So keywords select no project inside
+a bound directory, and the resolution `reason` says so — naming the project whose
+keywords were overruled and the `@marker` that would honour them — rather than leaving
+the user to wonder why their words did nothing. A binding to a project whose
+`_project.md` has since gone scopes to nothing, and does not fall back to keywords.
 
 Detection resolves both the project *and* the layer, because a project can contain
-distinct sub-contexts that must not blend. When a project is confidently known, recall
-is scoped to it and then topped up with unscoped hits, so a wrong guess narrows the
-answer without hiding anything.
+distinct sub-contexts that must not blend. **Scoped means scoped**: when a project is
+known, only that project is searched, and a thin result stands. Recall used to top a
+short result up with unscoped hits, which meant correctly detecting a project was what
+pulled another project's material into the session — on a machine holding more than
+one client, a confidentiality failure rather than a relevance one. Silence costs a
+turn of context; a confident injection from the wrong client cannot be taken back.
+
+Silence, though, is not the end state. A turn that resolves to nothing injects a
+short **ask** instead: which project is this folder? — listing the projects that
+exist, offering to create one, and offering "this isn't project work". The answer
+binds the *directory* to a project (`~/Knowledge/.gigabite/bindings.json`, via
+`gigabite project bind`), so the question is asked once per workspace and never
+again, including when the answer is "nothing". Unanswered, it backs off for a month
+rather than arriving on every prompt, and `gigabite project bind --forget` both
+corrects a wrong answer and brings the question back on demand. A binding on a workspace
+root (a `.git` or package manifest) covers the plain subdirectories beneath it and
+stops at the next workspace, so a checkout with
+its own `.git` inside a bound folder is asked about rather than quietly captured. Without it the tool is silent in
+every directory it cannot place — and on a fresh install, which has no projects at
+all, that is every directory, which reads as a tool with no memory rather than one
+that does not know where it is standing. The ask is suppressed where it would be
+meaningless: no workspace marker (a git repo, a package manifest, a `CLAUDE.md`),
+the home directory, scratch space, or inside the knowledge base — and `bind` refuses
+those same places, because a binding on `$HOME` or `/` is a machine-wide one. The
+folder path is shell-quoted into the block and a name carrying control characters is
+not asked about at all: the ask tells the assistant to *run* a command, so a
+directory name is untrusted input crossing into an instruction. Whether a turn
+wants memory at all is not re-decided here — a `spar` turn never reaches it.
 
 ## 4. Working directory versus knowledge base
 
@@ -283,11 +325,11 @@ not stubbed.
 | Asset | Location | Backup | GitHub |
 |---|---|---|---|
 | Router and scripts (code) | working directory / repo | git | Yes |
-| `core.md` and capability | `~/.core/` | iCloud | Never |
-| Project knowledge and notes | `~/Knowledge/` | iCloud | Never |
+| `core.md` and capability | `~/.core/` | Cloud sync | Never |
+| Project knowledge and notes | `~/Knowledge/` | Cloud sync | Never |
 | Credentials | macOS keychain | — | Never |
 
-Content never leaves the device except to iCloud backup; nothing sensitive touches
+Content never leaves the device except to cloud sync backup; nothing sensitive touches
 GitHub or any web-facing surface. Credentials are held in the macOS keychain and
 retrieved at runtime, never written to files or the repository — the claude.ai token
 is entered through the system's own hidden prompt so that it never reaches shell
@@ -300,7 +342,7 @@ strip, anonymise, or refuse. This is enforced at the point of egress rather than
 to the judgement of whatever is composing the request.
 
 There is a gap here worth naming, because it is the one the security model does not
-cover. iCloud is synchronisation, not version history. A knowledge base accumulated
+cover. Cloud sync is synchronisation, not version history. A knowledge base accumulated
 over months is the most valuable and least reproducible thing on the machine, while
 the code is recoverable from a clone in seconds. A real versioned backup pointed at
 `~/Knowledge` is the sensible complement to everything above, and it is not something

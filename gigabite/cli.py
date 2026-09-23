@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -294,6 +295,24 @@ def _core_unfinished() -> None:
     print()
 
 
+def _projects_notice() -> None:
+    """Point a project-less user at `project add`. Silent once they have one.
+
+    A project is what recall is scoped to, so with none there is nothing any
+    prompt can resolve to and the tool is inert — the one state where this
+    command has to be named, and it was previously named once, in the README.
+    """
+    from .features import save as savemod
+    if savemod.list_projects():
+        return
+    print(bold("There are no projects yet, and recall is scoped to projects."))
+    print()
+    print("    gigabite project add <name> --keywords <a,b>")
+    print(dim("  Until one exists, an unrecognised folder resolves to nothing and"))
+    print(dim("  recalls nothing. One project is enough to start."))
+    print()
+
+
 def _welcome_empty() -> None:
     know = _tilde(config.KNOWLEDGE_DIR)
     unindexed = _claude_code_history()
@@ -335,6 +354,7 @@ def _welcome_empty() -> None:
     print()
     print(dim("  Run `gigabite welcome` again once there is something in there."))
     print()
+    _projects_notice()
     _core_unfinished()
 
 
@@ -409,6 +429,7 @@ def cmd_welcome(args) -> int:
         print(terminal_hit)
 
     print()
+    _projects_notice()
     _core_unfinished()
     print(dim("Also worth knowing:"))
     if _claude_code_present():
@@ -621,13 +642,20 @@ def cmd_granola_sync(args) -> int:
                 f"{rep.scanned} scanned."))
 
     # Route each new meeting into its project folder by keyword — never trust
-    # whatever folder/workspace Granola itself assigned.
-    plan, _retired = materialize.run(store, source=config.SOURCE_MEETING)
+    # whatever folder/workspace Granola itself assigned. A meeting that resolves
+    # nothing is never silently dropped: it is written loose at the top of
+    # ~/Knowledge (config.UNFILED_PROJECT), same as any other unrouted intake, so
+    # it's one drag away from the right project folder instead of gone.
+    plan, _retired = materialize.run(store, source=config.SOURCE_MEETING,
+                                     include_unfiled=True,
+                                     unfiled_project=config.UNFILED_PROJECT)
     for item in plan.actionable:
-        print(f"  {green('→')} {item.title} → {item.project}/{item.layer}/")
-    for item in plan.skipped:
-        if item.skip == materialize.UNRESOLVED:
-            print(f"  {yellow('?')} {item.title}: {item.skip}")
+        if item.triaged:
+            print(f"  {yellow('?')} {item.title}: no project resolved — "
+                  f"left at the top of {config.KNOWLEDGE_DIR}, drag it into "
+                  f"a project folder")
+        else:
+            print(f"  {green('→')} {item.title} → {item.project}/{item.layer}/")
     return 0
 
 
@@ -638,6 +666,13 @@ def cmd_route(args) -> int:
     result = routing.route(store, prompt, limit=args.limit,
                            previous_was_correction=args.after_correction,
                            seconds_since_last=args.seconds_since_last)
+    ask = result.get("ask") or None
+    if ask:
+        # Emitting the block is what spends the one question, so the record is
+        # written here rather than inside `route` — a caller that only inspects a
+        # routing result must not use it up. Never raises (features/bindings.py).
+        from .features import bindings
+        bindings.record_ask(ask["dir"])
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
         return 0
@@ -649,6 +684,11 @@ def cmd_route(args) -> int:
     print(dim(f"register: {reg['mode']}  [{reg['confidence']}] — {reg['reason']}"))
     hits = result["hits"]
     if not hits:
+        if ask:
+            # The hook shows this; so must the human path, or the one place a user
+            # runs `route` by hand is the one place the tool looks inert.
+            print(ask["text"])
+            return 0
         print(dim("recall suppressed for a sparring turn" if reg["mode"] == routing.SPAR
                   else "no prior context found"))
         return 0
@@ -687,7 +727,50 @@ def cmd_save(args) -> int:
 
 
 def cmd_project(args) -> int:
-    from .features import save as savemod
+    from .features import bindings, save as savemod
+    if args.action == "bind":
+        # The answer to the hook's question. It records which project a directory
+        # belongs to — or, with --none, that it is not project work — so the
+        # question is asked once and never again. It creates nothing: binding to a
+        # project that does not exist yet is refused, because a directory is not
+        # permission to invent a project.
+        # From a subfolder, bind the workspace it belongs to — the same directory
+        # the hook's question names — not the subfolder the shell happens to be in.
+        target = args.dir or str(bindings.workspace_root(os.getcwd()) or os.getcwd())
+        if args.forget:
+            # The undo, and the way to get the question back after ignoring it.
+            if bindings.forget(target):
+                print(green(f"✓ forgotten: {target}"))
+                print(dim("  this folder will be asked about again."))
+            else:
+                print(dim(f"nothing recorded for {target}."))
+            return 0
+        reason = bindings.refuse_reason(target)
+        if reason:
+            # A binding covers everything under it, so a binding on $HOME or / is a
+            # machine-wide one. Refuse loudly: silence here is how it went unnoticed.
+            print(yellow(f"won't bind {target}: {reason}."))
+            print(dim("  bind the project's own folder instead "
+                      "(`--dir <path>`), or use --none there."))
+            return 1
+        if args.none:
+            key = bindings.bind(target, None)
+            print(green(f"✓ not project work: {key}"))
+            print(dim("  nothing is recalled here, and you will not be asked again."))
+            return 0
+        if not args.name:
+            print(yellow("bind what? `gigabite project bind <name> --dir <path>` "
+                         "or `--none` for 'not project work'."))
+            return 1
+        known = {p["name"].lower(): p["name"] for p in savemod.list_projects()}
+        real = known.get(args.name.strip().lower())
+        if real is None:
+            print(yellow(f"no project named {args.name!r} yet — create it first:"))
+            print(f"    gigabite project add {args.name} --keywords <a,b>")
+            return 1
+        key = bindings.bind(target, real)
+        print(green(f"✓ bound to {real}: {key}"))
+        return 0
     if args.action == "add":
         kws = [k.strip() for k in (args.keywords or "").split(",") if k.strip()]
         lys = [l.strip() for l in (args.layers or "").split(",") if l.strip()]
@@ -1605,11 +1688,16 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--stdin", action="store_true")
     pv.set_defaults(func=cmd_save)
 
-    pj = sub.add_parser("project", help="create or list projects (name + keywords drive context detection)")
-    pj.add_argument("action", choices=["add", "list"])
+    pj = sub.add_parser("project", help="create, list or bind projects (name + keywords drive context detection)")
+    pj.add_argument("action", choices=["add", "list", "bind"])
     pj.add_argument("name", nargs="?")
     pj.add_argument("--keywords")
     pj.add_argument("--layers")
+    pj.add_argument("--dir", help="the directory to bind (bind; default: the current one)")
+    pj.add_argument("--none", action="store_true",
+                    help="bind: this directory is not project work — stay quiet here")
+    pj.add_argument("--forget", action="store_true",
+                    help="bind: drop this directory's binding and ask about it again")
     pj.set_defaults(func=cmd_project)
 
     ppa = sub.add_parser("paste", help="save clipboard contents (e.g. a copied meeting transcript) into ~/Knowledge")

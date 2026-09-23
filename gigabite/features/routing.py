@@ -6,8 +6,18 @@ turn can be answered *with* the user's own history loaded, not from a blank slat
 
 Resolution priority:
   1. explicit marker   @project  or  @project:layer      -> wins outright
-  2. keyword match     against `keywords:` in each ~/Knowledge/{project}/_project.md
-  3. ambiguous         -> no project; search runs unscoped
+  2. a binding the user set for this working directory (features/bindings.py)
+  3. keyword match     against `keywords:` in each ~/Knowledge/{project}/_project.md
+  4. ambiguous         -> no project, and recall retrieves nothing at all
+
+A binding outranks a keyword. A binding is something the user deliberately said
+about this folder; a keyword is a stray word in a sentence, and mentioning one
+piece of work while inside another's directory must not pull the first one's
+material in. Only the `@marker` beats it, because that is the same class of
+signal — the user saying so — and more specific: it is scoped to this one turn.
+
+A working directory only ever resolves a project through (3), an explicit binding.
+Its *name* never does: see `resolve_context`.
 
 This module reads the project metadata files directly (it does not depend on the
 knowledge-write feature), so detection works the moment a _project.md exists.
@@ -20,11 +30,12 @@ why it lives here rather than in a module of its own.
 
 from __future__ import annotations
 
+import os
 import re
-from pathlib import Path
 from typing import Optional
 
 from .. import config
+from . import bindings
 
 # An explicit project marker: '@project' or '@project:layer'.
 #
@@ -62,8 +73,26 @@ def _scan_projects() -> list[dict]:
     return out
 
 
+def _keyword_match(prompt: str, projects: list[dict]) -> tuple[Optional[dict], int]:
+    """Best project by whole-word keyword hits in *prompt*, and its score.
+
+    Split out because the answer is needed in two places now: to resolve an
+    unbound turn, and — in a bound one, where it no longer decides anything — to
+    say in the reason which keyword was overruled.
+    """
+    low = (prompt or "").lower()
+    best, best_score = None, 0
+    for p in projects:
+        score = sum(1 for kw in p["keywords"]
+                    if kw and re.search(rf"\b{re.escape(kw)}\b", low))
+        if score > best_score:
+            best, best_score = p, score
+    return best, best_score
+
+
 def resolve_context(prompt: str, projects: Optional[list[dict]] = None, *,
-                    accept_unknown_marker: bool = True) -> dict:
+                    accept_unknown_marker: bool = True,
+                    cwd: Optional[str] = None) -> dict:
     """Return {project, layer, confidence, reason}. project/layer may be None.
 
     *accept_unknown_marker* controls what an ``@marker`` naming a project that does
@@ -76,6 +105,24 @@ def resolve_context(prompt: str, projects: Optional[list[dict]] = None, *,
     project, and inventing one from stray text is the failure this module exists to
     prevent. Callers filing content pass ``False``, and an unknown marker is then
     ignored in favour of keyword matching.
+
+    *cwd* is an optional working directory, and it is off unless a caller passes
+    one: a session inside a directory the user has *bound* is strong evidence of
+    that project's scope, but a *document* being filed must never take a project
+    from wherever the shell happened to be. When one is passed, only an explicit
+    ``@marker`` outranks the binding it finds: a keyword elsewhere in the prompt
+    does not, because a passing mention of other work is not a request to leave
+    this folder's scope. The keyword is still computed, so the reason string can
+    say it was overruled and name the ``@marker`` that would honour it.
+
+    **A directory name is never a project.** ``cwd`` resolves only through an
+    explicit binding. Matching the basename against the project registry looked
+    harmless — it only ever matched a project that already existed — and it was
+    not: ``clientB/docs/alpha`` is a folder about ``alpha``, not the ``alpha``
+    project, and it scoped recall to ``alpha`` and injected ``alpha``'s material
+    into a session in someone else's repo, with no binding anywhere. The same rule
+    the router states for filing holds for retrieval: the user says which project a
+    directory is, or nothing does.
     """
     prompt = prompt or ""
     projects = projects if projects is not None else _scan_projects()
@@ -92,20 +139,51 @@ def resolve_context(prompt: str, projects: Optional[list[dict]] = None, *,
         return {"project": name, "layer": layer, "confidence": "explicit",
                 "reason": f"explicit marker @{proj}" + (f":{layer}" if layer else "")}
 
-    # 2. keyword match
-    low = prompt.lower()
-    best, best_score = None, 0
-    for p in projects:
-        score = sum(1 for kw in p["keywords"] if kw and re.search(rf"\b{re.escape(kw)}\b", low))
-        if score > best_score:
-            best, best_score = p, score
+    best, best_score = _keyword_match(prompt, projects)
+
+    # 2. a binding the user set for this working directory. It outranks the
+    #    directory's *name* because it is something they said, not something the
+    #    filesystem happened to be called — and it outranks a keyword in the
+    #    prompt for the same reason, at more length: the keyword is a word in a
+    #    sentence, the binding is a statement about this folder.
+    if cwd:
+        bound, bound_project = bindings.lookup(cwd)
+        if bound:
+            real = known.get((bound_project or "").lower())
+            if real is not None:
+                # Name the keyword that was overruled, and how to override back.
+                # The reason string is shown to the user and to the model, so a
+                # keyword silently doing nothing is exactly what it must explain.
+                note = ""
+                if best is not None and best["name"] != real["name"]:
+                    note = (f"; ignored {best_score} keyword(s) for {best['name']}"
+                            f" — type @{best['name']} to search it instead")
+                return {"project": real["name"], "layer": None, "confidence": "binding",
+                        "reason": f"this directory is bound to the {real['name']} project"
+                                  + note}
+            if bound_project is None:
+                # "not project work": resolved, and resolved to nothing. Ambiguous
+                # by confidence, so recall stays scoped-to-nothing — but the ask
+                # never fires here again, which is the point of recording it.
+                return {"project": None, "layer": None, "confidence": "ambiguous",
+                        "reason": "this directory is marked as not project work"}
+            # Bound to a project that no longer has a _project.md. Scope to
+            # nothing rather than to a folder that is not there — and *not* to
+            # whatever the prompt's keywords suggest, which would reopen the leak
+            # this precedence closed: a missing metadata file is not the user
+            # saying this directory is somebody else's work now.
+            return {"project": None, "layer": None, "confidence": "ambiguous",
+                    "reason": f"this directory is bound to {bound_project}, "
+                              "which no longer has a _project.md"}
+
+    # 3. keyword match
     if best and best_score > 0:
         return {"project": best["name"], "layer": None, "confidence": "keyword",
                 "reason": f"matched {best_score} keyword(s) for {best['name']}"}
 
-    # 3. ambiguous
+    # 4. ambiguous. Note what is *not* here: the directory's name.
     return {"project": None, "layer": None, "confidence": "ambiguous",
-            "reason": "no project marker or keyword match; searching everything"}
+            "reason": "no project marker, keyword or binding for this directory"}
 
 
 # ---------------------------------------------------------------------------
@@ -310,13 +388,34 @@ def resolve_register(prompt: str, *, previous_was_correction: bool = False,
     return out(BRIEF, "ambiguous", "no clear signal; defaulting to full recall")
 
 
-def route(store, prompt: str, *, limit: int = 6, scope_to_project: bool = True,
+def route(store, prompt: str, *, limit: int = 6,
+          cwd: Optional[str] = None,
           previous_was_correction: bool = False,
           seconds_since_last: Optional[float] = None) -> dict:
     """Resolve context and retrieve the most relevant prior conversations.
 
-    When the project is confidently known we scope the search to it, then top up
-    with unscoped hits so nothing relevant is hidden by a wrong guess.
+    **Scoped means scoped.** Recall is injected into every prompt on the machine,
+    so a hit from another project is not a stale suggestion the reader can ignore
+    — it arrives as the user's own memory, in a session about someone else's work.
+    On a laptop that holds more than one client that is a confidentiality failure,
+    which is why there is no top-up: when a project resolves, only that project is
+    searched, and a thin result is the honest answer that the project has little
+    to say. Padding it from elsewhere is never the better trade.
+
+    **No project means no hits, but not silence.** A turn that resolves to nothing
+    returns an ``ask``: the block the hook injects to ask the user, once, which
+    project this directory is. Without it the tool is indistinguishable from one
+    with no memory — most sharply on a fresh install, which has no projects at all
+    and would otherwise say nothing from the first prompt to the last.
+
+    For the same reason, **no project means no hits**. An ambiguous turn used to
+    fall back to searching everything; searching everything is exactly the query
+    that cannot be safe, because it is the one with no scope at all. Silence costs
+    a turn of context. A confident injection from the wrong client cannot be undone.
+
+    The working directory is consulted only through a binding the user made (see
+    ``resolve_context``), defaulting to the process's own — the hook runs inside
+    the session's directory. Pass ``cwd=""`` to resolve from the prompt text alone.
 
     An ``@marker`` naming a project that does not exist is ignored here, unlike when
     a person types one to start a project: recall can only search projects that have
@@ -341,21 +440,23 @@ def route(store, prompt: str, *, limit: int = 6, scope_to_project: bool = True,
     register = resolve_register(prompt,
                                 previous_was_correction=previous_was_correction,
                                 seconds_since_last=seconds_since_last)
-    ctx = resolve_context(prompt, accept_unknown_marker=False)
+    here = os.getcwd() if cwd is None else cwd
+    projects = _scan_projects()
+    ctx = resolve_context(prompt, projects, accept_unknown_marker=False, cwd=here)
     if register["mode"] == SPAR and ctx["confidence"] != "ambiguous":
         register = dict(register, mode=BRIEF, confidence="explicit",
                         reason="short, but it names a known project (%s)" % ctx["reason"])
     if register["mode"] == SPAR:
-        return {"context": ctx, "hits": [], "register": register}
+        return {"context": ctx, "hits": [], "register": register, "ask": None}
 
-    project = ctx["project"] if (scope_to_project and ctx["confidence"] != "ambiguous") else None
+    project = ctx["project"] if ctx["confidence"] != "ambiguous" else None
+    if project is None:
+        # Nothing to recall — say so rather than vanish. `ask` is the one-time
+        # question that turns this directory into a resolved one for good; it is
+        # None once the user has answered it, and in any directory where the
+        # question would be meaningless (features/bindings.py).
+        return {"context": ctx, "hits": [], "register": register,
+                "ask": bindings.ask_for(here, projects)}
 
     hits = store.search(prompt, project=project, limit=limit)
-    if project and len(hits) < limit:
-        seen = {h["doc_id"] for h in hits}
-        for h in store.search(prompt, limit=limit):
-            if h["doc_id"] not in seen:
-                hits.append(h)
-                if len(hits) >= limit:
-                    break
-    return {"context": ctx, "hits": hits, "register": register}
+    return {"context": ctx, "hits": hits, "register": register, "ask": None}

@@ -16,7 +16,10 @@ Three things make it safe to run against real content:
 when it has one, otherwise from the same keyword routing every other intake uses,
 and otherwise from nowhere — the document is left in the index and skipped, unless
 ``--include-unfiled`` says to write it under ``personal/`` (``config.PERSONAL_PROJECT``),
-which is where a conversation with no working context actually belongs.
+which is where a conversation with no working context actually belongs. A caller
+that means something narrower than that — "routing simply failed, don't call it
+personal" — passes ``unfiled_project=config.UNFILED_PROJECT`` and gets the same
+knowledge-root landing spot every other unrouted intake uses.
 
 **Nothing is duplicated.** This is the whole difficulty. A rendering written into a
 project folder is a markdown file in the knowledge base, so the notes ingester
@@ -193,7 +196,8 @@ PERSONAL_LAYERS = sorted(set(DEFAULT_LAYERS.values()))
 
 def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
          layer: Optional[str] = None, limit: Optional[int] = None,
-         include_unfiled: bool = False) -> Plan:
+         include_unfiled: bool = False,
+         unfiled_project: str = config.PERSONAL_PROJECT) -> Plan:
     """Decide what would be written, touching nothing.
 
     Documents are considered oldest first so a run is reproducible and a ``--limit``
@@ -203,10 +207,17 @@ def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
     can assert what you know ("these ten imports are all client meetings") in one
     command. Without it, a document whose project cannot be resolved is skipped
     rather than written, unless *include_unfiled* says to file it under
-    ``personal/``. Skipping by default is deliberate: a document nothing can place
-    is usually a routing gap worth seeing, and the flag is how you say "no, these
-    really have no project" — a statement about the content, not a fallback the
-    tool should reach for on its own.
+    *unfiled_project*. Skipping by default is deliberate: a document nothing can
+    place is usually a routing gap worth seeing, and the flag is how you say "no,
+    these really have no project" — a statement about the content, not a fallback
+    the tool should reach for on its own.
+
+    *unfiled_project* defaults to ``config.PERSONAL_PROJECT`` — "no project"
+    read as a fact about the content, per ``--include-unfiled``'s own contract.
+    A caller for whom that reading is wrong (nothing was asserted; routing over
+    real working content simply came up empty, e.g. a Granola meeting) passes
+    ``config.UNFILED_PROJECT`` instead, so the result lands at the knowledge root
+    like any other unrouted intake rather than being called personal.
     """
     done = materialized_doc_ids()
     projects = _known_projects()
@@ -237,7 +248,7 @@ def plan(store, *, source: Optional[str] = None, project: Optional[str] = None,
                 item.skip = UNRESOLVED
             else:
                 if item.triaged:
-                    item.project = config.PERSONAL_PROJECT
+                    item.project = unfiled_project
                 item.layer = (layer if layer is not None
                               else DEFAULT_LAYERS.get(src, ""))
                 written += 1
@@ -311,12 +322,17 @@ def apply(store, p: Plan) -> List[Item]:
         # save_note is the only way knowledge is persisted (ROUTING.md). The
         # doc_id/source pair is what stops this file being indexed as a second
         # copy of the conversation it renders (see sources.notes).
-        savemod.ensure_project(
-            item.project,
-            # personal/ is described by the layers materialize writes into it, and
-            # by no keywords at all, so nothing is ever routed there implicitly.
-            layers=PERSONAL_LAYERS if item.project == config.PERSONAL_PROJECT else None,
-        )
+        #
+        # config.UNFILED_PROJECT is not a folder — it is the sentinel save_note
+        # resolves to the knowledge root (see save._dest_dir) — so no project
+        # directory is created for it, matching intake.place_file/place_text.
+        if item.project != config.UNFILED_PROJECT:
+            savemod.ensure_project(
+                item.project,
+                # personal/ is described by the layers materialize writes into it,
+                # and by no keywords at all, so nothing is routed there implicitly.
+                layers=PERSONAL_LAYERS if item.project == config.PERSONAL_PROJECT else None,
+            )
         item.path = savemod.save_note(
             body, item.project,
             layer=item.layer or None,
@@ -407,10 +423,11 @@ def retire_sources(store, *, dry_run: bool = False) -> List[dict]:
 def run(store, *, source: Optional[str] = None, project: Optional[str] = None,
         layer: Optional[str] = None, limit: Optional[int] = None,
         dry_run: bool = False, retire: bool = True,
-        include_unfiled: bool = False) -> tuple:
+        include_unfiled: bool = False,
+        unfiled_project: str = config.PERSONAL_PROJECT) -> tuple:
     """Plan and (unless *dry_run*) apply. Returns ``(plan, retired)``."""
     p = plan(store, source=source, project=project, layer=layer, limit=limit,
-             include_unfiled=include_unfiled)
+             include_unfiled=include_unfiled, unfiled_project=unfiled_project)
     if not dry_run:
         apply(store, p)
     retired = retire_sources(store, dry_run=dry_run) if retire else []

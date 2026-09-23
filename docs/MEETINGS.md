@@ -79,10 +79,13 @@ gigabite granola-sync    # pulls new notes, files each one, prints a report
 3. **Route.** `document_from_granola_json` sets `project=""` on purpose — nothing
    here ever trusts whatever folder or workspace Granola itself assigned. Once the
    note is indexed, `granola-sync` calls `features.materialize.run(store,
-   source="meeting")`, which resolves a project the same way every other unlabelled
+   source="meeting", include_unfiled=True, unfiled_project=config.UNFILED_PROJECT)`,
+   which resolves a project the same way every other unlabelled
    document does: keyword matching against each project's `_project.md`, over the
-   full transcript and summary. A note that matches nothing stays visibly unresolved
-   in the index rather than being guessed at or dumped in `personal/`.
+   full transcript and summary. A note that matches nothing is never guessed at or
+   dumped in `personal/`: it is written loose at the top of `~/Knowledge`, one drag
+   away from the right project folder. Move it rather than delete it — a deleted
+   loose note is rewritten on the next sync.
 
 To run it automatically, load the LaunchAgent — a separate, additive install path
 from the main daily job, since not everyone has Granola API access:
