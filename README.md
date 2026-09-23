@@ -132,10 +132,8 @@ than it should. claude.ai has no official API for your web chats, and the intern
 endpoints its web app uses are Cloudflare-gated against terminal clients. The
 in-page export script sidesteps that by running inside the browser, where it carries
 your real session, and produces a `conversations.json` that the importer already
-understands — including chats inside projects, tagged with the project name. A
-keychain-token route (`gigabite claude-login` and `gigabite claude-sync`) is built
-and documented, but Cloudflare currently blocks it, so the browser export is the
-route that works. The detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
+understands — including chats inside projects, tagged with the project name. The
+detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
 
 Meetings arrive by hand, and deliberately so: there is no integration with a
 meeting-notes app, and nothing here reads one's local store — which is why the source

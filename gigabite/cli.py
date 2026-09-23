@@ -52,9 +52,7 @@ def _open() -> Store:
 def cmd_ingest(args) -> int:
     store = _open()
     sources = [args.source] if args.source else None
-    # local-only by default; live claude.ai pull only with --remote
-    reports = ingest_mod.run(store, sources=sources, force=args.force,
-                             remote=getattr(args, "remote", False))
+    reports = ingest_mod.run(store, sources=sources, force=args.force)
     total_changed = 0
     for src, rep in reports.items():
         label = config.SOURCE_LABELS.get(src, src)
@@ -557,46 +555,6 @@ def cmd_reindex(args) -> int:
     return cmd_ingest(argparse.Namespace(source=None, force=True))
 
 
-def cmd_claude_login(args) -> int:
-    from .sources import claude_ai_live
-    print(bold("Store your claude.ai session token (stays on this machine)"))
-    print(dim(
-        "Get it (Safari): claude.ai → ⌥⌘I → Storage tab → Cookies → claude.ai →\n"
-        "  copy the `sessionKey` value (starts sk-ant-sid…; double-click to grab all of it).\n"))
-    print("When you press Enter, macOS's " + bold("security") + " tool will show:")
-    print(cyan("    password data for new item:"))
-    print(dim("That hidden line is where you PASTE the token (you won't see characters). "
-              "Press Enter, then paste again at ") + cyan("retype password for new item:") + dim(".\n"))
-    try:
-        input("Press Enter to open the secure prompt (Ctrl-C to cancel)… ")
-    except (EOFError, KeyboardInterrupt):
-        print(yellow("\ncancelled."))
-        return 1
-    rc = claude_ai_live.store_token_interactive()
-    if rc == 0:
-        print(green("\n✓ Token saved to keychain. Now run: ") + "gigabite claude-sync")
-        print(dim("If a keychain access prompt appears on first sync, choose \"Always Allow\"."))
-    else:
-        print(yellow("Token was not saved (prompt cancelled or failed)."))
-    return rc
-
-
-def cmd_claude_sync(args) -> int:
-    from .sources import claude_ai_live
-    store = _open()
-    print(dim("Pulling claude.ai conversations (projectless + inside projects)…"))
-    rep = claude_ai_live.ingest(store, force=args.force)
-    for note in rep.notes:
-        print(f"  {dim('· ' + note)}")
-    for err in rep.errors[:10]:
-        print(f"  {yellow('! ' + err)}")
-    if rep.errors and not rep.changed:
-        return 1
-    print(green(f"✓ claude.ai: {rep.changed} added/updated, {rep.skipped} unchanged, "
-                f"{rep.scanned} scanned."))
-    return 0
-
-
 def cmd_granola_login(args) -> int:
     from .features import integrations
     from .sources import granola_live
@@ -1036,8 +994,7 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--source", choices=config.ALL_SOURCES,
                      type=config.canonical_source)
     pi.add_argument("--force", action="store_true", help="re-read everything, ignore sync state")
-    pi.add_argument("--remote", action="store_true", help="also run the live claude.ai pull (Cloudflare-gated; usually use the browser export)")
-    pi.add_argument("--no-remote", action="store_true", help=argparse.SUPPRESS)  # back-compat (default is already local-only)
+    pi.add_argument("--no-remote", action="store_true", help=argparse.SUPPRESS)  # back-compat: older slash commands pass it
     pi.set_defaults(func=cmd_ingest)
 
     ps = sub.add_parser("search", help="full-text search the index")
@@ -1092,13 +1049,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     pr = sub.add_parser("reindex", help="clear and rebuild the index")
     pr.set_defaults(func=cmd_reindex)
-
-    pl = sub.add_parser("claude-login", help="securely store your claude.ai session token in the keychain")
-    pl.set_defaults(func=cmd_claude_login)
-
-    pcs = sub.add_parser("claude-sync", help="pull all claude.ai chats (in/out of projects) via the stored token")
-    pcs.add_argument("--force", action="store_true", help="re-fetch every conversation")
-    pcs.set_defaults(func=cmd_claude_sync)
 
     pgl = sub.add_parser("granola-login", help="securely store your Granola API key in the keychain")
     pgl.set_defaults(func=cmd_granola_login)

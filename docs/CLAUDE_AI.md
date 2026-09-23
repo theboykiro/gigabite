@@ -7,9 +7,8 @@ and your meetings.
 
 Getting them is more awkward than it should be, and the awkwardness is worth
 understanding before you pick a route, because the obvious route is the one that does
-not currently work. This document explains why, describes the route that does, covers
-the token-based alternative and its status, and ends with the caveats you should know
-about either way.
+not currently work. This document explains why, describes the route that does, and
+ends with the caveats you should know about.
 
 ## Why this is awkward
 
@@ -64,47 +63,14 @@ Either way, re-running the export later and replacing the file updates the
 conversations already indexed rather than duplicating them, because entries are
 de-duplicated by conversation id.
 
-## The token route, and its status
+## The token route (removed)
 
-A programmatic route is built and documented, and Cloudflare currently blocks it. It
-is described here because it is in the codebase, because it works cleanly the moment
-the block lifts, and because the security handling around it is the pattern to follow
-for any future credential.
-
-Setup is once:
+A keychain-token pull (`gigabite claude-login` / `claude-sync`) was built and removed
+before alpha, because Cloudflare blocks terminal clients. If an older version stored a
+token for you, remove it with:
 
 ```bash
-gigabite claude-login
-```
-
-The command tells you how to copy your `sessionKey` from claude.ai — DevTools →
-Application (or Storage) → Cookies → `sessionKey`, which starts `sk-ant-sid…` — and
-then opens the **macOS secure prompt** to store it. The token is entered into the
-`security` tool's hidden prompt, so it never appears on the command line or in shell
-history; it is stored in your login keychain under the service `gigabite:claude_ai`;
-and it is never seen by Claude, never written to a file, and never sent anywhere
-except claude.ai itself. On first read you may get a keychain access prompt — choose
-**Always Allow** so later syncs are silent.
-
-Then pull:
-
-```bash
-gigabite claude-sync        # first full pull; incremental afterwards
-```
-
-Refresh is incremental: the sync lists conversations, compares `updated_at`, and
-fetches full messages only for the ones that are new or changed. `gigabite ingest`
-does not run this by default — local sources only — because a Cloudflare-gated call on
-every refresh would add latency and noise for nothing. Pass `--remote` if you want it
-included. With no token stored, the live pull silently does nothing and no other
-source is affected. If the token expires or is blocked you will see a clear `401` or
-`403` note; re-run `claude-login`.
-
-To rotate or remove it:
-
-```bash
-gigabite claude-login                                   # overwrites the stored token
-security delete-generic-password -s gigabite:claude_ai  # removes it entirely
+security delete-generic-password -s gigabite:claude_ai
 ```
 
 ## Caveats
@@ -125,4 +91,4 @@ script will need extending.
 Use the browser export. Run it every few weeks, put the file in
 `~/Knowledge/.gigabite/imports/claude_ai/`, and run `gigabite ingest`. It takes a minute, it
 requires no stored credential, and it is the only route that is not one Cloudflare
-rule away from breaking. The token path stays in the tree for the day that changes.
+rule away from breaking.

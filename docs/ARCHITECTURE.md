@@ -262,8 +262,7 @@ the parsing for it is already written. See `MEETINGS.md`.
 **Claude.ai.** Web chats have no official API, and the internal endpoints are
 Cloudflare-gated against non-browser clients. The working route is an in-page export
 script that runs inside the browser and produces a `conversations.json` the importer
-understands, placed in `~/Knowledge/.gigabite/imports/claude_ai/`. A keychain-token
-route exists and is blocked in practice. See `CLAUDE_AI.md`.
+understands, placed in `~/Knowledge/.gigabite/imports/claude_ai/`. See `CLAUDE_AI.md`.
 
 **Readable copies of machine-readable input.** An export is not content you can open,
 so a document that came from one would exist in `conversations.json` and in SQLite and
@@ -300,7 +299,7 @@ not stubbed.
 
 Content never leaves the device except to cloud sync backup; nothing sensitive touches
 GitHub or any web-facing surface. Credentials are held in the macOS keychain and
-retrieved at runtime, never written to files or the repository — the claude.ai token
+retrieved at runtime, never written to files or the repository — the Granola API key
 is entered through the system's own hidden prompt so that it never reaches shell
 history either.
 
@@ -333,7 +332,7 @@ on everything beneath it working.
 |---|---|---|---|
 | 1 | Claude Code file-write interception (§4) | Load-bearing — determines the write mechanism | **Resolved** — no interception; an explicit write through `features.save` is the mechanism |
 | 2 | Granola API / programmatic export (§7) | Enhancement versus manual supply | **Resolved** — supplied by hand, no local store is read; public API pending access |
-| 4 | Keychain integration (§8) | Security | **Resolved** — macOS `security`, service `gigabite:claude_ai` |
+| 4 | Keychain integration (§8) | Security | **Resolved** — macOS `security`, service `gigabite:granola` |
 | 6 | Nested-layer naming per project (§2.2) | Data, not tool | **Open by design** — decided per project |
 
 The two items that could have materially reshaped the design have both resolved, and

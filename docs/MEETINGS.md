@@ -50,8 +50,7 @@ guess.
 Granola Business unlocks a real, documented API at
 `https://public-api.granola.ai/v1`, authenticated with an API key you create yourself
 (Granola desktop app → Settings → Connectors → API keys). `gigabite/sources/
-granola_live.py` pulls every new note once a day, at 19:00, and mirrors
-`claude_ai_live.py`'s pattern throughout: the key lives only in the macOS keychain
+granola_live.py` pulls every new note once a day, at 19:00. The key lives only in the macOS keychain
 (`gigabite:granola`), read at runtime and never printed, logged, or accepted as a CLI
 argument.
 
