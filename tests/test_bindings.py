@@ -362,7 +362,9 @@ class TestTheAskCannotCarryACommand(BindingCase):
             work = self.workspace(name)
             text = self.route(cwd=work)["ask"]["text"]
             argv = shlex.split(self.bind_line(text))
-            self.assertEqual(argv[:3], ["gigabite", "project", "bind"], repr(name))
+            self.assertEqual(os.path.basename(argv[0]), "gigabite", repr(name))
+            self.assertTrue(os.path.isabs(argv[0]), "the launcher must be absolute")
+            self.assertEqual(argv[1:3], ["project", "bind"], repr(name))
             self.assertEqual(argv[3:4], ["<name>"], repr(name))
             self.assertEqual(argv[4:], ["--dir", os.path.realpath(work)], repr(name))
 
