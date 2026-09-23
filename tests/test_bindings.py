@@ -45,6 +45,7 @@ import json
 import os
 import sys
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
 import _harness  # noqa: F401,E402  redirects every store into a temp dir
@@ -232,8 +233,12 @@ class TestWhereTheQuestionIsNotWorthAsking(BindingCase):
     def test_scratch_space_is_never_asked_about(self):
         """The whole suite runs in a temp directory, so the rule that suppresses
         scratch space is off while the knowledge base is in one too. Point the
-        knowledge base at a real install location and it comes back on."""
-        config.KNOWLEDGE_DIR = config.HOME / "Knowledge"
+        knowledge base at a real install location and it comes back on.
+
+        A fixed path outside every temp root, not `HOME/Knowledge`: the harness
+        puts HOME itself in a temp directory, which would switch the rule off
+        again. Nothing is created there; the rule only compares paths."""
+        config.KNOWLEDGE_DIR = Path("/Users/nobody-gigabite-test/Knowledge")
         self.assertIsNone(bindings.workspace_root(self.work),
                           "a temp directory is not somewhere to bind a project")
 
