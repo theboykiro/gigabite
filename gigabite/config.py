@@ -23,7 +23,7 @@ what this folder is::
         contoso/           where they sit — no drop box, no filing step.
         README.md          what this folder is, in twenty lines
         .gigabite/         every moving part, hidden: the index, raw imports,
-                           archive, proposals, routing aliases
+                           routing aliases
 
 ``ls`` shows projects and a README. Everything mechanical is behind the single dot
 folder, which is not content and never needs opening.
@@ -77,10 +77,6 @@ def machine_dir(root=None) -> Path:
     return (Path(root) if root else KNOWLEDGE_DIR) / MACHINE_DIRNAME
 
 
-def proposals_dir(root=None) -> Path:
-    return machine_dir(root) / "proposals"
-
-
 MACHINE_DIR = machine_dir()
 
 # The SQLite index. Derived data: deletable at any time, rebuilt by `reindex`.
@@ -98,9 +94,6 @@ SOURCES_MEETINGS = SOURCES_DIR / "meetings"
 # Decayed knowledge: still indexed and retrievable, just no longer in the way
 # (ARCHITECTURE §6).
 HISTORICAL_DIR = MACHINE_DIR / "archive"
-
-# Gated synthesis output, listed by `gigabite synthesize --list` (ARCHITECTURE §5).
-PROPOSALS_DIR = MACHINE_DIR / "proposals"
 
 # Originals preserved by a migration: the "before" copy of a file that has been
 # rewritten into the current layout. Nothing here is indexed; it exists only so a

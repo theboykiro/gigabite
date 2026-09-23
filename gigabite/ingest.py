@@ -35,14 +35,17 @@ def run(store: Store, sources: Optional[Iterable[str]] = None, force: bool = Fal
     There is no filing step. ``~/Knowledge`` is where content is put and where it
     is read from, so a file is indexed where it sits.
     """
-    selected = list(sources) if sources else list(_INGESTERS.keys())
+    selected = [src for src in (list(sources) if sources else list(_INGESTERS.keys()))
+                if src in _INGESTERS]
     reports: dict[str, IngestReport] = {}
 
+    if selected:
+        # An older version archived documents untouched for 30 days, which hid
+        # them from recall whenever anything active matched. Bring them back.
+        store.restore_archived()
+
     for src in selected:
-        fn = _INGESTERS.get(src)
-        if fn is None:
-            continue
-        reports[src] = fn(store, force=force)
+        reports[src] = _INGESTERS[src](store, force=force)
 
     if remote and (sources is None or config.SOURCE_CLAUDE_AI in selected):
         live = claude_ai_live.ingest(store, force=force)

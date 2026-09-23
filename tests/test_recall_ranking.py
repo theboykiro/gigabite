@@ -282,6 +282,14 @@ class TestArchivedFallback(unittest.TestCase):
         self.st.search("seasonal surcharge model", limit=5, record=False)
         self.assertFalse(self.st.get_document(self.old)["active"])
 
+    def test_ingest_restores_what_an_older_version_archived(self):
+        """Nothing archives any more; an index a past decay run left behind must
+        not keep its documents out of recall."""
+        from gigabite import ingest
+        ingest.run(self.st, sources=[config.SOURCE_NOTE])
+        self.assertTrue(self.st.get_document(self.old)["active"])
+        self.assertEqual(self.st.stats()["archived"], 0)
+
 
 class TestEvalHarnessTargets(unittest.TestCase):
     """The yardstick has to be answerable, or ranking is tuned against noise.

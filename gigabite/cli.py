@@ -905,69 +905,6 @@ def cmd_calendar(args) -> int:
     return 0
 
 
-def cmd_synthesize(args) -> int:
-    from .features import synthesis
-    store = _open()
-    if args.list:
-        for p in synthesis.list_proposals():
-            print(f"  {p}")
-        return 0
-    if args.print:
-        digest = synthesis.build_digest(store, since_days=args.since_days)
-        print(json.dumps(digest, indent=2, ensure_ascii=False) if args.json
-              else _render_digest(digest))
-        return 0
-    path = synthesis.write_proposal(store, since_days=args.since_days)
-    digest = synthesis.build_digest(store, since_days=args.since_days)
-    print(green(f"✓ proposal written: {path}"))
-    print(dim(f"  {digest.get('document_count', 0)} document(s) from the last "
-              f"{args.since_days} day(s). Review and apply accepted items yourself — "
-              f"nothing is written to core.md/knowledge automatically."))
-    return 0
-
-
-def _render_digest(d: dict) -> str:
-    lines = [bold(f"Digest — last {d.get('since_days')} day(s), "
-                  f"{d.get('document_count', 0)} document(s)")]
-    for g in d.get("groups", []):
-        lines.append(f"\n  {cyan(g.get('project') or '(unscoped)')}")
-        for doc in g.get("documents", []):
-            lines.append(f"    · {doc.get('title', '?')} {dim((doc.get('updated_utc') or '')[:10])}")
-            ex = " ".join((doc.get("excerpt") or "").split())[:160]
-            if ex:
-                lines.append(dim(f"      {ex}"))
-    return "\n".join(lines)
-
-
-def cmd_decay(args) -> int:
-    from .features import decay
-    store = _open()
-    if args.status:
-        s = decay.status(store)
-        print(bold("decay status"))
-        print(f"  active:   {s['active']}")
-        print(f"  archived: {s['archived']}")
-        if s.get("oldest_active"):
-            print(dim("  oldest active:"))
-            for d in s["oldest_active"]:
-                print(dim(f"    · {(d.get('last_touch') or '')[:10]}  {d.get('title','?')}"))
-        return 0
-    if args.restore:
-        ok = decay.restore(store, args.restore)
-        print(green(f"✓ restored {args.restore}") if ok else yellow(f"not found: {args.restore}"))
-        return 0 if ok else 1
-    dry = not args.apply
-    result = decay.run(store, window_days=args.window_days, dry_run=dry)
-    verb = "would archive" if dry else "archived"
-    print(bold(f"{verb} {result['count']} document(s) untouched for "
-               f">{args.window_days} days"))
-    for d in result["archived"][:20]:
-        print(dim(f"  · {(d.get('last_touch') or '')[:10]}  {d.get('title','?')}"))
-    if dry and result["count"]:
-        print(dim("\nrun with --apply to archive (non-destructive; re-access restores)."))
-    return 0
-
-
 def cmd_core(args) -> int:
     """Print the operating protocol (~/.core/core.md) on stdout.
 
@@ -1076,7 +1013,7 @@ def cmd_paths(args) -> int:
     print(dim("    · projects: " + (", ".join(projects) if projects else "none yet")))
     print(f"  machinery: {config.MACHINE_DIR}")
     print(dim("    · hidden, and nothing in it needs opening: index, raw imports,"))
-    print(dim("      archive, proposals, routing aliases"))
+    print(dim("      routing aliases"))
     return 0
 
 
@@ -1251,20 +1188,6 @@ def build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--stdin", action="store_true", help="read meetings JSON from stdin (add)")
     pc.add_argument("--day", help="agenda scope: next (default) | today | YYYY-MM-DD | all")
     pc.set_defaults(func=cmd_calendar)
-
-    psy = sub.add_parser("synthesize", help="build a gated end-of-day proposal from recent activity")
-    psy.add_argument("--since-days", type=int, default=1)
-    psy.add_argument("--print", action="store_true", help="print the digest without writing a proposal")
-    psy.add_argument("--list", action="store_true", help="list existing proposals")
-    psy.add_argument("--json", action="store_true")
-    psy.set_defaults(func=cmd_synthesize)
-
-    pdc = sub.add_parser("decay", help="archive untouched documents (non-destructive; restore on access)")
-    pdc.add_argument("--apply", action="store_true", help="actually archive (default is a dry run)")
-    pdc.add_argument("--window-days", type=int, default=30)
-    pdc.add_argument("--status", action="store_true")
-    pdc.add_argument("--restore", metavar="DOC_ID")
-    pdc.set_defaults(func=cmd_decay)
 
     prt = sub.add_parser("route", help="resolve context + recall relevant prior conversations (powers the recall hook)")
     prt.add_argument("prompt", nargs="+")

@@ -796,7 +796,7 @@ class Store:
         doc["messages"] = [dict(m) for m in msgs]
         return doc
 
-    # -- access tracking & lifecycle (used by decay / synthesis) ------------
+    # -- access tracking & lifecycle ----------------------------------------
 
     def record_access(self, doc_ids) -> None:
         ids = list(doc_ids)
@@ -815,6 +815,17 @@ class Store:
             "UPDATE documents SET active=? WHERE doc_id=?", (1 if active else 0, doc_id)
         )
         self.conn.commit()
+
+    def restore_archived(self) -> int:
+        """Reactivate every archived document; return how many there were.
+
+        Nothing archives documents any more (the decay job was removed), but an
+        index built by an older version may still hold documents it archived, and
+        search reaches those only when nothing active matches. Idempotent.
+        """
+        cur = self.conn.execute("UPDATE documents SET active = 1 WHERE active = 0")
+        self.conn.commit()
+        return cur.rowcount
 
     def iter_documents(self, include_historical: bool = True) -> list[dict]:
         sql = "SELECT * FROM documents"

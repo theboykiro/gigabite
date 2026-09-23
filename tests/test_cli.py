@@ -664,24 +664,6 @@ class TestSaveAndProject(CliTestCase):
         self.assertTrue((self.root / "vendor-x").is_dir())
 
 
-class TestDecayAndSynthesis(CliTestCase):
-    def test_decay_status_reports_without_archiving(self):
-        active_before = len([d for d in self.store().iter_documents()])
-        code, _out = run("decay", "--status")
-        self.assertEqual(code, 0)
-        self.assertEqual(len(self.store().iter_documents()), active_before)
-
-    def test_decay_defaults_to_a_dry_run(self):
-        code, out = run("decay")
-        self.assertEqual(code, 0)
-        self.assertTrue(out.strip())
-
-    def test_synthesize_print_writes_no_proposal(self):
-        code, _out = run("synthesize", "--print")
-        self.assertEqual(code, 0)
-        self.assertFalse(list(config.PROPOSALS_DIR.glob("*.md")))
-
-
 class TestCalendar(CliTestCase):
     MEETINGS = [{"title": "Widget steering", "date": "2099-03-01",
                  "time": "10:00", "attendees": ["Dana"]}]
@@ -716,7 +698,7 @@ class TestNoArguments(CliTestCase):
 class TestHelpSurface(CliTestCase):
     """Commands cut before alpha must be gone from --help and must not dispatch."""
 
-    REMOVED = ("run", "policy", "connect", "audit")
+    REMOVED = ("run", "policy", "connect", "audit", "synthesize", "decay")
 
     def _help(self):
         # format_help() rather than run("--help"), which exits via SystemExit.

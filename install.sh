@@ -295,7 +295,7 @@ esac
 ok "router protocol + ambient recall (remove the hook from ~/.claude/settings.json to disable)"
 
 # ---------------------------------------------------------------------------
-say "5/9  Scheduling the gated end-of-day synthesis (launchd)"
+say "5/9  Scheduling the daily index refresh (launchd)"
 DAILY="$REPO/bin/gigabite-daily"; chmod +x "$DAILY"
 LOG="$HOME/Library/Logs/gigabite-synthesis.log"
 LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist"
@@ -304,7 +304,7 @@ sed -e "s|__DAILY_BIN__|$DAILY|g" -e "s|__LOG__|$LOG|g" \
     "$REPO/install/launchd/com.gigabite.synthesis.plist" > "$PLIST"
 "$LAUNCHCTL" bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
 if "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
-  ok "scheduled: gigabite synthesize + decay daily at 18:00 (gated; nothing auto-applies)"
+  ok "scheduled: gigabite ingest daily at 18:00"
 else
   warn "installed the LaunchAgent plist but couldn't load it now; it will load at next login. ($PLIST)"
 fi

@@ -21,7 +21,7 @@ does not already exist, so re-running it never overwrites something you have edi
 | `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn. The installer also registers it in `~/.claude/settings.json`; remove it there to switch ambient recall off. |
 | `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/agents/`, `~/.claude/skills/` | Starter templates: `core.md`, the capability README, the SOPs, the `gg-*` subagents, the `meeting-prep` / `decision-record` / `design-critique` skills, the `_project.md` template, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
 | `scaffold/skills/` | `~/.claude/skills/<name>/SKILL.md` | One directory per skill, and the directory name *is* the skill name. Claude Code only reads `<name>/SKILL.md`, so the nesting is not cosmetic — a flat `<name>.md` is ignored without a warning. |
-| `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled end-of-day job that writes a gated synthesis proposal and runs the decay pass. Nothing it produces is applied automatically. |
+| `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled daily job that refreshes the index (`bin/gigabite-daily`). The name predates the job's current scope. |
 | `scripts/` | *nothing — run by hand* | `claude-ai-safari-export.js`, which you paste into the claude.ai browser console to export your chats. It is here because it is part of the setup story, not because the installer touches it. |
 
 Every row in that table is something `../uninstall.sh` takes back off the machine

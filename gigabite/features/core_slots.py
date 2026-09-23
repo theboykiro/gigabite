@@ -460,8 +460,7 @@ Project knowledge (the **what**) lives in `~/Knowledge/` and loads per task."""
 _FILL_NOTE = """> Sections marked **[FILL]** are yours to complete — they encode how *you* operate
 > and can't be inferred. Everything else is a working default you can edit freely."""
 
-_COMPLETE_NOTE = """> Every section is filled. Edit any of it freely — this is a living file. The
-> daily synthesis loop proposes updates here; nothing writes without you."""
+_COMPLETE_NOTE = """> Every section is filled. Edit any of it freely — this is a living file."""
 
 _FOOTER = "*Keep this file tight. If a rule isn't load-bearing, it's noise.*"
 

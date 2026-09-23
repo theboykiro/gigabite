@@ -45,7 +45,7 @@ bash bootstrap.sh
 
 Or skip it entirely and do the two steps yourself. Clone into your home folder
 rather than Desktop, Documents or Downloads: macOS blocks background jobs from
-those, so the daily synthesis would never run.
+those, so the daily index refresh would never run.
 
 ```bash
 git clone https://github.com/theboykiro/gigabite.git ~/gigabite
@@ -56,8 +56,8 @@ cd ~/gigabite && ./install.sh
 creates the `~/.core` and `~/Knowledge` layouts without ever overwriting content you
 already have, puts the `gigabite` launcher on your `PATH`, appends the router
 protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
-ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
-synthesis job through launchd, and builds the initial index.
+ambient-recall hook in `~/.claude/settings.json`, schedules a daily index refresh
+through launchd, and builds the initial index.
 
 It also installs the Claude Code slash commands (`/search`, `/core-setup`), the
 `gg-*` subagents, and three skills
@@ -105,7 +105,7 @@ the second time it tells you everything is already gone.
 It reverses `install.sh` step for step: the `gigabite` launcher and the `PATH` line
 in your `.zshrc` and `.bash_profile`, the slash commands, the `gg-*` subagents, the
 three skills, the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
-`~/.claude/settings.json`, the scheduled synthesis job and its log. Files it edits
+`~/.claude/settings.json`, the scheduled daily job and its log. Files it edits
 rather than owns are backed up first, and it tells you where.
 
 **`~/Knowledge` and `~/.core` are never touched**, and the script says so and prints
@@ -168,9 +168,7 @@ again does nothing, and raw imports are moved aside rather than deleted.
 Whatever the source, the rhythm is the same: put a file where it belongs and run
 `gigabite ingest`. Ingest is incremental — files whose size and modification time
 are unchanged are skipped, and a newer export updates the existing document in place
-rather than creating a duplicate. Documents you have not touched for thirty days are
-archived out of the default search, non-destructively, and a search that matches one
-brings it straight back.
+rather than creating a duplicate.
 
 ## Using it day to day
 
@@ -198,8 +196,6 @@ gigabite paste                                  # a copied transcript -> its pro
 gigabite add ~/Desktop/shot.png -p acme         # store any file in a project folder
 gigabite materialize --dry-run                  # render indexed documents as files
 gigabite calendar agenda --day today            # meetings with attached prep
-gigabite synthesize                             # write the gated end-of-day proposal
-gigabite decay --status                         # reference-frequency archiving
 gigabite ingest                                 # refresh the index, incrementally
 gigabite status                                 # what is indexed
 gigabite paths                                  # where everything lives
@@ -240,7 +236,7 @@ is the best answer.
 
 **Storage** is split deliberately. Code lives in this repository. Content lives in
 `~/Knowledge`, one top-level folder per project, with everything mechanical — the
-index, raw imports, the archive, proposals, routing aliases — behind a single hidden
+index, raw imports, routing aliases — behind a single hidden
 `.gigabite/` directory, so `ls ~/Knowledge` shows your projects and a README and
 nothing you have to explain. The operating protocol — your voice, tone, and decision
 principles — lives in `~/.core/core.md` and is loaded whole into every Claude Code
@@ -277,7 +273,7 @@ install/             everything install.sh copies onto the machine
   claude-commands/     /search, /core-setup
   hooks/               the ambient-recall UserPromptSubmit hook
   scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/{agents,skills}
-  launchd/             the scheduled daily synthesis job
+  launchd/             the scheduled daily index refresh
   scripts/             the claude.ai in-browser export helper
 tests/               python3 -m unittest discover -s tests
 ```

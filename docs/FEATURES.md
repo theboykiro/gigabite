@@ -97,17 +97,6 @@ transcripts, which otherwise match your questions perfectly while answering noth
 
 ## Keeping it maintained
 
-**Daily synthesis** runs at day's end, reviews the documents that changed, and writes
-a proposal into `~/Knowledge/.gigabite/proposals/`: a per-project digest with checklists for
-proposed knowledge updates and proposed changes to the core protocol. Nothing is
-applied without your approval, and the module that writes it cannot write anywhere
-else.
-
-**Reference-frequency decay** archives documents you have not touched inside a thirty-
-day window. Archived is not deleted: the rows stay in the index, remain searchable on
-request, and are restored automatically the moment a search matches them. Active
-context therefore stays a function of what you actually use.
-
 **Reusable SOPs** are modular, versioned operating procedures loaded by role. They
 drive agent chains such as build → QA → user-review, and they are what the `gg-builder`
 and `gg-reviewer` subagents load before they start work.

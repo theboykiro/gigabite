@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # gigabite end-of-day routine, run by launchd (see install/launchd/com.gigabite.synthesis.plist).
-# Deterministic + gated: refresh the local index, write a synthesis PROPOSAL (never
-# auto-applied), and archive stale docs (non-destructive). Then a best-effort notification.
+# Refreshes the local index. A notification is sent only when a stage fails.
 #
 # Every stage reports. The previous version sent all three to /dev/null with
 # `|| true`, so a job that had never once succeeded looked identical to a job that
@@ -32,8 +31,7 @@ log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 FAILED=()
 
 # Run one stage, keeping its output in the log under the stage name. A failure is
-# recorded and the run continues: ingest failing is a reason not to trust tonight's
-# proposal, not a reason to skip the decay pass.
+# recorded and the run continues, so a stage added later still gets its turn.
 stage() {
   local name="$1"; shift
   log "→ $name: $*"
@@ -67,9 +65,7 @@ if [ ! -x "$GB" ]; then
   exit 1
 fi
 
-stage "ingest"     "$GB" ingest                # local-only refresh
-stage "synthesize" "$GB" synthesize            # writes ~/Knowledge/.gigabite/proposals/<date>.md (gated)
-stage "decay"      "$GB" decay --apply         # archive untouched docs (restorable)
+stage "ingest" "$GB" ingest                # local-only refresh
 
 notify() {
   /usr/bin/osascript -e "display notification \"$1\" with title \"gigabite\"" \
@@ -78,7 +74,6 @@ notify() {
 
 if [ ${#FAILED[@]} -eq 0 ]; then
   log "=== done ==="
-  notify "End-of-day proposal ready — review with /gg or in ~/Knowledge/.gigabite/proposals"
   exit 0
 fi
 

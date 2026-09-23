@@ -8,9 +8,8 @@ works and which decisions are load-bearing.
 It is written in the order the system actually runs. Constraints first, because they
 explain everything downstream. Then the context stack, which is what the tool
 assembles on every turn, and the detection that resolves it. Then the routing rule
-that keeps knowledge out of your working directory, followed by the two background
-loops — synthesis and decay — that stop the store growing into noise. Integrations,
-the security model, and the remaining open questions close it out.
+that keeps knowledge out of your working directory. Integrations, the security model,
+and the remaining open questions close it out.
 
 A note on the `[VERIFY]` markers you will see below. They were written during design
 to flag assumptions that had not been confirmed, on the principle that getting one of
@@ -101,8 +100,6 @@ Project knowledge lives in the knowledge base, one top-level folder per project:
   .gigabite/            every moving part, hidden and never browsed:
                           index/       the search index
                           imports/     raw machine-readable exports (see §7)
-                          archive/     decayed context (see §6)
-                          proposals/   gated synthesis output (see §5)
                           originals/   retired imports and pre-migration copies,
                                        kept so a move can be undone; indexed by nothing
                           aliases.json name variants that map onto a project
@@ -136,9 +133,8 @@ guessing.
 ### 2.3 Conversation context
 
 The live turn: the current question, pasted meeting notes, a pasted calendar
-screenshot, the running thread. It is ephemeral. It feeds detection and it is
-synthesised at day's end (§5), but it is not itself persisted as knowledge unless
-synthesis promotes it.
+screenshot, the running thread. It is ephemeral. It feeds detection, but it is not
+itself persisted as knowledge unless it is saved through the tool.
 
 ## 3. Context detection
 
@@ -233,58 +229,23 @@ name each, so `/`, `\`, and `..` cannot escape the knowledge base. This is margi
 less seamless than interception would have been and is fully functional; `ROUTING.md`
 documents it in detail.
 
-## 5. Daily synthesis
+## 5. Daily synthesis (removed)
 
-Synthesis is the feedback loop that turns a day's activity into proposed knowledge
-updates. It runs on a schedule at day's end, in two halves, and only the first half is
-automated.
+A scheduled digest that wrote gated "proposals" for knowledge and `core.md` updates was
+built and removed before alpha: nothing read the proposals. The rule it carried still
+holds everywhere — nothing writes to `core.md` without explicit approval.
 
-The automated half collects and compresses. `build_digest(store, since_days=1)`
-gathers the documents updated in the window, groups them by project, and keeps a short
-excerpt of roughly four hundred characters per document rather than the full text.
-Volume stays low on purpose, for the reasons in §6: transcripts belong in the source
-tool, and the knowledge base holds distilled context. `write_proposal` then renders
-that digest to `~/Knowledge/.gigabite/proposals/YYYY-MM-DD.md` with two empty approval
-checklists, one for proposed knowledge updates and one for proposed changes to
-`core.md`. Writing twice on the same day overwrites, so the operation is idempotent.
+## 6. Context volume
 
-The second half is manual. Claude reads the digest, fills in the checklists with the
-material changes — decisions made, new constraints, shifted priorities, assumptions
-validated or invalidated — and the accepted items are applied by hand.
+Several meetings a day over months is hundreds of meetings. What keeps a turn from
+dragging all of it along is **layered loading**: a task pulls only the relevant project
+and layer, never the whole store, and recall injects a handful of passages rather than
+documents.
 
-**The gate is non-negotiable.** The synthesis module contains no LLM calls and never
-writes to `core.md` or to the knowledge base. Its only output is a proposal file.
-Automated writes to the operating protocol without review is exactly the kind of
-silent drift this whole design exists to avoid, and the split between the two halves
-is what enforces it structurally rather than by good intentions.
-
-## 6. Context volume and decay
-
-The concern is real and arithmetic. Several meetings a day over months is hundreds of
-meetings, and without a counter-pressure the active context balloons until every load
-drags irrelevant history behind it.
-
-Three mechanisms hold it down. **Compressed capture** means synthesis stores extracted
-insight rather than full transcripts. **Layered loading** means a task pulls only the
-relevant project and layer, never the whole store. And **reference-frequency decay**
-archives what you have stopped touching.
-
-Decay is a real mechanism rather than a sentiment. Each document's last-touch is
-`accessed_utc`, falling back to `updated_utc` and then `created_utc`. Every default
-search hit calls `Store.record_access`, which refreshes that timestamp. The scheduled
-job finds active documents whose last-touch is older than the window and flips their
-`active` flag; it deletes nothing, and documents with no parseable timestamp are left
-active on the principle that we never archive what we cannot date. Archived rows stay
-in the index and remain searchable on explicit request, and because `record_access`
-also sets `active = 1`, re-touching an archived document restores it automatically.
-
-The window is thirty days. The original design named fourteen as a starting point; the
-implementation opened wider on purpose, because a conservative window produces fewer
-surprises, and the intention is to tune down against real usage. It is a parameter on
-every call, so tuning is a configuration change rather than a code change.
-
-The net effect is that active context is a function of what you actually touch, not of
-everything ever recorded. `SYNTHESIS.md` covers both loops in more depth.
+Reference-frequency decay (archiving documents untouched for thirty days) was built
+and removed before alpha, because on a fresh install it archived most imported history
+on the first evening. Documents an older version archived are restored on the next
+`gigabite ingest`. Every default search hit still calls `Store.record_access`.
 
 ## 7. External integrations
 
@@ -363,8 +324,7 @@ convenience. The two load-bearing verifications came first, because both changed
 shape of what got built. Then the core load — `core.md` always loaded, knowledge read
 from `~/Knowledge`. Then context detection with nested-layer resolution, then
 knowledge-write routing, then manual meeting supply and the calendar screenshot parse.
-The two background loops, synthesis with its approval gate and then decay, came after
-those, and the SOP system with role-based agent spawning came last, because it depends
+The SOP system with role-based agent spawning came last, because it depends
 on everything beneath it working.
 
 ## 10. Open items
@@ -373,14 +333,11 @@ on everything beneath it working.
 |---|---|---|---|
 | 1 | Claude Code file-write interception (§4) | Load-bearing — determines the write mechanism | **Resolved** — no interception; an explicit write through `features.save` is the mechanism |
 | 2 | Granola API / programmatic export (§7) | Enhancement versus manual supply | **Resolved** — supplied by hand, no local store is read; public API pending access |
-| 3 | Access-event logging for decay (§6) | Decay quality | **Resolved** — `Store.record_access` on every default search hit |
 | 4 | Keychain integration (§8) | Security | **Resolved** — macOS `security`, service `gigabite:claude_ai` |
-| 5 | Decay window tuning (§6) | Optimisation | **Open** — currently 30 days, tune against real usage |
 | 6 | Nested-layer naming per project (§2.2) | Data, not tool | **Open by design** — decided per project |
 
 The two items that could have materially reshaped the design have both resolved, and
 in each case toward the more conservative of the two branches that were planned for.
 What remains open is tuning and data modelling, neither of which requires a structural
 change. The design is therefore settled; the interesting work from here is in ranking
-quality and in how much of the reasoning in §5 can be made trustworthy enough to
-automate without weakening the gate.
+quality.
