@@ -341,6 +341,15 @@ class TestItIsIdempotent(InstallCase):
         text = (self.sandbox_.home / ".claude/CLAUDE.md").read_text(encoding="utf-8")
         self.assertEqual(1, text.count("<!-- gigabite:router:start -->"))
 
+    def test_the_router_block_imports_the_operating_protocol(self):
+        # Claude Code expands `@path` in CLAUDE.md, but not inside a code span, so the
+        # import must be a bare line of its own within the managed block. Without it,
+        # core.md reaches the model only when /gg or a gg-* agent happens to run.
+        text = (self.sandbox_.home / ".claude/CLAUDE.md").read_text(encoding="utf-8")
+        block = text[text.index("<!-- gigabite:router:start -->"):
+                     text.index("<!-- gigabite:router:end -->")]
+        self.assertIn("\n@~/.core/core.md\n", block)
+
 
 # ---------------------------------------------------------------------------
 class TestTheSeamsAreRealSeams(InstallCase):

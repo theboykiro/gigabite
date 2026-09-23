@@ -72,6 +72,14 @@ token cost of loading the whole file is negligible against the value of guarante
 consistency, and the operator explicitly wants the entire operating system present on
 every call rather than conditionally assembled.
 
+It reaches the model through Claude Code's own memory loading: the managed router
+block that the installer keeps in `~/.claude/CLAUDE.md` ends with `@~/.core/core.md`,
+so the file is expanded into every session with no hook and no command. The two files
+stay separate on purpose. CLAUDE.md belongs to the user, and gigabite only rewrites
+the text between its markers. core.md is gigabite's to regenerate whole, but only
+through the gated `core apply`. The `gg-*` subagents still load it by path, as a
+fallback in case a subagent starts without user memory.
+
 It lives at `~/.core/core.md`, with supporting capability files alongside it in
 `~/.core/capability/`. That supporting knowledge — frameworks, methods, command
 templates, SOPs — is always available and is emphatically **not** a project; it never

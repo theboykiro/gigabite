@@ -177,9 +177,8 @@ brings it straight back.
 The primary interface is conversation, not the command line. Because the installer
 registers a `UserPromptSubmit` hook, every message you send in Claude Code already
 has a block of recalled context attached to it, so ordinary questions are answered
-against your history without you asking for it. When you want that explicitly — the
-operating protocol loaded in full, a fresh ingest, and a deliberate recall pass — use
-the slash commands:
+against your history without you asking for it. When you want that explicitly — a
+fresh ingest and a deliberate recall pass — use the slash commands:
 
 ```
 /gg what's still open on the traffic drop?    load core + recall + answer
@@ -248,7 +247,9 @@ is the best answer.
 index, raw imports, the archive, proposals, routing aliases — behind a single hidden
 `.gigabite/` directory, so `ls ~/Knowledge` shows your projects and a README and
 nothing you have to explain. The operating protocol — your voice, tone, and decision
-principles — lives in `~/.core/core.md` and is loaded whole on every routed turn.
+principles — lives in `~/.core/core.md` and is loaded whole into every Claude Code
+session, because the router block in `~/.claude/CLAUDE.md` imports it
+(`@~/.core/core.md`).
 Secrets, if there are ever any, live in the macOS keychain and nowhere else. The rule
 that keeps this from degrading is that knowledge is never written to the working
 directory, no matter which repository Claude Code happens to be pointed at;

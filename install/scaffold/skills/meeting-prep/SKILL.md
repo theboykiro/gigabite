@@ -10,7 +10,8 @@ The user has a meeting coming up. They already own the context for it — it is 
 index. Assemble the brief from that; do not ask them to hand you back things they have
 already said.
 
-1. **Load the operating protocol.** `gigabite core` prints `~/.core/core.md`. Follow
+1. **Follow the operating protocol.** `~/.core/core.md` is already in your context —
+   CLAUDE.md imports it. Only if it is missing, run `gigabite core` to print it. Keep
    its tone: answer first, no validation openers, no hedge-stacking, push back plainly
    when the reasoning is off.
 2. **Locate the meeting.** If they named one, use that. If they said "my next" or

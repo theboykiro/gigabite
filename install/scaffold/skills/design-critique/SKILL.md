@@ -10,7 +10,8 @@ Design work is rarely new. There is almost always a stated intent and a trail of
 decisions behind the surface being shown. Find both before offering an opinion —
 reacting to a screen fresh is how a settled decision gets reopened as taste.
 
-1. **Load the operating protocol.** `gigabite core` prints `~/.core/core.md`. Follow
+1. **Follow the operating protocol.** `~/.core/core.md` is already in your context —
+   CLAUDE.md imports it. Only if it is missing, run `gigabite core` to print it. Keep
    its tone: answer first, no validation openers, no hedge-stacking, push back plainly
    when the reasoning is off.
 2. **Look at the work.** Read the image or file the user shared — `Read` handles

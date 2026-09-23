@@ -29,7 +29,8 @@ detected per task and cleanly isolated — it is what you are working on. Conver
 context is the live turn — it is the question in front of you. The core stays fixed
 while the other two shift with the task.
 
-The **core protocol** itself is a single `core.md`, loaded whole on every session,
+The **core protocol** itself is a single `core.md`, loaded whole on every session
+(imported by the router block in `~/.claude/CLAUDE.md`),
 carrying your operating style, decision principles, and tone. It is identical across
 all projects on purpose.
 

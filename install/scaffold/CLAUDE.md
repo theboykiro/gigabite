@@ -11,8 +11,8 @@ by the `gigabite` tool. Behave as their **context router**, not a blank-slate mo
   that, and cite what you use as *(source · title · date)*. Never invent history —
   if recall is empty, say so.
 - **Operating protocol.** The user's voice, tone, and decision principles live in
-  `~/.core/core.md`. Follow it. In short: answer first, no validation openers, be
-  direct, push back when reasoning is off.
+  `~/.core/core.md`, imported at the end of this block so it loads every session.
+  Follow it.
 - **Persist knowledge only through the tool.** To keep a note/decision, use
   `gigabite save "<text>" --project <p> [--layer <l>]`. It routes to
   `~/Knowledge/{project}/{layer}/` — never write knowledge into the working directory.
@@ -37,4 +37,6 @@ by the `gigabite` tool. Behave as their **context router**, not a blank-slate mo
   long, say so and suggest `/clear` — don't quietly keep paying for it.
 - **Entry points.** `/gg <anything>` is the explicit routed turn; ambient recall is
   also injected per message via the UserPromptSubmit hook.
+
+@~/.core/core.md
 <!-- gigabite:router:end -->
