@@ -39,8 +39,8 @@ safe to re-run, and it never overwrites your notes or your `core.md`.
 ## How to use it
 
 1. **Restart Claude Code** after installing.
-2. **Open Claude Code in a project folder.** The first time, Claude asks which project the
-   folder belongs to. Answer it and Claude runs `gigabite project bind <name>`, which
+2. **Open Claude Code in a project folder.** On your first real question there, Claude asks
+   which project the folder belongs to. Answer it and Claude runs `gigabite project bind <name>`, which
    creates the project if it's new. For a folder that isn't project work, the answer is
    `gigabite project bind --none`. Once you've answered, that folder is never asked
    about again. If you ignore the question, it comes back once per session.
@@ -94,7 +94,7 @@ daily pull at 19:00. The installer offers this step when you run it in a termina
 ## Troubleshooting
 
 - **Nothing gets recalled.** Did you restart Claude Code after installing? Is the folder
-  bound to a project? Run `gigabite project bind <name>` in it. Started from `~`? Open
+  bound to a project? Run `gigabite project bind <name>` in it (or add `--dir <folder>`). Started from `~`? Open
   the project folder, or put `@project` in your prompt. Claude only asks in folders that
   look like a project (a git repo, a package manifest, a `CLAUDE.md` or `.claude/`); bind
   any other folder by hand. Short replies like "ok, go on" never trigger recall.
@@ -113,6 +113,7 @@ daily pull at 19:00. The installer offers this step when you run it in a termina
 ```bash
 ~/gigabite/uninstall.sh            # shows what it will remove, then asks
 ~/gigabite/uninstall.sh --dry-run  # only show
+~/gigabite/uninstall.sh --yes      # no prompt (needed when not run from a terminal)
 ```
 
 It removes the launcher, the commands, the hooks, the router block and the scheduled jobs.

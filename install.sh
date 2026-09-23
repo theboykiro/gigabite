@@ -182,12 +182,18 @@ else
       # would make bash stop reading a ~/.profile the user relies on. The blank
       # line goes in only when there is something to separate the export from;
       # uninstall.sh takes it out again.
+      PATH_ADDED=0
       for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
         [ "$rc" = "$HOME/.zshrc" ] || [ -f "$rc" ] || continue
         grep -qF "added by gigabite" "$rc" 2>/dev/null && continue
         if [ -s "$rc" ]; then printf '\n%s\n' "$LINE" >> "$rc"; else printf '%s\n' "$LINE" >> "$rc"; fi
+        PATH_ADDED=1
       done
-      ok "linked $INSTALLED — and added $BIN_DIR to PATH in your shell startup file"
+      if [ "$PATH_ADDED" = 1 ]; then
+        ok "linked $INSTALLED — and added $BIN_DIR to PATH in your shell startup file"
+      else
+        ok "linked $INSTALLED ($BIN_DIR is already on PATH in your shell startup file)"
+      fi
       # Loud in either mode: without it the command they were just given does
       # not exist in the shell they are standing in.
       note "open a new terminal, or run:  export PATH=\"$BIN_DIR:\$PATH\""
