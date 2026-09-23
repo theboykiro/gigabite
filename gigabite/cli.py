@@ -993,72 +993,6 @@ _STATE_COLOUR = {
 }
 
 
-def cmd_core_coverage(args) -> int:
-    """Report, slot by slot, whether the user's own history can answer it.
-
-    Read-only by construction — the pass queries with recording disabled, so
-    inspecting the corpus cannot disturb the ranking signal it just read.
-    """
-    from .features import core_coverage, core_slots
-    from .store import ReindexRequired
-
-    try:
-        coverages = core_coverage.assess(_open(), limit_per_slot=args.limit)
-    except ReindexRequired as exc:
-        print(yellow("core setup — not ready"))
-        print(f"  {exc}")
-        return 1
-    counts = core_coverage.summarise(coverages)
-
-    print(bold("core setup — coverage"))
-    for cov in coverages:
-        try:
-            title = core_slots.get_slot(cov.slot_id).title
-        except KeyError:
-            title = cov.slot_id
-        paint = _STATE_COLOUR.get(cov.state, dim)
-        line = f"  {paint(cov.state.ljust(9))} {cyan(cov.slot_id.ljust(22))} {title}"
-        if cov.evidence:
-            line += dim(f"  ({len(cov.evidence)} hit{'s' if len(cov.evidence) != 1 else ''})")
-        print(line)
-        if args.verbose:
-            for ev in cov.evidence:
-                print(dim(f"        · {ev.why}"))
-                print(dim(f"          {ev.source} · {ev.title}"))
-
-    print()
-    print("  " + "  ".join(f"{k}: {v}" for k, v in counts.items()))
-    outstanding = counts.get("thin", 0) + counts.get("empty", 0)
-    if outstanding:
-        print(dim(f"\n{outstanding} slot(s) still to answer — run 'gigabite core propose'."))
-    else:
-        print(dim("\nevery slot has evidence or ships filled."))
-    return 0
-
-
-def cmd_core_propose(args) -> int:
-    """Write a reviewable proposal. Never touches core.md.
-
-    The protocol is the constitutional layer, so the write gate is absolute:
-    this command only ever writes into the proposals directory, and applying
-    anything requires per-slot approval from the user.
-    """
-    from .features import core_proposal
-    from .store import ReindexRequired
-
-    try:
-        path = core_proposal.write_proposal(_open(), limit_per_slot=args.limit)
-    except ReindexRequired as exc:
-        print(yellow("core setup — not ready"))
-        print(f"  {exc}")
-        return 1
-    print(bold("core setup — proposal written"))
-    print(f"  {path}")
-    print(dim("\nnothing was written to your protocol. Review the file, tick the"))
-    print(dim("slots you approve, and apply them deliberately."))
-    return 0
-
-
 def cmd_core_interview(args) -> int:
     """What the setup interview still has to ask. Read-only.
 
@@ -1347,15 +1281,6 @@ def build_parser() -> argparse.ArgumentParser:
     pco = sub.add_parser("core", help="print the operating protocol (~/.core/core.md)")
     pco.set_defaults(func=cmd_core)
     cosub = pco.add_subparsers(dest="core_command")
-
-    pcc = cosub.add_parser("coverage", help="which protocol slots your own history can answer")
-    pcc.add_argument("--limit", type=int, default=5, help="evidence hits gathered per slot")
-    pcc.add_argument("--verbose", action="store_true", help="show the matching evidence")
-    pcc.set_defaults(func=cmd_core_coverage)
-
-    pcp = cosub.add_parser("propose", help="write a reviewable core.md proposal (never applies it)")
-    pcp.add_argument("--limit", type=int, default=5, help="evidence hits gathered per slot")
-    pcp.set_defaults(func=cmd_core_propose)
 
     pci = cosub.add_parser("interview",
                            help="which protocol slots the setup interview still has to ask")

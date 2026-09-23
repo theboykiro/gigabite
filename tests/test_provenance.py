@@ -26,10 +26,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_har
 import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
 from gigabite import config, ingest, util  # noqa: E402
-from gigabite.features import core_coverage  # noqa: E402
 from gigabite.sources import claude_code  # noqa: E402
 from gigabite.store import (  # noqa: E402
-    SCHEMA_VERSION, Document, Message, ReindexRequired, Store, connect,
+    SCHEMA_VERSION, Document, Message, Store, connect,
 )
 
 SESSION = "11111111-2222-3333-4444-555555555555"
@@ -181,8 +180,8 @@ class TestParsedFromRawTranscript(unittest.TestCase):
                             for m in self.doc.messages if m.role == "assistant"))
 
 
-class TestCoverageConsumesProvenance(unittest.TestCase):
-    """End to end: raw transcript -> index -> coverage, with nothing hand-written."""
+class TestSearchConsumesProvenance(unittest.TestCase):
+    """End to end: raw transcript -> index -> search, with nothing hand-written."""
 
     def setUp(self):
         name = self.id().split(".")[-1]
@@ -202,35 +201,6 @@ class TestCoverageConsumesProvenance(unittest.TestCase):
         doc = claude_code.parse_session_file(path)
         self.st.upsert_document(doc)
         self.st.commit()
-
-    def slots(self):
-        from dataclasses import dataclass
-
-        @dataclass(frozen=True)
-        class Slot:
-            id: str
-            kind: str
-            evidence_terms: tuple = ()
-
-        return (Slot("tone.do", "revealed", ("preamble", "blunt")),
-                Slot("tone.length", "revealed", ("summary",)))
-
-    def assess(self):
-        return core_coverage.assess(self.st, slots=self.slots())
-
-    def state(self, slot_id):
-        return next(c.state for c in self.assess() if c.slot_id == slot_id)
-
-    def test_a_file_the_tool_printed_is_not_evidence(self):
-        """The self-referential case: reading core.md must not evidence core.md."""
-        self.assertEqual(self.state("tone.do"), "empty")
-        whys = [e.why for c in self.assess() for e in c.evidence]
-        self.assertFalse([w for w in whys if "Core Protocol" in w or "blunt" in w], whys)
-
-    def test_the_typed_correction_still_lands(self):
-        evidence = next(c.evidence for c in self.assess() if c.slot_id == "tone.length")
-        self.assertTrue(evidence)
-        self.assertTrue(any("skip the summary" in e.why for e in evidence), evidence)
 
     def test_the_search_filter_excludes_a_wholly_replayed_document(self):
         """`origins=` narrows candidates in SQL; the message check does the rest.
@@ -409,10 +379,8 @@ class TestMigrationFromV2(unittest.TestCase):
     def test_search_still_works_during_the_window(self):
         self.assertTrue(self.st.search("preamble", record=False))
 
-    def test_a_provenance_reader_refuses_rather_than_answering_from_blanks(self):
+    def test_an_upgraded_index_reports_provenance_pending(self):
         self.assertTrue(self.st.provenance_pending())
-        with self.assertRaises(ReindexRequired):
-            core_coverage.assess(self.st)
 
     def test_an_ingest_that_read_nothing_leaves_the_guard_armed(self):
         """The bug this replaced: the flag cleared when the *command* finished.
@@ -422,8 +390,6 @@ class TestMigrationFromV2(unittest.TestCase):
         """
         ingest.run(self.st, sources=None)
         self.assertTrue(self.st.provenance_pending())
-        with self.assertRaises(ReindexRequired):
-            core_coverage.assess(self.st)
 
     def test_the_guard_disarms_only_when_every_message_has_an_origin(self):
         blank = self.st.conn.execute(
@@ -437,7 +403,6 @@ class TestMigrationFromV2(unittest.TestCase):
         self.st.conn.execute("UPDATE messages SET origin=? WHERE origin IS NULL",
                              (util.ORIGIN_NONE,))
         self.assertFalse(self.st.provenance_pending())
-        core_coverage.assess(self.st)      # no longer refuses
 
     def test_a_partial_ingest_does_not_clear_the_guard(self):
         ingest.run(self.st, sources=[config.SOURCE_NOTE])
@@ -485,8 +450,6 @@ class TestMigrationFromV3(unittest.TestCase):
 
     def test_a_blank_v3_index_still_reports_pending(self):
         self.assertTrue(self.st.provenance_pending())
-        with self.assertRaises(ReindexRequired):
-            core_coverage.assess(self.st)
 
     def test_the_blanks_became_nulls_and_nothing_was_lost(self):
         nulls = self.st.conn.execute(
@@ -546,7 +509,6 @@ class TestFreshIndexIsNotFlagged(unittest.TestCase):
         db = _fresh_db(self)
         st = Store(connect(db))
         self.assertFalse(st.provenance_pending())
-        core_coverage.assess(st)
 
 
 if __name__ == "__main__":

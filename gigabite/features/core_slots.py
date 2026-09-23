@@ -15,9 +15,8 @@ can be filled:
     revealed  evidenced from the user's own corpus (how they actually write).
     stated    can only be asked, though corrections in the corpus can draft it.
 
-No retrieval and no model live here, by design: the coverage pass
-(`core_coverage`) and the proposal writer (`core_proposal`) are separate, and
-this module is a pure function from answers to markdown. It does no file I/O and
+No retrieval and no model live here, by design: the writer (`core_proposal`)
+is separate, and this module is a pure function from answers to markdown. It does no file I/O and
 resolves no paths — the `~/.core/` and `~/Knowledge/` in the rendered prose are
 *document text* describing the default layout, not locations this code reads or
 writes. Anything that actually touches disk takes its paths from `config`.
