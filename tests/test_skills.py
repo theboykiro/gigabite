@@ -8,8 +8,8 @@ installer copies from — because every one of them fails *silently* in Claude C
   the skill never triggers. The values here therefore stay flat scalars — in
   particular, no bare `": "` inside a value, which is the easiest way to break it.
 * `allowed-tools` is hyphenated. `allowed_tools` fails validation.
-* **A skill shadows a slash command of the same name.** gigabite ships `/meeting`,
-  so a skill called `meeting` would disable it and say nothing. That is the test in
+* **A skill shadows a slash command of the same name.** gigabite ships `/search`,
+  so a skill called `search` would disable it and say nothing. That is the test in
   here most worth having.
 
     python3 -m unittest discover -s tests        (from the repo root)
@@ -101,7 +101,7 @@ class TestCollisionWithSlashCommands(SkillTestCase):
 
     def test_no_skill_shadows_any_shipped_command(self):
         commands = {p.stem for p in _COMMANDS.glob("*.md")}
-        self.assertIn("meeting", commands, "the command this guards has moved")
+        self.assertIn("search", commands, "the commands this guards have moved")
         for path in self.skills:
             self.assertNotIn(
                 path.parent.name, commands,

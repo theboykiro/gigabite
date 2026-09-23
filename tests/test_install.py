@@ -62,7 +62,7 @@ WELCOME_FIRST = "gigabite is installed"
 #
 #   1/9 heading, store paths
 #   2/9 heading, linked + PATH, "open a new terminal" (the way to use what was made)
-#   3/9 heading, "6 commands, 3 subagents, 3 skills"
+#   3/9 heading, "2 commands, 3 subagents, 3 skills"
 #   4/9 heading, router + hook (with the way to switch the hook off)
 #   5/9 heading, scheduled, "disable with: launchctl bootout ..."
 #   6/9 heading, the integrations menu — a note pointing at `gigabite integrations`
@@ -211,8 +211,8 @@ class TestQuietByDefault(InstallCase):
             self.assertIn(step, self.out)
 
     def test_the_per_item_confirmations_are_collapsed_into_a_count(self):
-        self.assertIn("6 commands, 3 subagents, 3 skills", self.out)
-        for gone in ("/search-status", "subagent gg-builder", "skill meeting-prep",
+        self.assertIn("2 commands, 3 subagents, 3 skills", self.out)
+        for gone in ("✓ /search", "subagent gg-builder", "skill meeting-prep",
                      "seeded .core/core.md"):
             self.assertNotIn(gone, "\n".join(self.preamble(self.out)),
                              "per-item line still printed in the quiet run: %s" % gone)
@@ -249,7 +249,7 @@ class TestVerboseRestoresTheDetail(InstallCase):
                            "verbose added only %d lines" % (loud - quiet))
 
     def test_verbose_names_every_file_it_wrote(self):
-        for item in ("/gg", "/search-status", "subagent gg-builder",
+        for item in ("/search", "/core-setup", "subagent gg-builder",
                      "skill meeting-prep", "seeded .core/core.md",
                      "seeded Knowledge/README.md"):
             self.assertIn(item, self.loud)
@@ -284,8 +284,8 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
         self.assertIn("kept your own /search", out)
         self.assertEqual(digest, hashlib.sha256(mine.read_bytes()).hexdigest(),
                          "overwrote a file gigabite did not write")
-        # And the count tells the truth about it rather than claiming five.
-        self.assertIn("5 commands, 3 subagents, 3 skills", out)
+        # And the count tells the truth about it rather than claiming two.
+        self.assertIn("1 commands, 3 subagents, 3 skills", out)
 
     def test_an_agent_of_the_users_own_is_reported_as_kept_in_the_quiet_run(self):
         mine = self.sandbox.write(".claude/agents/gg-builder.md",
@@ -293,6 +293,23 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
         out = self.install()
         self.assertIn("kept your own subagent gg-builder", out)
         self.assertEqual("# my builder\nno marker\n", mine.read_text(encoding="utf-8"))
+
+    def test_commands_an_older_install_wrote_are_removed_but_the_users_own_are_kept(self):
+        retired = ("gg", "search-status", "calendar", "meeting", "recall-status", "granola")
+        for name in retired:
+            self.sandbox.write(".claude/commands/%s.md" % name,
+                               "runs the gigabite launcher\n")
+        mine = self.sandbox.write(".claude/commands/calendar.md",
+                                  "# my own calendar command\nnothing of theirs here\n")
+        out = self.install()
+        for name in retired:
+            path = self.sandbox.home / (".claude/commands/%s.md" % name)
+            if name == "calendar":
+                self.assertTrue(path.exists(), "removed a command gigabite did not write")
+            else:
+                self.assertFalse(path.exists(), "left the retired /%s behind" % name)
+                self.assertIn("removed /%s" % name, out)
+        self.assertIn("nothing of theirs", mine.read_text(encoding="utf-8"))
 
     def test_a_replaced_readme_says_so_and_says_where_the_old_text_went(self):
         """The one place the installer replaces a file rather than keeping it. It
@@ -344,7 +361,7 @@ class TestItIsIdempotent(InstallCase):
     def test_the_router_block_imports_the_operating_protocol(self):
         # Claude Code expands `@path` in CLAUDE.md, but not inside a code span, so the
         # import must be a bare line of its own within the managed block. Without it,
-        # core.md reaches the model only when /gg or a gg-* agent happens to run.
+        # core.md reaches the model only when something explicitly prints it.
         text = (self.sandbox_.home / ".claude/CLAUDE.md").read_text(encoding="utf-8")
         block = text[text.index("<!-- gigabite:router:start -->"):
                      text.index("<!-- gigabite:router:end -->")]

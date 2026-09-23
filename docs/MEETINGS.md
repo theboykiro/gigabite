@@ -28,14 +28,13 @@ differ only in how the text gets there. A meeting ends up as a readable note in 
 project's folder whichever one you use, so "where did that meeting go?" has a single
 answer.
 
-The quickest version needs no terminal at all. Copy the transcript in whatever took
-it — Granola, say — and run `/meeting` in Claude Code. The command reads your
+The quickest version is one command. Copy the transcript in whatever took it —
+Granola, say — and run `gigabite paste` (or ask Claude to). It reads your
 clipboard directly, pulls the title and date out of the transcript's own header
 (`Meeting Title:` and `Date:`, with a date lacking a year assumed to be this one),
 detects the project, and writes and indexes the note in the same pass — all without
-the transcript passing through the conversation. `gigabite paste` is the same thing
-from a shell, and both are, quite literally, the Finder drop below with the drag done
-for you.
+the transcript passing through the conversation. It is, quite literally, the Finder
+drop below with the drag done for you.
 
 For a meeting you have exported as a file, save it into
 `~/Knowledge/<project>/meetings/` and you are done: the next `gigabite ingest` indexes
@@ -100,7 +99,7 @@ launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.gigabite.granola-p
 
 ## Which to use
 
-Both. The manual route (`/meeting`, `gigabite paste`, dropping a file) has no
+Both. The manual route (`gigabite paste`, dropping a file) has no
 secrets and no dependency on an API that could change, and stays the right choice
 for a meeting you want indexed right now rather than at 19:00. The live pull is for
 not having to remember — once the key is in the keychain and the LaunchAgent is

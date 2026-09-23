@@ -3,16 +3,14 @@
 Until now every CLI command was untested. That mattered more than it sounds,
 because the shipped slash commands are thin wrappers around these:
 
-    /gg             -> core, ingest --no-remote, route --json
     /search         -> ingest, search
-    /search-status  -> ingest, status
-    /calendar       -> calendar add --json-file, calendar agenda --day today
+    ambient hook    -> route --json
 
 `Store.search` had good coverage; `gigabite search` had none, so argument parsing,
 filters, output shape and exit codes were all unverified.
 
 These are **characterisation** tests: they pin what the commands do today so that
-the changes queued in ROADMAP item 8 — taking the inline ingest out of `/gg`,
+the changes queued in ROADMAP item 8 — taking the inline ingest out of `/search`,
 stopping index writes on the recall path — are refactors with a safety net rather
 than rewrites of untested code.
 
@@ -627,7 +625,7 @@ class TestCore(CliTestCase):
         self.assertIn("Answer first", out)
 
     def test_a_missing_protocol_is_not_a_crash(self):
-        """/gg runs this on every turn; it must degrade, not fail."""
+        """Skills fall back on this to load the protocol; it must degrade, not fail."""
         code, _out = run("core")
         self.assertIn(code, (0, 1))
 

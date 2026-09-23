@@ -291,7 +291,7 @@ everything ever recorded. `SYNTHESIS.md` covers both loops in more depth.
 **Meetings.** There is no integration with a meeting-notes app, which is why the
 source is called `meeting` rather than after one of them. Content arrives because you
 hand it over: an export saved into a project's `meetings/` folder, or a copied
-transcript through `gigabite paste` (`/meeting`), which routes it to the same place.
+transcript through `gigabite paste`, which routes it to the same place.
 Nothing in the codebase reads another application's local store — that keeps the path
 free of credentials and immune to whatever that application changes next, which for a
 path used several times a day is worth more than saving the export click. A pull from

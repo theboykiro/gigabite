@@ -137,7 +137,7 @@ class TestPhrasedQuestionFindsTheSource(_IndexBase):
 
 
 class TestRouteContext(_IndexBase):
-    """`route` powers /gg and the ambient recall hook, and had no test at all.
+    """`route` powers the ambient recall hook, and had no test at all.
 
     A pasted shell prompt carries `@Janes-MacBook-Pro`, which was accepted as an
     explicit project marker. Recall then scoped the search to a project that holds

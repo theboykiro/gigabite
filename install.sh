@@ -2,7 +2,7 @@
 # gigabite installer — idempotent, additive, non-destructive.
 #   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
-#   • installs /search, /search-status and /core-setup commands (user-level)
+#   • installs the /search and /core-setup commands (user-level)
 #   • installs the gg-* subagents and the gigabite skills (user-level)
 #   • offers to enable the "AI brain" integrations (Granola, more soon)
 #   • builds the initial index
@@ -159,21 +159,20 @@ install_managed() { # src dest label
   detail ok "$3"
   WROTE=$((WROTE + 1))
 }
-for f in gg search search-status calendar meeting core-setup; do
+for f in search core-setup; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
   install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
 CMD_N=$WROTE
-# Commands that have been renamed: /recall-status -> /search-status, because it
-# reports on the search index and "recall" named the mechanism rather than the thing
-# being asked about; /granola -> /meeting, because the tool it came from is one
-# person's habit and the job is filing a meeting. The old file keeps working, so
-# leaving it behind would mean two commands for one job. Removed only when it is
+# Commands an older install wrote that no longer ship: /recall-status and /granola
+# were renamed away; /gg, /search-status, /calendar and /meeting were retired (the
+# ambient hook, `gigabite status` and `gigabite paste` cover them). A file left
+# behind keeps working and calls commands that are gone. Removed only when it is
 # ours, on the same test as everything else here.
-for stale_cmd in recall-status granola; do
+for stale_cmd in recall-status granola gg search-status calendar meeting; do
   STALE="$CMD_DIR/$stale_cmd.md"
   if [ -e "$STALE" ] && is_ours "$STALE"; then
-    rm -f "$STALE" && note "removed /$stale_cmd — it has been renamed"
+    rm -f "$STALE" && note "removed /$stale_cmd — it is no longer part of gigabite"
   fi
 done
 AGENT_N=0
@@ -192,7 +191,7 @@ fi
 # from `<name>/SKILL.md`, and a bare `<name>.md` is ignored in silence.
 #
 # The directory name is the skill's name, and a skill SHADOWS a slash command of the
-# same name. That is why none of these is called `meeting`: it would disable /meeting
+# same name. That is why none of these is called `search`: it would disable /search
 # without saying anything. tests/test_skills.py pins that rule.
 SKILL_N=0
 if [ -d "$REPO/install/scaffold/skills" ]; then

@@ -65,7 +65,7 @@ were not read. There is no OCR and nothing is inferred about an image — the in
 what is known and no more, because refusing a file you cannot read means losing it.
 
 **Meeting notes** arrive as an export saved into the project's `meetings/` folder, or
-through `/meeting`, which files the transcript on your clipboard without it ever
+through `gigabite paste`, which files the transcript on your clipboard without it ever
 passing through the chat. Either way the meeting sits in that folder alongside
 anything you wrote by hand.
 

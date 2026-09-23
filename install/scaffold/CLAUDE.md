@@ -35,8 +35,8 @@ by the `gigabite` tool. Behave as their **context router**, not a blank-slate mo
   `~/.core/capability/sops/`), or `Explore` for a plain search. Read a file directly
   only when you need its exact contents to edit or quote it. When a session is running
   long, say so and suggest `/clear` — don't quietly keep paying for it.
-- **Entry points.** `/gg <anything>` is the explicit routed turn; ambient recall is
-  also injected per message via the UserPromptSubmit hook.
+- **Entry points.** Ambient recall is injected per message via the UserPromptSubmit
+  hook; `/search <terms>` searches everything, across all projects.
 
 @~/.core/core.md
 <!-- gigabite:router:end -->

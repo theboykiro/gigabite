@@ -971,7 +971,7 @@ def cmd_decay(args) -> int:
 def cmd_core(args) -> int:
     """Print the operating protocol (~/.core/core.md) on stdout.
 
-    This exists so the /gg command can load the protocol through the gigabite
+    This exists so a slash command can load the protocol through the gigabite
     binary it is already allowed to run. Shelling out to `cat ~/.core/core.md`
     does not work: Claude Code only permits reads inside the session's working
     directory, so the whole command substitution fails and the turn silently
@@ -1732,7 +1732,7 @@ def build_parser() -> argparse.ArgumentParser:
     pdc.add_argument("--restore", metavar="DOC_ID")
     pdc.set_defaults(func=cmd_decay)
 
-    prt = sub.add_parser("route", help="resolve context + recall relevant prior conversations (powers /gg)")
+    prt = sub.add_parser("route", help="resolve context + recall relevant prior conversations (powers the recall hook)")
     prt.add_argument("prompt", nargs="+")
     prt.add_argument("--limit", type=int, default=6)
     prt.add_argument("--json", action="store_true")

@@ -59,8 +59,8 @@ protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
 ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
 synthesis job through launchd, and builds the initial index.
 
-It also installs the Claude Code slash commands (`/gg`, `/search`,
-`/search-status`, `/calendar`, `/meeting`), the `gg-*` subagents, and three skills
+It also installs the Claude Code slash commands (`/search`, `/core-setup`), the
+`gg-*` subagents, and three skills
 (`meeting-prep`, `decision-record`, `design-critique`) that trigger on what you ask
 for rather than needing to be named, refreshing its own copies on every run so an
 update reaches them. If a command or agent of that
@@ -133,7 +133,7 @@ invented for it, because a confidently misfiled note is worse than an unfiled on
 |---|---|
 | **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
 | **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
-| **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `/meeting` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
+| **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `gigabite paste` is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
 | **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
 | **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
@@ -178,14 +178,10 @@ The primary interface is conversation, not the command line. Because the install
 registers a `UserPromptSubmit` hook, every message you send in Claude Code already
 has a block of recalled context attached to it, so ordinary questions are answered
 against your history without you asking for it. When you want that explicitly — a
-fresh ingest and a deliberate recall pass — use the slash commands:
+fresh ingest and a search across every project — use the slash command:
 
 ```
-/gg what's still open on the traffic drop?    load core + recall + answer
 /search <query>                                search everything
-/search-status                                 what is indexed right now
-/calendar                                      after pasting a calendar screenshot
-/meeting                                       file the transcript on your clipboard
 ```
 
 The terminal is there when you want to work directly against the index, or when
@@ -211,8 +207,8 @@ gigabite paths                                  # where everything lives
 
 Three more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
 from scratch, `gigabite relocate` brings an older layout up to date, and
-`gigabite route` resolves context and recalls passages as JSON, which is what `/gg`
-and the ambient hook call underneath. Run `gigabite --help`, or
+`gigabite route` resolves context and recalls passages as JSON, which is what the
+ambient hook calls underneath. Run `gigabite --help`, or
 `gigabite <command> --help`, for the full flag list on any of them.
 
 If you are ever unsure where something ended up, `gigabite paths` prints the resolved
@@ -278,7 +274,7 @@ gigabite/            the package
     notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
-  claude-commands/     /gg, /search, /search-status, /calendar, /meeting
+  claude-commands/     /search, /core-setup
   hooks/               the ambient-recall UserPromptSubmit hook
   scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/{agents,skills}
   launchd/             the scheduled daily synthesis job
