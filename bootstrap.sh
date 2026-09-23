@@ -13,9 +13,9 @@ REPO_SLUG="theboykiro/gigabite"
 REPO_URL="https://github.com/$REPO_SLUG.git"
 # Fixed, and deliberately not configurable. macOS refuses background jobs access to
 # Desktop, Documents and Downloads, so a clone in any of those gives a working
-# command line and a daily job that silently never runs — a failure whose only
-# symptom is a line in a log nobody opens. Choosing the location removes the trap
-# instead of documenting it.
+# command line and a background job (the optional Granola pull) that silently
+# never runs — a failure whose only symptom is a line in a log nobody opens.
+# Choosing the location removes the trap instead of documenting it.
 DEST="$HOME/gigabite"
 
 # The interpreter the launcher actually uses (bin/gigabite runs /usr/bin/python3
@@ -77,7 +77,9 @@ ok "Python $PY_VERSION"
 # Not fatal: gigabite is a usable search tool on its own. But the router, the
 # ambient recall and the slash commands are the reason it exists, and all of them
 # live inside Claude Code — so say what is missing rather than installing quietly.
-if command -v claude >/dev/null 2>&1 || [ -d "$HOME/.claude" ]; then
+# Detected by Claude Code's own traces, not ~/.claude: install.sh creates that
+# itself, so on a second run it would say yes whether Claude Code exists or not.
+if command -v claude >/dev/null 2>&1 || [ -e "$HOME/.claude.json" ] || [ -d "$HOME/.claude/projects" ]; then
   ok "Claude Code"
 else
   warn "Claude Code is not installed on this Mac."
@@ -111,12 +113,12 @@ if [ -e "$DEST" ] || [ -L "$DEST" ]; then
       "    rm ~/gigabite"
     # The fixed location is the whole point, and a shortcut can quietly undo it:
     # macOS stops background jobs reaching these folders, so an install behind one
-    # gets a working command line and a daily job that never runs.
+    # gets a working command line and a background job that never runs.
     case "$RESOLVED" in
       "$HOME"/Desktop/*|"$HOME"/Documents/*|"$HOME"/Downloads/*)
         die \
           "$DEST is a shortcut into Desktop, Documents or Downloads." \
-          "gigabite cannot run its daily background job from there. Remove the" \
+          "gigabite cannot run its background jobs from there. Remove the" \
           "shortcut and run this again to install a normal copy:" \
           "    rm ~/gigabite" ;;
     esac
@@ -147,7 +149,7 @@ else
     "access to github.com may be blocked."
   ok "downloaded to $DEST"
 fi
-note "installed to ~/gigabite so the daily background job can run"
+note "installed to ~/gigabite, where macOS lets background jobs run"
 
 # ---------------------------------------------------------------------------
 say "3/3  Running the installer"

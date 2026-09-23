@@ -18,9 +18,9 @@ does not already exist, so re-running it never overwrites something you have edi
 | Directory | Installs to | What it is |
 |---|---|---|
 | `claude-commands/` | `~/.claude/commands/` | The slash commands — `/search` and `/core-setup`. The placeholder `__GIGABITE_BIN__` is substituted for the real launcher path at install time, because Claude Code needs an absolute path in its `allowed-tools` declaration. |
-| `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn. The installer also registers it in `~/.claude/settings.json`; remove it there to switch ambient recall off. |
+| `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn, and `gg-refresh.sh`, the `SessionStart` hook that refreshes the index in the background (log: `~/Knowledge/.gigabite/refresh.log`). The installer registers both in `~/.claude/settings.json`; remove them there to switch them off. |
 | `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/CLAUDE.md` | Starter templates: `core.md`, the router block kept in `~/.claude/CLAUDE.md`, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
-| `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled daily job that refreshes the index (`bin/gigabite-daily`). The name predates the job's current scope. |
+| `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.granola-pull.plist`, the optional daily Granola pull. Not installed by default: `gigabite integrations` offers it once a Granola key is stored. |
 | `scripts/` | *nothing — run by hand* | `claude-ai-safari-export.js`, which you paste into the claude.ai browser console to export your chats. It is here because it is part of the setup story, not because the installer touches it. |
 
 Every row in that table is something `../uninstall.sh` takes back off the machine

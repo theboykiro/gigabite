@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Daily Granola meeting pull, run by launchd (see
-# install/launchd/com.gigabite.granola-pull.plist). Separate from
-# bin/gigabite-daily: not everyone has Granola Business / API access yet, so
-# this is an additive install path the user opts into by loading its own plist.
+# install/launchd/com.gigabite.granola-pull.plist). Not everyone has Granola
+# Business / API access yet, so this is an additive install path the user opts
+# into by loading its own plist.
 #
 # `gigabite granola-sync` does the whole job in one call: pull every new note
 # via the public API (transcript + AI summary), write raw imports, then route
@@ -21,8 +21,8 @@ GB="$REPO/bin/gigabite"
 
 LOG="${GIGABITE_GRANOLA_LOG:-$HOME/Library/Logs/gigabite-granola-pull.log}"
 
-# launchd appends to this file forever. Keep the last ~256 KB, same as the
-# synthesis job's log, so a year of nightly runs stays readable.
+# launchd appends to this file forever. Keep the last ~256 KB so a year of
+# nightly runs stays readable.
 if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 262144 ]; then
   tail -c 131072 "$LOG" >"$LOG.trim" 2>/dev/null && mv "$LOG.trim" "$LOG"
 fi
@@ -51,8 +51,7 @@ stage() {
 
 log "=== gigabite granola pull start (repo: $REPO) ==="
 
-# Same TCC/Desktop-denial diagnostic as bin/gigabite-daily: this job's one
-# recurring failure mode is launchd being denied access to the folder holding
+# This job's one recurring failure mode is launchd being denied access to the folder holding
 # the repo, which otherwise reads as a bare "Operation not permitted".
 if [ ! -x "$GB" ]; then
   log "✗ cannot execute $GB"

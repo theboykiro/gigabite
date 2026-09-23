@@ -2,7 +2,7 @@
 
 Two properties are pinned here, and they pull against each other.
 
-**The output has to fit on a screen.** `gigabite welcome`, at the end of step 8, is
+**The output has to fit on a screen.** `gigabite welcome`, at the end of step 7, is
 the only part of an install written for a person to read. Everything above it is
 bookkeeping, and a first-time reader who has scrolled past thirty green ticks has
 already spent the attention that screen needed. So on the success path the installer
@@ -20,11 +20,11 @@ from scratch rather than inherited (the `env -i` rule), `HOME` points at a temp
 directory, and the two seams that would otherwise reach outside it are redirected —
 the same two `uninstall.sh` already names, spelled the same way:
 
-* `GIGABITE_BIN_DIRS` — otherwise the installer symlinks into `/opt/homebrew/bin`
-  or `/usr/local/bin`, i.e. over the launcher of whoever is running the suite.
-* `GIGABITE_LAUNCHCTL` — otherwise `launchctl bootstrap` loads the fake HOME's plist
-  into the real user's launchd domain, pointing their daily job at a temp directory
-  that is about to be deleted. Pointed at a recorder script, so the calls are
+* `GIGABITE_BIN_DIRS` — the installer links into `~/.local/bin` by default, which
+  is inside the fake HOME anyway; pointed at a separate directory so a test can
+  plant a foreign `gigabite` there without touching HOME.
+* `GIGABITE_LAUNCHCTL` — the installer only calls launchctl to retire the old daily
+  job an earlier install scheduled. Pointed at a recorder script, so the calls are
   asserted rather than made.
 
 A run of install.sh takes about two seconds, so a class whose assertions are all
@@ -35,7 +35,9 @@ one per assertion.
 """
 
 import hashlib
+import json
 import os
+import pwd
 import shutil
 import subprocess
 import sys
@@ -52,7 +54,7 @@ UNINSTALL = REPO / "uninstall.sh"
 
 # The step whose output is the payload: everything above it is what got quietened,
 # and everything from it down (the ingest summary, then `welcome`) is left alone.
-INDEX_STEP = "8/9"
+INDEX_STEP = "7/8"
 # `welcome`'s first line, in the only state a fresh fake HOME can be in: nothing
 # indexed, because there is nothing on this machine to index.
 WELCOME_FIRST = "gigabite is installed"
@@ -60,25 +62,39 @@ WELCOME_FIRST = "gigabite is installed"
 # Measured, not guessed. A quiet install of a fresh HOME prints 14 lines before the
 # index step — six of them the step headings themselves, which stay by design:
 #
-#   1/9 heading, store paths
-#   2/9 heading, linked + PATH, "open a new terminal" (the way to use what was made)
-#   3/9 heading, "slash commands installed: 2"
-#   4/9 heading, router + hook (with the way to switch the hook off)
-#   5/9 heading, scheduled, "disable with: launchctl bootout ..."
-#   6/9 heading, the integrations menu — a note pointing at `gigabite integrations`
+#   1/8 heading, store paths
+#   2/8 heading, linked + PATH, "open a new terminal" (the way to use what was made)
+#   3/8 heading, "slash commands installed: 2"
+#   4/8 heading, "Claude Code isn't installed yet" (true of the fake HOME), router +
+#       hooks (with the way to switch the hooks off)
+#   5/8 heading, the integrations menu — a note pointing at `gigabite integrations`
 #       when stdin isn't a terminal (as here), the real prompt when it is
-#   7/9 heading, and one line about the protocol — either "already filled in" or the
+#   6/8 heading, and one line about the protocol — either "already filled in" or the
 #       instruction to run /core-setup later, for the same no-terminal reason
 #
-# The budget is one line above that. Anything that reintroduces a per-item loop adds
+# The budget is three lines above that. Anything that reintroduces a per-item loop adds
 # three or more and fails here, which is the point of a number rather than a
 # description. Raising it is a decision about a first-time reader's attention, so it
 # should be made deliberately, in a commit that says so.
 QUIET_PREAMBLE_MAX = 17
-# The same count taken to `welcome`'s first line, so the step 8 ingest summary and
-# the step 9 heading are inside the bound too — that is the scroll a new user
+# The same count taken to `welcome`'s first line, so the step 7 ingest summary and
+# the step 8 heading are inside the bound too — that is the scroll a new user
 # actually does before reaching the screen written for them.
 QUIET_TO_WELCOME_MAX = 28
+
+
+def tree_digest(root: Path) -> dict:
+    """Every path under `root` mapped to a digest of its content (links by target)."""
+    out = {}
+    for path in sorted(root.rglob("*")):
+        key = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            out[key] = "link:" + os.readlink(str(path))
+        elif path.is_dir():
+            out[key] = "dir"
+        else:
+            out[key] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return out
 
 
 def strip_ansi(text: str) -> str:
@@ -206,8 +222,8 @@ class TestQuietByDefault(InstallCase):
             "%d lines before the welcome screen, budget %d:\n%s"
             % (len(pre), QUIET_TO_WELCOME_MAX, "\n".join(pre)))
 
-    def test_all_nine_numbered_steps_still_announce_themselves(self):
-        for step in ("1/9", "2/9", "3/9", "4/9", "5/9", "6/9", "7/9", "8/9", "9/9"):
+    def test_all_eight_numbered_steps_still_announce_themselves(self):
+        for step in ("1/8", "2/8", "3/8", "4/8", "5/8", "6/8", "7/8", "8/8"):
             self.assertIn(step, self.out)
 
     def test_the_per_item_confirmations_are_collapsed_into_a_count(self):
@@ -217,10 +233,18 @@ class TestQuietByDefault(InstallCase):
                              "per-item line still printed in the quiet run: %s" % gone)
 
     def test_it_still_says_how_to_switch_off_the_things_that_run_by_themselves(self):
-        """A scheduled job, and a hook on every prompt. Both need a way out, and a
-        user who cannot see one has to go looking for it in someone else's script."""
-        self.assertIn("disable with: launchctl bootout", self.out)
+        """A hook on every prompt and one on every session start. Both need a way
+        out, and a user who cannot see one has to go looking for it in someone
+        else's script."""
         self.assertIn("settings.json to disable", self.out)
+
+    def test_a_fresh_install_schedules_nothing_with_launchd(self):
+        """The daily job is retired; the refresh hook replaced it. A fresh machine
+        has nothing to migrate, so launchd is never called at all."""
+        self.assertFalse(self.sandbox_.launchctl_log.exists(),
+                         self.sandbox_.launchctl_log.read_text(encoding="utf-8")
+                         if self.sandbox_.launchctl_log.exists() else "")
+        self.assertFalse((self.sandbox_.home / "Library/LaunchAgents").exists())
 
     def test_the_welcome_screen_is_untouched(self):
         self.assertIn(WELCOME_FIRST, self.out)
@@ -245,7 +269,7 @@ class TestVerboseRestoresTheDetail(InstallCase):
     def test_verbose_prints_materially_more_than_the_quiet_run(self):
         quiet, loud = len(self.preamble(self.quiet)), len(self.preamble(self.loud))
         # Six per-item lines today: two commands, two seeded files, the router
-        # block and the hook.
+        # block and the hooks.
         self.assertGreater(loud, quiet + 5,
                            "verbose added only %d lines" % (loud - quiet))
 
@@ -353,9 +377,28 @@ class TestItIsIdempotent(InstallCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.sandbox_, _first = cls.install_once()
+        cls.sandbox_ = Sandbox()
+        cls.addClassCleanup(cls.sandbox_.destroy)
+        # A machine with Claude Code on it, so the one legitimate warning a fresh
+        # sandbox gets ("Claude Code isn't installed yet") is not in the way.
+        cls.sandbox_.write(".claude.json", "{}\n")
+        code, cls.first = cls.sandbox_.run()
+        assert code == 0, cls.first
+        cls.snapshot = tree_digest(cls.sandbox_.home)
         code, cls.second = cls.sandbox_.run()
         assert code == 0, cls.second
+
+    def test_a_second_run_changes_no_file_but_the_index(self):
+        """Idempotent in the strict sense: every file byte-identical, the hooks
+        registered once, no second backup. Only the index database may move."""
+        after = tree_digest(self.sandbox_.home)
+        changed = sorted(k for k in set(self.snapshot) | set(after)
+                         if self.snapshot.get(k) != after.get(k)
+                         and "/.gigabite/index/" not in "/" + k)
+        self.assertEqual([], changed)
+        cfg = json.loads((self.sandbox_.home / ".claude/settings.json").read_text())
+        self.assertEqual(1, len(cfg["hooks"]["UserPromptSubmit"]))
+        self.assertEqual(1, len(cfg["hooks"]["SessionStart"]))
 
     def test_a_second_quiet_run_succeeds_and_says_nothing_alarming(self):
         pre = "\n".join(self.preamble(self.second))
@@ -367,9 +410,8 @@ class TestItIsIdempotent(InstallCase):
         self.assertLessEqual(len(self.preamble(self.second)), QUIET_PREAMBLE_MAX)
 
     def test_a_second_run_does_not_stack_a_second_path_line_into_the_shell_rc(self):
-        for rc in (".zshrc", ".bash_profile"):
-            text = (self.sandbox_.home / rc).read_text(encoding="utf-8")
-            self.assertEqual(1, text.count("added by gigabite"), rc)
+        text = (self.sandbox_.home / ".zshrc").read_text(encoding="utf-8")
+        self.assertEqual(1, text.count("added by gigabite"))
 
     def test_a_second_run_does_not_stack_a_second_router_block(self):
         text = (self.sandbox_.home / ".claude/CLAUDE.md").read_text(encoding="utf-8")
@@ -400,8 +442,9 @@ class TestTheSeamsAreRealSeams(InstallCase):
     def test_it_writes_nothing_into_the_real_path_directories(self):
         """Read-only on the real machine: whatever is in those directories now,
         including the owner's own launcher, is exactly there afterwards."""
+        real_home = Path(pwd.getpwuid(os.getuid()).pw_dir)   # the harness fakes HOME
         defaults = ["/opt/homebrew/bin", "/usr/local/bin",
-                    str(Path.home() / ".local/bin"), str(Path.home() / "bin")]
+                    str(real_home / ".local/bin"), str(real_home / "bin")]
 
         def snapshot():
             out = {}
@@ -420,13 +463,12 @@ class TestTheSeamsAreRealSeams(InstallCase):
         self.assertEqual(before, snapshot(),
                          "the install reached outside GIGABITE_BIN_DIRS")
 
-    def test_the_scheduled_job_is_loaded_through_the_named_launchctl(self):
+    def test_the_retired_job_is_unloaded_through_the_named_launchctl(self):
+        self.sandbox.write("Library/LaunchAgents/com.gigabite.synthesis.plist", "<plist/>\n")
         self.install()
         calls = self.sandbox.launchctl_log.read_text(encoding="utf-8")
         self.assertIn("bootout gui/%d/com.gigabite.synthesis" % os.getuid(), calls)
-        self.assertIn("bootstrap gui/%d" % os.getuid(), calls)
-        # And at the plist inside the fake HOME, not the real user's.
-        self.assertIn(str(self.sandbox.home / "Library/LaunchAgents"), calls)
+        self.assertNotIn("bootstrap", calls, "the retired job must not be loaded again")
 
     def test_no_launchctl_is_invoked_except_through_the_seam(self):
         """One missed call site is enough to unload the real user's job, and it
@@ -441,16 +483,228 @@ class TestTheSeamsAreRealSeams(InstallCase):
             self.assertIn("disable with:", stripped,
                           "install.sh calls launchctl directly: %s" % stripped)
 
-    def test_the_defaults_are_spelled_exactly_as_uninstall_spells_them(self):
+    def test_uninstall_looks_everywhere_install_links(self):
         """Two scripts that disagree about where the launcher lives cannot uninstall
-        what the other installed, and the seam would be the thing hiding it."""
+        what the other installed, and the seam would be the thing hiding it. The
+        uninstaller's list is a superset — it also cleans up the directories older
+        installs linked into — with the installer's own directory first."""
         def defaults(path):
-            return {line.split("=", 1)[0]: line
+            return {line.split("=", 1)[0]: line.split("=", 1)[1]
                     for line in path.read_text(encoding="utf-8").splitlines()
                     if line.startswith(("BIN_DIRS=", "LAUNCHCTL="))}
 
-        self.assertEqual(defaults(UNINSTALL), defaults(INSTALL))
-        self.assertEqual(2, len(defaults(INSTALL)))
+        inst, uninst = defaults(INSTALL), defaults(UNINSTALL)
+        self.assertEqual(inst["LAUNCHCTL"], uninst["LAUNCHCTL"])
+        self.assertEqual('"${GIGABITE_BIN_DIRS:-$HOME/.local/bin}"', inst["BIN_DIRS"])
+        self.assertTrue(uninst["BIN_DIRS"].startswith('"${GIGABITE_BIN_DIRS:-$HOME/.local/bin:'),
+                        uninst["BIN_DIRS"])
+        for legacy in ("/opt/homebrew/bin", "/usr/local/bin"):
+            self.assertIn(legacy, uninst["BIN_DIRS"])
+
+# ---------------------------------------------------------------------------
+class TestTheHooks(InstallCase):
+    """Two hooks, both registered by absolute path in the nested form Claude Code's
+    settings schema uses, both installed with the launcher's path baked in."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sandbox_, cls.out = cls.install_once()
+        cls.cfg = json.loads((cls.sandbox_.home / ".claude/settings.json")
+                             .read_text(encoding="utf-8"))
+
+    def test_recall_is_on_user_prompt_submit_and_refresh_on_session_start(self):
+        hook_dir = self.sandbox_.home / ".claude/gigabite"
+        self.assertEqual(
+            [{"hooks": [{"type": "command", "command": str(hook_dir / "gg-recall.sh")}]}],
+            self.cfg["hooks"]["UserPromptSubmit"])
+        self.assertEqual(
+            [{"hooks": [{"type": "command", "command": str(hook_dir / "gg-refresh.sh")}]}],
+            self.cfg["hooks"]["SessionStart"])
+
+    def test_both_scripts_are_executable_and_name_the_launcher_absolutely(self):
+        for name in ("gg-recall.sh", "gg-refresh.sh"):
+            script = self.sandbox_.home / ".claude/gigabite" / name
+            self.assertTrue(os.access(str(script), os.X_OK), name)
+            text = script.read_text(encoding="utf-8")
+            self.assertNotIn("__GIGABITE_BIN__", text, name)
+            self.assertIn('GIGABITE_BIN="%s"' % (REPO / "bin" / "gigabite"), text)
+
+    def test_a_users_own_hooks_are_kept_alongside(self):
+        self.sandbox.write(".claude/settings.json", json.dumps({
+            "model": "x",
+            "hooks": {"SessionStart": [{"matcher": "startup", "hooks": [
+                {"type": "command", "command": "/opt/mine/hello.sh"}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": "say done"}]}]}}))
+        self.install()
+        cfg = json.loads((self.sandbox.home / ".claude/settings.json").read_text())
+        self.assertEqual("x", cfg["model"])
+        self.assertEqual("say done", cfg["hooks"]["Stop"][0]["hooks"][0]["command"])
+        starts = json.dumps(cfg["hooks"]["SessionStart"])
+        self.assertIn("/opt/mine/hello.sh", starts)
+        self.assertIn("gg-refresh.sh", starts)
+        self.assertEqual(2, len(cfg["hooks"]["SessionStart"]))
+
+
+# ---------------------------------------------------------------------------
+class TestMigratingAnOlderInstall(InstallCase):
+    """An install from before the refresh hook: the 18:00 job loaded, its log, a
+    settings.json with only the recall hook, and the retired slash commands."""
+
+    def setUp(self):
+        super().setUp()
+        s = self.sandbox
+        s.write("Library/LaunchAgents/com.gigabite.synthesis.plist", "<plist/>\n")
+        s.write("Library/Logs/gigabite-synthesis.log", "ran at 18:00\n")
+        s.write("Library/LaunchAgents/com.gigabite.granola-pull.plist", "<plist/>\n")
+        s.write(".claude/settings.json", json.dumps({"hooks": {"UserPromptSubmit": [
+            {"hooks": [{"type": "command",
+                        "command": str(s.home / ".claude/gigabite/gg-recall.sh")}]}]}}))
+        for name in ("gg", "search-status", "calendar", "meeting"):
+            s.write(".claude/commands/%s.md" % name, "runs the gigabite launcher\n")
+
+    def test_the_daily_job_is_unloaded_and_removed_and_the_hook_takes_over(self):
+        out = self.install()
+        home = self.sandbox.home
+        self.assertFalse((home / "Library/LaunchAgents/com.gigabite.synthesis.plist").exists())
+        self.assertFalse((home / "Library/Logs/gigabite-synthesis.log").exists())
+        self.assertIn("bootout gui/%d/com.gigabite.synthesis" % os.getuid(),
+                      self.sandbox.launchctl_log.read_text(encoding="utf-8"))
+        self.assertIn("retired the old 18:00 daily job", out)
+        cfg = json.loads((home / ".claude/settings.json").read_text())
+        self.assertEqual(1, len(cfg["hooks"]["UserPromptSubmit"]), "recall doubled up")
+        self.assertIn("gg-refresh.sh", json.dumps(cfg["hooks"]["SessionStart"]))
+        for name in ("gg", "search-status", "calendar", "meeting"):
+            self.assertFalse((home / (".claude/commands/%s.md" % name)).exists(), name)
+
+    def test_the_optional_granola_job_is_left_alone(self):
+        self.install()
+        self.assertTrue((self.sandbox.home /
+                         "Library/LaunchAgents/com.gigabite.granola-pull.plist").exists())
+        self.assertNotIn("granola", self.sandbox.launchctl_log.read_text(encoding="utf-8"))
+
+    def test_a_second_run_after_migrating_has_nothing_left_to_retire(self):
+        self.install()
+        self.sandbox.launchctl_log.unlink()
+        out = self.install()
+        self.assertNotIn("retired", out)
+        self.assertFalse(self.sandbox.launchctl_log.exists())
+
+
+# ---------------------------------------------------------------------------
+class TestThePathStep(InstallCase):
+    """~/.local/bin by default, and never over someone else's `gigabite`."""
+
+    def test_it_defaults_to_local_bin_inside_home(self):
+        """The real default, so the seam is left out altogether. Safe: the default
+        is inside the fake HOME now, which is the point of the change."""
+        env_less = self.sandbox.home / ".local/bin/gigabite"
+        proc_env = {"HOME": str(self.sandbox.home), "PATH": "/usr/bin:/bin",
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "GIGABITE_LAUNCHCTL": str(self.sandbox.launchctl)}
+        proc = subprocess.run(["/bin/bash", str(INSTALL)], input="", env=proc_env,
+                              cwd=str(REPO), stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, universal_newlines=True)
+        self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)
+        self.assertTrue(env_less.is_symlink())
+        self.assertEqual(str(REPO / "bin" / "gigabite"), os.readlink(str(env_less)))
+
+    def test_a_foreign_gigabite_is_never_overwritten(self):
+        foreign = self.sandbox.bin_dir / "gigabite"
+        foreign.write_text("#!/bin/sh\necho someone else's\n", encoding="utf-8")
+        second = self.sandbox.base / "second-bin"
+        out = self.install(extra_env={
+            "GIGABITE_BIN_DIRS": "%s:%s" % (self.sandbox.bin_dir, second)})
+        self.assertEqual("#!/bin/sh\necho someone else's\n",
+                         foreign.read_text(encoding="utf-8"))
+        self.assertIn("left %s alone" % foreign, out)
+        self.assertTrue((second / "gigabite").is_symlink(), "fell through to the next dir")
+
+    def test_a_foreign_symlink_is_never_overwritten_either(self):
+        link = self.sandbox.bin_dir / "gigabite"
+        os.symlink("/usr/bin/true", str(link))
+        out = self.install()
+        self.assertEqual("/usr/bin/true", os.readlink(str(link)))
+        self.assertIn("left %s alone" % link, out)
+
+    def test_a_link_into_a_gigabite_checkout_is_ours_to_refresh(self):
+        link = self.sandbox.bin_dir / "gigabite"
+        os.symlink(str(REPO / "bin" / "gigabite"), str(link))
+        out = self.install()
+        self.assertNotIn("alone", out)
+        self.assertEqual(str(REPO / "bin" / "gigabite"), os.readlink(str(link)))
+
+    def test_another_gigabite_on_path_is_reported_not_touched(self):
+        other = self.sandbox.base / "elsewhere"
+        other.mkdir()
+        (other / "gigabite").write_text("#!/bin/sh\n", encoding="utf-8")
+        (other / "gigabite").chmod(0o755)
+        out = self.install(extra_env={"PATH": "%s:/usr/bin:/bin" % other})
+        self.assertIn("another program called gigabite is at %s" % (other / "gigabite"), out)
+        self.assertEqual("#!/bin/sh\n", (other / "gigabite").read_text(encoding="utf-8"))
+
+    def test_bash_profile_is_not_created_and_a_new_zshrc_has_no_blank_line(self):
+        self.install()
+        home = self.sandbox.home
+        self.assertFalse((home / ".bash_profile").exists(),
+                         "a new .bash_profile would shadow the user's ~/.profile")
+        text = (home / ".zshrc").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("export PATH="), repr(text))
+
+    def test_existing_bash_files_get_the_line_after_a_separator(self):
+        self.sandbox.write(".bash_profile", "export EDITOR=vim\n")
+        self.install()
+        text = (self.sandbox.home / ".bash_profile").read_text()
+        self.assertTrue(text.startswith("export EDITOR=vim\n\nexport PATH="), repr(text))
+        self.assertIn("added by gigabite", text)
+
+
+# ---------------------------------------------------------------------------
+class TestPreflight(InstallCase):
+
+    def test_missing_command_line_tools_stop_it_with_the_fix(self):
+        shim = self.sandbox.base / "shim"
+        shim.mkdir()
+        (shim / "xcode-select").write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+        (shim / "xcode-select").chmod(0o755)
+        out = self.install(expect=1, extra_env={"PATH": "%s:/usr/bin:/bin" % shim})
+        self.assertIn("command line tools are missing", out)
+        self.assertIn("xcode-select --install", out)
+        self.assertFalse((self.sandbox.home / ".claude").exists(), "installed anyway")
+
+    def test_claude_code_is_detected_by_its_own_traces_not_by_dot_claude(self):
+        """install.sh creates ~/.claude itself, so a second run on a Mac without
+        Claude Code must still say it is missing."""
+        first = self.install()
+        second = self.install()
+        for out in (first, second):
+            self.assertIn("Claude Code isn't installed yet", out)
+        self.sandbox.write(".claude.json", "{}\n")
+        self.assertNotIn("Claude Code isn't installed yet", self.install())
+
+    def test_a_clone_under_desktop_is_warned_about(self):
+        clone = self.sandbox.home / "Desktop" / "gigabite"
+        for part in ("install.sh", "bin", "gigabite", "install"):
+            src = REPO / part
+            if src.is_dir():
+                shutil.copytree(str(src), str(clone / part),
+                                ignore=shutil.ignore_patterns("__pycache__"))
+            else:
+                clone.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(src), str(clone / part))
+        env = {"HOME": str(self.sandbox.home), "PATH": "/usr/bin:/bin",
+               "PYTHONDONTWRITEBYTECODE": "1",
+               "GIGABITE_BIN_DIRS": str(self.sandbox.bin_dir),
+               "GIGABITE_LAUNCHCTL": str(self.sandbox.launchctl)}
+        proc = subprocess.run(["/bin/bash", str(clone / "install.sh")], input="",
+                              env=env, cwd=str(clone), stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, universal_newlines=True)
+        out = strip_ansi(proc.stdout + proc.stderr)
+        self.assertEqual(0, proc.returncode, out)
+        self.assertIn("macOS blocks background jobs there", out)
+
+    def test_an_empty_claude_md_is_not_backed_up(self):
+        self.install()
+        self.assertFalse((self.sandbox.home / ".claude/CLAUDE.md.gigabite-bak").exists())
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Template. Not installed by install.sh — Granola API access is not universal
      yet, so this is a separate, additive install path. Fill __DAILY_BIN__ /
-     __LOG__ the same way install.sh does for com.gigabite.synthesis.plist, e.g.:
+     __LOG__ the way `gigabite integrations` does, e.g.:
        sed -e "s|__DAILY_BIN__|$REPO/bin/gigabite-granola-pull|g" \
            -e "s|__LOG__|$HOME/Library/Logs/gigabite-granola-pull.log|g" \
            install/launchd/com.gigabite.granola-pull.plist \

@@ -3,7 +3,8 @@
 #   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
 #   • installs the /search and /core-setup commands (user-level)
-#   • wires the router block and the ambient-recall hook into ~/.claude
+#   • wires the router block and two hooks into ~/.claude: ambient recall on every
+#     prompt, and a background index refresh when a session starts
 #   • offers to enable the "AI brain" integrations (Granola, more soon)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
@@ -27,7 +28,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -v|--verbose) VERBOSE=1 ;;
     -h|--help)
-      sed -n '2,12p' "$REPO/install.sh" | sed 's/^# \{0,1\}//'
+      sed -n '2,13p' "$REPO/install.sh" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     # Refused rather than ignored: a mistyped --verbose that quietly produced a
     # quiet install is the one failure this flag exists to prevent.
@@ -46,17 +47,64 @@ detail() { [ "$VERBOSE" = 1 ] || return 0; "$@"; }
 
 CORE_DIR="${GIGABITE_CORE_DIR:-$HOME/.core}"
 KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}"
-# The PATH directories to try, in order, and the command that loads the daily job.
-# Overridable for one reason: the installer's behaviour has to be exercisable
-# against a throwaway HOME, and a test that had to write into /opt/homebrew/bin or
-# boot a job into the live launchd domain is a test nobody may run twice. The
-# defaults are what a real install has always used; uninstall.sh names both the
-# same way, so the two scripts can be pointed at the same fake machine.
-BIN_DIRS="${GIGABITE_BIN_DIRS:-/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$HOME/bin}"
+# The PATH directories to try, in order, and the command that unloads the retired
+# daily job. Overridable for one reason: the installer's behaviour has to be
+# exercisable against a throwaway HOME, and a test that had to write outside it or
+# touch the live launchd domain is a test nobody may run twice. uninstall.sh names
+# both the same way, so the two scripts can be pointed at the same fake machine.
+#
+# ~/.local/bin only. Earlier installs took the first writable of /opt/homebrew/bin,
+# /usr/local/bin, ... — which wrote outside HOME and replaced whatever `gigabite`
+# already lived there. uninstall.sh still searches those, to clean up after them.
+BIN_DIRS="${GIGABITE_BIN_DIRS:-$HOME/.local/bin}"
 LAUNCHCTL="${GIGABITE_LAUNCHCTL:-launchctl}"
 
 # ---------------------------------------------------------------------------
-say "1/9  Creating the local store layout"
+# Preflight — the same rule bootstrap.sh applies, for anyone who cloned by hand.
+# The launcher runs /usr/bin/python3 directly (bin/gigabite), so that is the one
+# checked. Without Apple's command line tools it is a stub that pops a dialog and
+# fails, so ask for the tools first rather than letting Python fail confusingly.
+PY=/usr/bin/python3
+xcode-select -p >/dev/null 2>&1 || die \
+  "Apple's command line tools are missing, and gigabite runs on the Python they ship." \
+  "Run this, click through the installer, wait for it to finish:" \
+  "    xcode-select --install" \
+  "Then run ./install.sh again."
+[ -x "$PY" ] || die \
+  "Python is missing from this Mac (expected it at $PY)." \
+  "Reinstall Apple's command line tools:  xcode-select --install"
+PY_VERSION="$("$PY" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+[ -n "$PY_VERSION" ] || die \
+  "Python is on this Mac but will not start, so gigabite cannot run." \
+  "Reinstalling Apple's command line tools usually fixes it:  xcode-select --install"
+"$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' || die \
+  "gigabite needs Python 3.9 or later, and this Mac has $PY_VERSION." \
+  "That version comes with macOS, so the fix is a macOS update — check" \
+  "System Settings > General > Software Update."
+
+# macOS refuses launchd jobs access to these folders. Nothing gigabite installs by
+# default is a launchd job any more, but the optional Granola daily pull is, and it
+# would fail there with nothing but "Operation not permitted" in its log.
+# REPO is a physical path (cd -P), so HOME is compared both as given and resolved.
+HOME_P="$(cd -P "$HOME" 2>/dev/null && pwd || printf '%s' "$HOME")"
+case "$REPO" in
+  "$HOME"/Desktop/*|"$HOME"/Documents/*|"$HOME"/Downloads/*|\
+  "$HOME_P"/Desktop/*|"$HOME_P"/Documents/*|"$HOME_P"/Downloads/*)
+    warn "gigabite is in $(dirname "$REPO") — macOS blocks background jobs there, so the"
+    note "optional Granola daily pull could not run. Moving the clone to ~/gigabite and"
+    note "re-running ./install.sh avoids that; everything else works where it is." ;;
+esac
+
+# Claude Code, by its own traces — not ~/.claude, which this script creates itself,
+# so testing for that would say yes on every second run.
+has_claude_code() {
+  command -v claude >/dev/null 2>&1 || [ -e "$HOME/.claude.json" ] || [ -d "$HOME/.claude/projects" ]
+}
+HAS_CLAUDE=0
+has_claude_code && HAS_CLAUDE=1
+
+# ---------------------------------------------------------------------------
+say "1/8  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
 ok "core: $CORE_DIR  ·  knowledge: $KNOW_DIR"
 
@@ -89,7 +137,20 @@ copy_if_absent "$REPO/install/scaffold/core.md"              "$CORE_DIR/core.md"
 refresh_doc    "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
 
 # ---------------------------------------------------------------------------
-say "2/9  Putting gigabite on your PATH"
+say "2/8  Putting gigabite on your PATH"
+# A `gigabite` that is a symlink into a gigabite checkout is ours to replace (an
+# older install, or another clone). Anything else by that name is somebody else's
+# program, and it is left exactly where it is — uninstall.sh applies the same test.
+is_gigabite_link() { # path
+  [ -L "$1" ] || return 1
+  local target root
+  target="$(readlink "$1")"
+  case "$target" in /*) : ;; *) target="$(dirname "$1")/$target" ;; esac
+  root="$(dirname "$(dirname "$target")")"
+  [ -f "$root/install.sh" ] && [ -f "$root/gigabite/__init__.py" ]
+}
+# Whatever `gigabite` the current PATH already finds, looked up before linking.
+OTHER="$(command -v gigabite 2>/dev/null || true)"
 INSTALLED=""
 OLD_IFS="$IFS"
 IFS=:
@@ -97,10 +158,17 @@ set -- $BIN_DIRS                       # split on ':' without losing spaces in a
 IFS="$OLD_IFS"
 for d in "$@"; do
   [ -n "$d" ] || continue
+  if { [ -e "$d/gigabite" ] || [ -L "$d/gigabite" ]; } && ! is_gigabite_link "$d/gigabite"; then
+    warn "left $d/gigabite alone — it is not gigabite's launcher"
+    continue
+  fi
   if mkdir -p "$d" 2>/dev/null && [ -w "$d" ]; then
     ln -sf "$BIN" "$d/gigabite" && INSTALLED="$d/gigabite" && break
   fi
 done
+if [ -n "$OTHER" ] && [ "$OTHER" != "$INSTALLED" ] && ! is_gigabite_link "$OTHER"; then
+  warn "another program called gigabite is at $OTHER — left alone"
+fi
 if [ -z "$INSTALLED" ]; then
   warn "couldn't write to a PATH dir; use the launcher directly: $BIN"
 else
@@ -109,11 +177,17 @@ else
     *":$BIN_DIR:"*) ok "linked $INSTALLED" ;;  # already on PATH
     *)
       LINE="export PATH=\"$BIN_DIR:\$PATH\"  # added by gigabite"
-      for rc in "$HOME/.zshrc" "$HOME/.bash_profile"; do
-        touch "$rc"
-        grep -qF "added by gigabite" "$rc" 2>/dev/null || printf '\n%s\n' "$LINE" >> "$rc"
+      # zsh is the macOS login shell, so .zshrc is always written (created if need
+      # be). The bash files only when they already exist: creating a .bash_profile
+      # would make bash stop reading a ~/.profile the user relies on. The blank
+      # line goes in only when there is something to separate the export from;
+      # uninstall.sh takes it out again.
+      for rc in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
+        [ "$rc" = "$HOME/.zshrc" ] || [ -f "$rc" ] || continue
+        grep -qF "added by gigabite" "$rc" 2>/dev/null && continue
+        if [ -s "$rc" ]; then printf '\n%s\n' "$LINE" >> "$rc"; else printf '%s\n' "$LINE" >> "$rc"; fi
       done
-      ok "linked $INSTALLED — and added $BIN_DIR to PATH (in .zshrc/.bash_profile)"
+      ok "linked $INSTALLED — and added $BIN_DIR to PATH in your shell startup file"
       # Loud in either mode: without it the command they were just given does
       # not exist in the shell they are standing in.
       note "open a new terminal, or run:  export PATH=\"$BIN_DIR:\$PATH\""
@@ -122,7 +196,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "3/9  Installing Claude Code commands (user-level)"
+say "3/8  Installing Claude Code commands (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
 # A slash command by one of our names may already be the user's own work.
@@ -185,16 +259,19 @@ ok "slash commands installed: $CMD_N"
 
 
 # ---------------------------------------------------------------------------
-say "4/9  Wiring the conversational layer (router protocol + ambient recall)"
+say "4/8  Wiring the conversational layer (router protocol + recall and refresh hooks)"
 # Router constitution: keep a marker-bounded managed block in ~/.claude/CLAUDE.md in
 # sync with the scaffold. Only the block is touched; the user's own content is kept.
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 touch "$GLOBAL_CLAUDE"
-ROUTER_STATUS=$(ROUTER_SRC="$REPO/install/scaffold/CLAUDE.md" /usr/bin/python3 - "$GLOBAL_CLAUDE" <<'PY'
+ROUTER_STATUS=$(ROUTER_SRC="$REPO/install/scaffold/CLAUDE.md" GIGABITE_BIN="$BIN" /usr/bin/python3 - "$GLOBAL_CLAUDE" <<'PY'
 import os, sys, shutil
 
 path = sys.argv[1]
 block = open(os.environ["ROUTER_SRC"], encoding="utf-8").read().strip("\n")
+# The same placeholder the commands and hooks use, so the block can name the
+# launcher by absolute path rather than trusting PATH in Claude Code's shell.
+block = block.replace("__GIGABITE_BIN__", os.environ["GIGABITE_BIN"])
 start, end = "<!-- gigabite:router:start -->", "<!-- gigabite:router:end -->"
 current = open(path, encoding="utf-8").read()
 
@@ -212,7 +289,10 @@ else:
     updated = current[:i] + block + current[j + len(end):]
     status = "updated"
 
-shutil.copyfile(path, path + ".gigabite-bak")
+# A zero-byte file (this script's own `touch`) has nothing worth a backup, and the
+# backup would be residue that outlives an uninstall.
+if current:
+    shutil.copyfile(path, path + ".gigabite-bak")
 with open(path, "w", encoding="utf-8") as fh:
     fh.write(updated)
 print(status)
@@ -227,14 +307,23 @@ case "$ROUTER_STATUS" in
   corrupt) note "router markers in ~/.claude/CLAUDE.md look damaged — left untouched" ;;
   *)       note "could not sync router protocol in ~/.claude/CLAUDE.md" ;;
 esac
-# Ambient recall hook: install script + register UserPromptSubmit in settings.json.
+# The two hooks. Each script is installed with the launcher's absolute path baked in,
+# and registered by absolute path, so neither depends on the PATH Claude Code runs
+# hooks with:
+#   UserPromptSubmit → gg-recall.sh   recalls prior context into every prompt
+#   SessionStart     → gg-refresh.sh  refreshes the index in the background, so the
+#                                     work from earlier today is recallable now
 HOOK_DIR="$HOME/.claude/gigabite"
 mkdir -p "$HOOK_DIR"
-sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/install/hooks/gg-recall.sh" > "$HOOK_DIR/gg-recall.sh"
-chmod +x "$HOOK_DIR/gg-recall.sh"
-HOOK_STATUS=$(GIGABITE_HOOK="$HOOK_DIR/gg-recall.sh" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
+for h in gg-recall gg-refresh; do
+  sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/install/hooks/$h.sh" > "$HOOK_DIR/$h.sh"
+  chmod +x "$HOOK_DIR/$h.sh"
+done
+HOOK_STATUS=$(GIGABITE_HOOK_DIR="$HOOK_DIR" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
 import json, os, sys, shutil
-path = sys.argv[1]; hook = os.environ["GIGABITE_HOOK"]
+path = sys.argv[1]; hook_dir = os.environ["GIGABITE_HOOK_DIR"]
+WANTED = (("UserPromptSubmit", os.path.join(hook_dir, "gg-recall.sh")),
+          ("SessionStart", os.path.join(hook_dir, "gg-refresh.sh")))
 cfg = {}
 if os.path.exists(path):
     try:
@@ -250,45 +339,47 @@ if os.path.exists(path):
 hooks = cfg.setdefault("hooks", {})
 if not isinstance(hooks, dict):
     print("hooks-not-dict"); sys.exit(0)          # leave user's config untouched
-ups = hooks.setdefault("UserPromptSubmit", [])
-if not isinstance(ups, list):
-    print("ups-not-list"); sys.exit(0)
-if hook in json.dumps(ups):
+added = []
+for event, hook in WANTED:
+    entries = hooks.setdefault(event, [])
+    if not isinstance(entries, list):
+        print(f"{event}-not-list"); sys.exit(0)
+    if hook in json.dumps(entries):
+        continue
+    # The nested form Claude Code's settings schema uses; no matcher, so it fires
+    # for every prompt / every way a session starts.
+    entries.append({"hooks": [{"type": "command", "command": hook}]})
+    added.append(event)
+if not added:
     print("exists"); sys.exit(0)
-ups.append({"hooks": [{"type": "command", "command": hook}]})
 with open(path, "w") as fh:
     json.dump(cfg, fh, indent=2)
-print("added")
+print("added:" + ",".join(added))
 PY
 ) || HOOK_STATUS="error"
 case "$HOOK_STATUS" in
-  added)         detail ok "ambient recall hook registered (UserPromptSubmit)" ;;
-  exists)        detail note "ambient recall hook already registered" ;;
-  unparseable)   warn "~/.claude/settings.json isn't valid JSON — backed it up to .gigabite.bak and did NOT modify it. Add the hook manually or fix the file and re-run." ;;
-  *)             warn "could not register the recall hook automatically ($HOOK_STATUS). Hook script is at $HOOK_DIR/gg-recall.sh; add it to settings.json manually." ;;
+  added:*)       detail ok "hooks registered (${HOOK_STATUS#added:})" ;;
+  exists)        detail note "hooks already registered" ;;
+  unparseable)   warn "~/.claude/settings.json isn't valid JSON — backed it up to .gigabite.bak and did NOT modify it. Add the hooks manually or fix the file and re-run." ;;
+  *)             warn "could not register the hooks automatically ($HOOK_STATUS). The scripts are in $HOOK_DIR; add them to settings.json manually (gg-recall.sh on UserPromptSubmit, gg-refresh.sh on SessionStart)." ;;
 esac
-# The step's one line. It carries the way out, because a hook that runs on every
-# prompt is not something to leave someone unable to switch off.
-ok "router protocol + ambient recall (remove the hook from ~/.claude/settings.json to disable)"
-
-# ---------------------------------------------------------------------------
-say "5/9  Scheduling the daily index refresh (launchd)"
-DAILY="$REPO/bin/gigabite-daily"; chmod +x "$DAILY"
-LOG="$HOME/Library/Logs/gigabite-synthesis.log"
-LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist"
-mkdir -p "$LA_DIR" "$(dirname "$LOG")"
-sed -e "s|__DAILY_BIN__|$DAILY|g" -e "s|__LOG__|$LOG|g" \
-    "$REPO/install/launchd/com.gigabite.synthesis.plist" > "$PLIST"
-"$LAUNCHCTL" bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
-if "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
-  ok "scheduled: gigabite ingest daily at 18:00"
-else
-  warn "installed the LaunchAgent plist but couldn't load it now; it will load at next login. ($PLIST)"
+# The daily 18:00 launchd job earlier installs scheduled is retired: the refresh
+# hook above does its one remaining job (ingest) when the index is about to be
+# used, instead of at an hour the Mac may be asleep. Unloaded through the seam, and
+# only when its plist is there, so a fresh install never touches launchd at all.
+OLD_PLIST="$HOME/Library/LaunchAgents/com.gigabite.synthesis.plist"
+if [ -e "$OLD_PLIST" ]; then
+  "$LAUNCHCTL" bootout "gui/$(id -u)/com.gigabite.synthesis" >/dev/null 2>&1 || true
+  rm -f "$OLD_PLIST" "$HOME/Library/Logs/gigabite-synthesis.log"
+  note "retired the old 18:00 daily job — the index now refreshes when a Claude Code session starts"
 fi
-note "disable with: launchctl bootout gui/$(id -u)/com.gigabite.synthesis"
+[ "$HAS_CLAUDE" = 1 ] || warn "Claude Code isn't installed yet — all of this switches on once it is"
+# The step's one line. It carries the way out, because hooks that run by themselves
+# are not something to leave someone unable to switch off.
+ok "router protocol + recall and refresh hooks (remove them from ~/.claude/settings.json to disable)"
 
 # ---------------------------------------------------------------------------
-say "6/9  Enabling the \"AI brain\" integrations (Granola, more soon)"
+say "5/8  Enabling the \"AI brain\" integrations (Granola, more soon)"
 if [ -t 0 ]; then
   "$BIN" integrations
 else
@@ -296,7 +387,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "7/9  Personalising the operating protocol"
+say "6/8  Personalising the operating protocol"
 # The protocol ships with sections marked [FILL], and an install that leaves them
 # there leaves the user with a generic assistant. The interview that fills them in
 # is a conversation, so it lives in Claude Code, not here.
@@ -310,7 +401,7 @@ CORE_FILL=0
 grep -q '\[FILL\]' "$CORE_DIR/core.md" 2>/dev/null && CORE_FILL=1
 if [ "$CORE_FILL" = 0 ]; then
   ok "your protocol is already filled in — left untouched"
-elif [ -t 0 ] && [ -d "$HOME/.claude" ]; then
+elif [ -t 0 ] && [ "$HAS_CLAUDE" = 1 ]; then
   "$BIN" core interview || true
   note "run /core-setup in Claude Code to answer these — nothing is written without you"
 else
@@ -318,11 +409,11 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "8/9  Building the initial index"
+say "7/8  Building the initial index"
 "$BIN" ingest || warn "ingest reported issues (see above)"
 
 # ---------------------------------------------------------------------------
-say "9/9  Done"
+say "8/8  Done"
 echo
 # `status` reports on a database; this reports on the user's own work and hands
 # them one command that is verified to find something in it. Read-only, and

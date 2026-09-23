@@ -113,15 +113,14 @@ def _ask_yes_no(prompt: str, *, default: bool) -> bool:
 # ---------------------------------------------------------------------------
 
 def _render_plist(template_path: Path, bin_path: Path, log_path: Path) -> str:
-    """Same two placeholders install.sh substitutes for the synthesis plist —
-    `__DAILY_BIN__` / `__LOG__` — done here with `str.replace`, not `sed`."""
+    """Fill the plist template's two placeholders — `__DAILY_BIN__` / `__LOG__`."""
     text = template_path.read_text(encoding="utf-8")
     return text.replace("__DAILY_BIN__", str(bin_path)).replace("__LOG__", str(log_path))
 
 
 def _install_schedule(repo_root: Path, schedule: dict) -> None:
     """Render + install the plist, then load it. Reports exactly like
-    install.sh's own "5/7 Scheduling" step — same tone, same fallback line.
+    the installer's own messages — same tone, same fallback line.
 
     Calls `subprocess.run` at module level (not a bound default) so a test can
     patch `integrations.subprocess.run` and never spawn a real `launchctl`.
