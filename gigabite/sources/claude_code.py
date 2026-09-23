@@ -2,16 +2,19 @@
 
 Each .jsonl file is one session. Lines are newline-delimited JSON events; we
 keep user / assistant / attachment events and reconstruct the conversation in
-file order. Project is derived from the session's `cwd`.
+file order. Project comes from the session's `cwd`: its binding if the user
+made one, else the directory name through the alias map.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .. import config, util
+from ..features import bindings
 from ..store import Document, Message, Store
 from . import IngestReport, project_alias
 
@@ -25,16 +28,74 @@ def _signature(path: Path) -> str:
 
 
 def _project_from_cwd(cwd: str) -> str:
-    """Derive a project from the session's working directory, then alias it.
+    """The project a session belongs to, from its working directory.
 
-    A directory basename is not a project name: this repo lives in `giga-bite/`
-    but the project is `gigabite`, so without the alias step your Claude Code
-    sessions land under a second, near-identical project and `--project gigabite`
-    silently misses them. See ``sources.project_alias``.
+    **A binding comes first.** When the user has said which project a folder is
+    (``gigabite project bind``), that is the answer — the same lookup recall uses,
+    so a bound folder's sessions are filed under exactly the project its prompts
+    search. Without this, binding ``widgetshop/`` to ``acme`` left every session
+    run there tagged ``widgetshop`` and recall in that folder found none of them.
+    A folder bound to "not project work" files its sessions under no project.
+
+    Otherwise the basename, through the alias map: this repo lives in
+    `giga-bite/` but the project is `gigabite`, so without the alias step the
+    sessions land under a second, near-identical project. See
+    ``sources.project_alias``.
     """
     if not cwd:
         return ""
+    try:
+        bound, project = bindings.lookup(cwd)
+    except Exception:
+        bound, project = False, None
+    if bound:
+        return project or ""
     return project_alias(Path(cwd).name or cwd)
+
+
+def _memo(fn: Callable[[str], str]) -> Callable[[str], str]:
+    """One binding lookup per distinct working directory, not per session file."""
+    cache: dict = {}
+
+    def wrapped(cwd: str) -> str:
+        if cwd not in cache:
+            cache[cwd] = fn(cwd)
+        return cache[cwd]
+    return wrapped
+
+
+def _under(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def retag(store: Store, directory) -> int:
+    """Re-derive the project of every indexed session run at or under *directory*.
+
+    Called when a binding changes (bind, ``--none``, ``--forget``), because
+    ingest skips files it has already read and the content hash does not cover
+    the project — so without this a new binding would only reach sessions
+    written after it. Uses the same rule as ingest (``_project_from_cwd``), so
+    the index ends up exactly as a full re-ingest would leave it. Updates
+    ``documents`` and ``fts`` together. Returns how many documents changed.
+    """
+    root = os.path.realpath(str(directory))
+    resolve = _memo(_project_from_cwd)
+    changed = 0
+    rows = store.conn.execute(
+        "SELECT doc_id, project, extra_json FROM documents WHERE source=?",
+        (config.SOURCE_CLAUDE_CODE,)).fetchall()
+    for row in rows:
+        try:
+            cwd = (json.loads(row["extra_json"] or "{}") or {}).get("cwd") or ""
+        except (ValueError, AttributeError):
+            continue
+        if not cwd or not _under(os.path.realpath(cwd), root):
+            continue
+        project = resolve(cwd)
+        if project != (row["project"] or ""):
+            store.set_document_project(row["doc_id"], project)
+            changed += 1
+    return changed
 
 
 def _attachment_text(ev: dict) -> str:
@@ -79,7 +140,9 @@ def _origin(ev: dict, role: str, content) -> str:
     return util.message_origin(content)
 
 
-def parse_session_file(path: Path) -> Optional[Document]:
+def parse_session_file(path: Path,
+                       project_of: Callable[[str], str] = _project_from_cwd
+                       ) -> Optional[Document]:
     """Parse one .jsonl session into a Document, or None if it has no content."""
     # Identity is the FILE, not the sessionId in events: subagent transcripts
     # carry the parent's sessionId, which would collapse many files onto one doc.
@@ -157,7 +220,7 @@ def parse_session_file(path: Path) -> Optional[Document]:
         source=config.SOURCE_CLAUDE_CODE,
         native_id=native_id,
         title=title.strip(),
-        project=_project_from_cwd(cwd),
+        project=project_of(cwd),
         created_utc=first_ts,
         updated_utc=last_ts or first_ts,
         ref=str(path),
@@ -173,6 +236,7 @@ def ingest(store: Store, projects_dir: Optional[Path] = None, force: bool = Fals
         report.notes.append(f"no Claude Code projects dir at {root}")
         return report
 
+    project_of = _memo(_project_from_cwd)
     for path in sorted(root.rglob("*.jsonl")):
         # Skip internal subagent transcripts — they're not the user's conversations.
         if path.name.startswith("agent-"):
@@ -184,7 +248,7 @@ def ingest(store: Store, projects_dir: Optional[Path] = None, force: bool = Fals
             if not force and store.get_signature(config.SOURCE_CLAUDE_CODE, key) == sig:
                 report.skipped += 1
                 continue
-            doc = parse_session_file(path)
+            doc = parse_session_file(path, project_of)
             if doc is None:
                 store.set_signature(config.SOURCE_CLAUDE_CODE, key, sig)
                 report.skipped += 1

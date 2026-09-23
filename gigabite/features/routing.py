@@ -391,7 +391,8 @@ def resolve_register(prompt: str, *, previous_was_correction: bool = False,
 def route(store, prompt: str, *, limit: int = 6,
           cwd: Optional[str] = None,
           previous_was_correction: bool = False,
-          seconds_since_last: Optional[float] = None) -> dict:
+          seconds_since_last: Optional[float] = None,
+          session_id: Optional[str] = None) -> dict:
     """Resolve context and retrieve the most relevant prior conversations.
 
     **Scoped means scoped.** Recall is injected into every prompt on the machine,
@@ -456,7 +457,7 @@ def route(store, prompt: str, *, limit: int = 6,
         # None once the user has answered it, and in any directory where the
         # question would be meaningless (features/bindings.py).
         return {"context": ctx, "hits": [], "register": register,
-                "ask": bindings.ask_for(here, projects)}
+                "ask": bindings.ask_for(here, projects, session_id)}
 
     hits = store.search(prompt, project=project, limit=limit)
     return {"context": ctx, "hits": hits, "register": register, "ask": None}

@@ -11,9 +11,20 @@ GIGABITE_BIN="__GIGABITE_BIN__"
 PY=/usr/bin/python3
 
 input=$(cat)
-prompt=$(printf '%s' "$input" | "$PY" -c 'import sys,json;
-try: print(json.load(sys.stdin).get("prompt",""))
-except Exception: pass' 2>/dev/null)
+# Line 1: the session id (safe characters only, may be empty). The rest: the prompt.
+parsed=$(printf '%s' "$input" | "$PY" -c 'import sys,json,re
+try:
+    d = json.load(sys.stdin)
+    p = d.get("prompt") or ""
+    s = d.get("session_id") or ""
+    if isinstance(p, str) and p:
+        print(re.sub(r"[^A-Za-z0-9_-]", "", s if isinstance(s, str) else "")[:128])
+        print(p)
+except Exception:
+    pass' 2>/dev/null)
+session=${parsed%%$'\n'*}
+prompt=${parsed#*$'\n'}
+[ "$prompt" = "$parsed" ] && prompt=""
 
 # An empty prompt has nothing to route. Everything else goes to the router: the
 # `register` axis below owns the "is this turn worth recalling for?" call, so a
@@ -22,7 +33,9 @@ except Exception: pass' 2>/dev/null)
 # project's keywords, which is precisely the short turn that should recall.
 [ -z "$prompt" ] && exit 0
 
-json=$("$GIGABITE_BIN" route --json "$prompt" 2>/dev/null) || exit 0
+# The session id lets an unanswered "which project?" come back once per session
+# (features/bindings.py). `--` so a prompt that starts with a dash is not a flag.
+json=$("$GIGABITE_BIN" route --json ${session:+--session-id "$session"} -- "$prompt" 2>/dev/null) || exit 0
 
 GG_JSON="$json" "$PY" - <<'PY'
 import os, json

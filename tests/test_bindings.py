@@ -104,8 +104,8 @@ class TestTheAsk(BindingCase):
         text = self.route()["ask"]["text"]
         self.assertIn("alpha", text)
         self.assertIn("beta", text)
-        self.assertIn("gigabite project add", text)
-        self.assertIn("gigabite project bind", text)
+        self.assertIn("gigabite project bind <name>", text)
+        self.assertIn("a new project is created", text)
         self.assertIn("--none", text)
 
     def test_it_offers_a_create_path_when_there_are_no_projects_at_all(self):
@@ -113,7 +113,8 @@ class TestTheAsk(BindingCase):
         for name in ("alpha", "beta"):
             (config.KNOWLEDGE_DIR / name / "_project.md").unlink()
         text = self.route()["ask"]["text"]
-        self.assertIn("gigabite project add", text)
+        self.assertIn("gigabite project bind <name>", text)
+        self.assertIn("none yet", text)
         self.assertNotIn("alpha", text)
 
     def test_it_carries_no_other_project_content(self):
@@ -177,9 +178,9 @@ class TestNothingIsInvented(BindingCase):
         self.assertEqual(bindings.load(), {})
 
     def test_recording_a_binding_creates_no_project_folder(self):
-        """The write path itself invents nothing. `gigabite project bind` refuses an
-        unknown name outright (test_cli.py); even reached directly, this writes a
-        binding and no knowledge — a name is not a project until the user says so."""
+        """The write path itself invents nothing. `gigabite project bind` creates an
+        unknown name only because the user typed it (test_cli.py); reached
+        directly, this writes a binding and no knowledge — a name is not a project until the user says so."""
         bindings.bind(self.work, "no-such-project")
         self.assertFalse((config.KNOWLEDGE_DIR / "no-such-project").exists())
         self.assertIsNone(self.route()["context"]["project"])
@@ -947,9 +948,9 @@ class TestALineTerminatorCannotBreakOutOfTheBlock(BindingCase):
     def test_the_block_would_have_broken_out(self):
         """The danger is real, not theoretical — this is what suppression prevents."""
         plain = bindings._ask_text("/tmp/app", [])
-        self.assertEqual(len(plain.splitlines()), 12)
+        self.assertEqual(len(plain.splitlines()), 11)
         rendered = bindings._ask_text("/tmp/app %s x" % self.PAYLOAD, [])
-        self.assertGreater(len(rendered.splitlines()), 12)
+        self.assertGreater(len(rendered.splitlines()), 11)
         self.assertIn(self.PAYLOAD, rendered.splitlines()[6])
 
     def test_no_terminator_survives_into_the_rendered_text(self):
