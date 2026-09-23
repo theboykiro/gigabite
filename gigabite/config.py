@@ -2,7 +2,7 @@
 
 Everything content-bearing lives under the home directory, never in the repo:
 
-    ~/.core/       operating protocol (core.md) + reusable capability
+    ~/.core/       operating protocol (core.md)
     ~/Knowledge/   project knowledge — and nothing else
 
 ``~/Knowledge`` is deliberately visible, and deliberately boring to look at. It

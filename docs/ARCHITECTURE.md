@@ -76,12 +76,9 @@ block that the installer keeps in `~/.claude/CLAUDE.md` ends with `@~/.core/core
 so the file is expanded into every session with no hook and no command. The two files
 stay separate on purpose. CLAUDE.md belongs to the user, and gigabite only rewrites
 the text between its markers. core.md is gigabite's to regenerate whole, but only
-through the gated `core apply`. The `gg-*` subagents still load it by path, as a
-fallback in case a subagent starts without user memory.
+through the gated `core apply`.
 
-It lives at `~/.core/core.md`, with supporting capability files alongside it in
-`~/.core/capability/`. That supporting knowledge — frameworks, methods, command
-templates, SOPs — is always available and is emphatically **not** a project; it never
+It lives at `~/.core/core.md`. `~/.core` is emphatically **not** a project; it never
 resolves as one. The whole directory is cloud-synced and never committed.
 
 ### 2.2 Project context
@@ -285,7 +282,7 @@ not stubbed.
 | Asset | Location | Backup | GitHub |
 |---|---|---|---|
 | Router and scripts (code) | working directory / repo | git | Yes |
-| `core.md` and capability | `~/.core/` | Cloud sync | Never |
+| `core.md` | `~/.core/` | Cloud sync | Never |
 | Project knowledge and notes | `~/Knowledge/` | Cloud sync | Never |
 | Credentials | macOS keychain | — | Never |
 
@@ -315,8 +312,6 @@ convenience. The two load-bearing verifications came first, because both changed
 shape of what got built. Then the core load — `core.md` always loaded, knowledge read
 from `~/Knowledge`. Then context detection with nested-layer resolution, then
 knowledge-write routing, then manual meeting supply.
-The SOP system with role-based agent spawning came last, because it depends
-on everything beneath it working.
 
 ## 10. Open items
 

@@ -6,7 +6,7 @@
 #   • clones to ~/gigabite (or updates an existing clone there)
 #   • hands over to ./install.sh, which does the real work
 # Safe to run again any time. Your notes and settings are left alone; the Claude Code
-# commands and subagents that gigabite itself installs are replaced with current ones.
+# commands that gigabite itself installs are replaced with current ones.
 set -euo pipefail
 
 REPO_SLUG="theboykiro/gigabite"

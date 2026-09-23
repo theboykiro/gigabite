@@ -59,11 +59,8 @@ protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
 ambient-recall hook in `~/.claude/settings.json`, schedules a daily index refresh
 through launchd, and builds the initial index.
 
-It also installs the Claude Code slash commands (`/search`, `/core-setup`), the
-`gg-*` subagents, and three skills
-(`meeting-prep`, `decision-record`, `design-critique`) that trigger on what you ask
-for rather than needing to be named, refreshing its own copies on every run so an
-update reaches them. If a command or agent of that
+It also installs the Claude Code slash commands (`/search`, `/core-setup`),
+refreshing its own copies on every run so an update reaches them. If a command of that
 name is already yours, it is left alone and the installer tells you it did so. The
 one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
 beside it. Your knowledge base, your notes and your own `core.md` are never touched.
@@ -92,8 +89,8 @@ script is fed down a pipe rather than run at a terminal. It is safe to run twice
 the second time it tells you everything is already gone.
 
 It reverses `install.sh` step for step: the `gigabite` launcher and the `PATH` line
-in your `.zshrc` and `.bash_profile`, the slash commands, the `gg-*` subagents, the
-three skills, the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
+in your `.zshrc` and `.bash_profile`, the slash commands (and any subagents or skills
+an older version installed), the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
 `~/.claude/settings.json`, the scheduled daily job and its log. Files it edits
 rather than owns are backed up first, and it tells you where.
 
@@ -245,7 +242,8 @@ gigabite/            the package
   util.py              text extraction, time parsing, FTS query safety
   ingest.py            runs every source in order; notes last, and why
   cli.py               the `gigabite` command
-  features/            save · intake · routing · materialize · sops
+  features/            save · intake · routing · bindings · materialize ·
+                       core_slots · core_interview · core_proposal · integrations
   sources/
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)

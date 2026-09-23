@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gigabite uninstaller — reverses install.sh, and touches nothing else.
 #   • removes the `gigabite` launcher from your PATH and the line it added to your shell rc
-#   • removes the Claude Code commands, subagents and skills the installer wrote
+#   • removes the Claude Code commands (and any subagents or skills an older install wrote)
 #   • removes the router block from ~/.claude/CLAUDE.md and the recall hook from settings.json
 #   • unloads and removes the scheduled daily synthesis job and its log
 # Your knowledge base (~/Knowledge) and your operating protocol (~/.core) are never
@@ -202,17 +202,16 @@ PY
 # ---------------------------------------------------------------------------
 step_claude_files() {
   say "2/6  Removing the Claude Code commands, subagents and skills"
-  local f a s skill
+  local f a skill
   # The two current commands, plus every one an older install may have left there.
   for f in gg search search-status calendar meeting core-setup recall-status granola; do
     remove_managed "$CMD_DIR/$f.md" "/$f"
   done
+  # Subagents and skills no longer ship, but an older install may have left them.
   for a in gg-builder gg-researcher gg-reviewer; do
     remove_managed "$AGENT_DIR/$a.md" "subagent $a"
   done
-  for s in "$REPO/install/scaffold/skills/"*/SKILL.md; do
-    [ -e "$s" ] || continue
-    skill="$(basename "$(dirname "$s")")"
+  for skill in meeting-prep decision-record design-critique; do
     remove_managed "$SKILL_DIR/$skill/SKILL.md" "skill $skill"
     remove_dir_if_empty "$SKILL_DIR/$skill" "skill directory $skill" "SKILL.md"
   done

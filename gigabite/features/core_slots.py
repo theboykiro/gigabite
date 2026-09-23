@@ -206,8 +206,7 @@ SECTION_FILL_TEXT: dict[int, str] = {
         "- What counts as \"done\" (e.g. tested end-to-end, not just written)."
     ),
     6: (
-        "- When to delegate to a sub-agent vs. do it inline.\n"
-        "- Which SOP a spawned agent loads for its role (SOPs are modular; see `~/.core/capability/`)."
+        "- When to delegate to a sub-agent vs. do it inline."
     ),
 }
 

@@ -62,7 +62,7 @@ WELCOME_FIRST = "gigabite is installed"
 #
 #   1/9 heading, store paths
 #   2/9 heading, linked + PATH, "open a new terminal" (the way to use what was made)
-#   3/9 heading, "2 commands, 3 subagents, 3 skills"
+#   3/9 heading, "slash commands installed: 2"
 #   4/9 heading, router + hook (with the way to switch the hook off)
 #   5/9 heading, scheduled, "disable with: launchctl bootout ..."
 #   6/9 heading, the integrations menu — a note pointing at `gigabite integrations`
@@ -211,9 +211,8 @@ class TestQuietByDefault(InstallCase):
             self.assertIn(step, self.out)
 
     def test_the_per_item_confirmations_are_collapsed_into_a_count(self):
-        self.assertIn("2 commands, 3 subagents, 3 skills", self.out)
-        for gone in ("✓ /search", "subagent gg-builder", "skill meeting-prep",
-                     "seeded .core/core.md"):
+        self.assertIn("slash commands installed: 2", self.out)
+        for gone in ("✓ /search", "seeded .core/core.md"):
             self.assertNotIn(gone, "\n".join(self.preamble(self.out)),
                              "per-item line still printed in the quiet run: %s" % gone)
 
@@ -245,12 +244,13 @@ class TestVerboseRestoresTheDetail(InstallCase):
 
     def test_verbose_prints_materially_more_than_the_quiet_run(self):
         quiet, loud = len(self.preamble(self.quiet)), len(self.preamble(self.loud))
-        self.assertGreater(loud, quiet + 9,
+        # Six per-item lines today: two commands, two seeded files, the router
+        # block and the hook.
+        self.assertGreater(loud, quiet + 5,
                            "verbose added only %d lines" % (loud - quiet))
 
     def test_verbose_names_every_file_it_wrote(self):
-        for item in ("/search", "/core-setup", "subagent gg-builder",
-                     "skill meeting-prep", "seeded .core/core.md",
+        for item in ("✓ /search", "✓ /core-setup", "seeded .core/core.md",
                      "seeded Knowledge/README.md"):
             self.assertIn(item, self.loud)
 
@@ -258,7 +258,7 @@ class TestVerboseRestoresTheDetail(InstallCase):
         """So it can be turned on for a run nobody is typing — a bootstrap, a
         colleague pasting one line, a CI job."""
         out = self.install(extra_env={"GIGABITE_VERBOSE": "1"})
-        self.assertIn("subagent gg-builder", out)
+        self.assertIn("seeded .core/core.md", out)
 
     def test_a_mistyped_flag_is_refused_rather_than_ignored(self):
         """The failure this flag exists to prevent is a quiet install that the
@@ -285,14 +285,31 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
         self.assertEqual(digest, hashlib.sha256(mine.read_bytes()).hexdigest(),
                          "overwrote a file gigabite did not write")
         # And the count tells the truth about it rather than claiming two.
-        self.assertIn("1 commands, 3 subagents, 3 skills", out)
+        self.assertIn("slash commands installed: 1", out)
 
-    def test_an_agent_of_the_users_own_is_reported_as_kept_in_the_quiet_run(self):
+    def test_an_agent_of_the_users_own_is_left_alone(self):
         mine = self.sandbox.write(".claude/agents/gg-builder.md",
                                   "# my builder\nno marker\n")
         out = self.install()
-        self.assertIn("kept your own subagent gg-builder", out)
+        self.assertNotIn("removed subagent gg-builder", out)
         self.assertEqual("# my builder\nno marker\n", mine.read_text(encoding="utf-8"))
+
+    def test_subagents_and_skills_an_older_install_wrote_are_removed(self):
+        for name in ("gg-builder", "gg-researcher", "gg-reviewer"):
+            self.sandbox.write(".claude/agents/%s.md" % name, "a gigabite subagent\n")
+        for name in ("meeting-prep", "decision-record", "design-critique"):
+            self.sandbox.write(".claude/skills/%s/SKILL.md" % name, "a gigabite skill\n")
+        extra = self.sandbox.write(".claude/skills/meeting-prep/notes.md", "mine\n")
+        out = self.install()
+        home = self.sandbox.home
+        for name in ("gg-builder", "gg-researcher", "gg-reviewer"):
+            self.assertFalse((home / (".claude/agents/%s.md" % name)).exists(), name)
+            self.assertIn("removed subagent %s" % name, out)
+        for name in ("decision-record", "design-critique"):
+            self.assertFalse((home / (".claude/skills/%s" % name)).exists(), name)
+        # A skill directory holding a file of the user's keeps the file and the folder.
+        self.assertFalse((home / ".claude/skills/meeting-prep/SKILL.md").exists())
+        self.assertEqual("mine\n", extra.read_text(encoding="utf-8"))
 
     def test_commands_an_older_install_wrote_are_removed_but_the_users_own_are_kept(self):
         retired = ("gg", "search-status", "calendar", "meeting", "recall-status", "granola")

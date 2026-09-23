@@ -19,8 +19,7 @@ does not already exist, so re-running it never overwrites something you have edi
 |---|---|---|
 | `claude-commands/` | `~/.claude/commands/` | The slash commands — `/search` and `/core-setup`. The placeholder `__GIGABITE_BIN__` is substituted for the real launcher path at install time, because Claude Code needs an absolute path in its `allowed-tools` declaration. |
 | `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn. The installer also registers it in `~/.claude/settings.json`; remove it there to switch ambient recall off. |
-| `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/agents/`, `~/.claude/skills/` | Starter templates: `core.md`, the capability README, the SOPs, the `gg-*` subagents, the `meeting-prep` / `decision-record` / `design-critique` skills, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
-| `scaffold/skills/` | `~/.claude/skills/<name>/SKILL.md` | One directory per skill, and the directory name *is* the skill name. Claude Code only reads `<name>/SKILL.md`, so the nesting is not cosmetic — a flat `<name>.md` is ignored without a warning. |
+| `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/CLAUDE.md` | Starter templates: `core.md`, the router block kept in `~/.claude/CLAUDE.md`, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
 | `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled daily job that refreshes the index (`bin/gigabite-daily`). The name predates the job's current scope. |
 | `scripts/` | *nothing — run by hand* | `claude-ai-safari-export.js`, which you paste into the claude.ai browser console to export your chats. It is here because it is part of the setup story, not because the installer touches it. |
 
@@ -30,16 +29,8 @@ one place. It removes only what carries gigabite's marker or names gigabite, so 
 file of yours that happens to sit at one of these paths is reported and left alone.
 Neither script touches `~/Knowledge` or `~/.core/core.md`.
 
-The `scaffold/` entry is the one that reaches furthest. It seeds `~/.core/core.md` and
-`~/.core/capability/`, the README at `~/Knowledge/README.md`, the subagent definitions
-Claude Code loads from `~/.claude/agents/`, and the skills it loads from
-`~/.claude/skills/`. Everything it writes is a template with no real content in it.
-
-Skills differ from the slash commands in one way that constrains naming: a skill fires
-on its own `description` without being called by name, and **a skill shadows a slash
-command that shares its name**. So no skill may be called `search` or `core-setup` —
-installing one would silently disable the command of that name. `tests/test_skills.py`
-holds that line.
+The `scaffold/` entry seeds `~/.core/core.md` and the README at `~/Knowledge/README.md`.
+Everything it writes is a template with no real content in it.
 
 That knowledge README is the one file the installer *refreshes* rather than leaves
 alone, and the reason is worth stating: it is instructions, not content. It tells you
@@ -59,8 +50,8 @@ files are the ones that look most like notes.
 **Paths here are referenced from `install.sh` as `$REPO/install/...`.** The installer
 copies specific files by name. Move or rename anything in this directory and that
 script has to move with it, or the install will silently seed one fewer file than it
-should. `uninstall.sh` reads `scaffold/skills/*/SKILL.md` to learn which skills it
-installed, so a rename there strands the old one on the machine as well.
+should. A command that is renamed or retired has to be added to the stale lists in
+both `install.sh` and `uninstall.sh`, or the old copy is stranded on the machine.
 
 Between them these two rules cover the only ways this directory tends to break: by
 leaking content that should have stayed local, or by drifting out of step with the
