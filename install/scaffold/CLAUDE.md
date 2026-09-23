@@ -1,42 +1,27 @@
 <!-- gigabite:router:start -->
-# gigabite — your context router (auto-loaded)
+# gigabite — the user's local memory (auto-loaded)
 
-You have a local, searchable memory of the user's entire history — Claude Code
-sessions, claude.ai chats (in and out of projects), and your meetings — indexed
-by the `gigabite` tool. Behave as their **context router**, not a blank-slate model.
+The `gigabite` tool indexes the user's Claude Code sessions, claude.ai chats, meetings
+and notes on this machine, grouped by project. Answer with that history, not from a
+blank slate.
 
-- **Recall before answering.** When the user refers to past work, decisions,
-  meetings, or asks "what did we…", retrieve first: `gigabite search "<terms>"
-  --project <p>`, with the project the recall block or ask names (`detected
-  context: <p>`); search unscoped only when the user asks across projects
-  (a `[gigabite recall]` block may already be injected for the turn). Answer from
-  that, and cite what you use as *(source · title · date)*. Never invent history —
-  if recall is empty, say so.
-- **Operating protocol.** The user's voice, tone, and decision principles live in
-  `~/.core/core.md`, imported at the end of this block so it loads every session.
-  Follow it.
-- **Persist knowledge only through the tool.** To keep a note/decision, use
-  `gigabite save "<text>" --project <p> [--layer <l>]`. It routes to
-  `~/Knowledge/{project}/{layer}/` — never write knowledge into the working directory.
-- **Anything handed to you goes in through the tool.** A pasted transcript is
-  `gigabite paste --stdin` (a clipboard one is plain `gigabite paste`); a file —
-  screenshot, PDF, export — is `gigabite add <path>`. Both write into
-  `~/Knowledge/{project}/[{layer}/]`, which is the same place the user reaches by
-  dragging a file there in Finder, so it lands in the same place in the same shape
-  whichever way it reached you. Never write into `~/Knowledge` yourself and never
-  invent a destination: if no project resolves, the tool leaves the file at the top of
-  `~/Knowledge` for the user to drag in, and that is the correct outcome, not a
-  failure to fix by guessing.
-- **Delegate to protect the main thread.** Context is re-read every turn, so cost grows
-  with how much you accumulate — the fix is keeping bulk output out of this thread, not
-  shortening it. Spawn a subagent whenever you only need the *conclusion* of an
-  operation, judged by its shape, not whether it looks like a "task": scanning many
-  files, grepping the codebase, reading transcripts/logs/jsonl, sizing up an unfamiliar
-  area, any sweep whose raw output you'd skim once and never cite. Read a file directly
-  only when you need its exact contents to edit or quote it. When a session is running
-  long, say so and suggest `/clear` — don't quietly keep paying for it.
-- **Entry points.** Ambient recall is injected per message via the UserPromptSubmit
-  hook; `/search <terms>` searches everything, across all projects.
+- **Recall.** A `[gigabite recall]` block may already be attached to the turn, scoped
+  to the project this folder is bound to. When the user asks about past work and it
+  isn't enough, search: `gigabite search "<terms>" --project <p>`, using the project
+  the block names (`detected context: <p>`). Search without `--project` only when the
+  user asks across projects. Cite what you use as *(source · title · date)*. Never
+  invent history — if nothing comes back, say so.
+- **The "which project?" ask.** When a `[gigabite — this folder is not linked to a
+  project]` block appears, ask the user and run the command it gives with *their*
+  answer. Never pick the project yourself, and never from the folder name.
+- **Operating protocol.** The user's voice and working rules are in `~/.core/core.md`,
+  imported below. Follow it. It is changed only through `/core-setup` or by the user.
+- **Saving knowledge.** Use the tool, never the working directory:
+  `gigabite save "<text>" --project <p> [--layer <l>]` for a note,
+  `gigabite paste --stdin` for pasted text (plain `gigabite paste` reads the
+  clipboard), `gigabite add <path>` for a file. If no project resolves, the tool
+  leaves the file at the top of `~/Knowledge` for the user to file — that is the
+  correct outcome, not something to fix by guessing.
 
 @~/.core/core.md
 <!-- gigabite:router:end -->
