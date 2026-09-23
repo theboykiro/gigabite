@@ -335,7 +335,7 @@ class TestTheAskRepeatsPerSessionUntilAnswered(HookCase):
         self.assertEqual(record[self.work_real]["session"], "s1rm-rftmpxid")
 
     def test_the_older_timestamp_record_still_reads(self):
-        bindings._save({}, {self.work_real: "2026-01-01T00:00:00+00:00"})
+        bindings._write({}, {self.work_real: "2026-01-01T00:00:00+00:00"})
         self.assertTrue(self.asks("s1"))
 
 
