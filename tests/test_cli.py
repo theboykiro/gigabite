@@ -638,16 +638,6 @@ class TestReindex(CliTestCase):
         run("ingest")
         self.assertEqual({d["doc_id"] for d in self.store().iter_documents()}, before)
 
-    def test_the_ledger_survives_a_reindex(self):
-        from gigabite.features import ledger as L
-        led = L.Ledger.open()
-        rid = led.start_run("outlive a reindex").run_id
-        led.close()
-        run("reindex")
-        led = L.Ledger.open()
-        self.addCleanup(led.close)
-        self.assertIsNotNone(led.get_run(rid))
-
 
 class TestSaveAndProject(CliTestCase):
     def test_save_writes_into_the_project_folder(self):
@@ -710,11 +700,10 @@ class TestCalendar(CliTestCase):
 
 
 class TestPaths(CliTestCase):
-    def test_names_the_ledger_and_the_knowledge_root(self):
+    def test_names_the_knowledge_root(self):
         code, out = run("paths")
         self.assertEqual(code, 0)
         self.assertIn(str(self.root), out)
-        self.assertIn("ledger", out)
 
 
 class TestNoArguments(CliTestCase):
@@ -725,23 +714,21 @@ class TestNoArguments(CliTestCase):
 
 
 class TestHelpSurface(CliTestCase):
-    """The autonomy commands are wired but nothing drives them yet, so they stay
-    out of --help. Hidden, not removed: help has to omit them and they still
-    have to run."""
+    """Commands cut before alpha must be gone from --help and must not dispatch."""
 
-    HIDDEN = ("run", "policy", "connect", "audit")
+    REMOVED = ("run", "policy", "connect", "audit")
 
     def _help(self):
         # format_help() rather than run("--help"), which exits via SystemExit.
         return cli.build_parser().format_help()
 
-    def test_help_omits_the_undriven_autonomy_commands(self):
+    def test_help_omits_the_removed_commands(self):
         listed = {
             line.split()[0]
             for line in self._help().splitlines()
             if line.startswith("    ") and line.split()
         }
-        for name in self.HIDDEN:
+        for name in self.REMOVED:
             self.assertNotIn(name, listed)
 
     def test_help_still_lists_the_commands_with_callers(self):
@@ -749,12 +736,13 @@ class TestHelpSurface(CliTestCase):
         for name in ("search", "save", "paste", "add", "ingest", "route"):
             self.assertIn(name, out)
 
-    def test_hidden_commands_still_dispatch(self):
-        for args in (("run", "list"), ("policy", "show"),
-                     ("connect", "list"), ("audit",)):
-            with self.subTest(command=" ".join(args)):
-                code, _ = run(*args)
-                self.assertEqual(code, 0)
+    def test_removed_commands_no_longer_parse(self):
+        parser = cli.build_parser()
+        for name in self.REMOVED:
+            with self.subTest(command=name), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args([name])
 
     def test_suppress_sentinel_never_leaks_into_help(self):
         # argparse formats subactions without the SUPPRESS check it applies to

@@ -54,7 +54,7 @@ from gigabite.store import Document, Message, Store, connect  # noqa: E402
 # failure mode otherwise is a test quietly reaching the real ~/Knowledge.
 _DERIVED = (
     "KNOWLEDGE_DIR", "CORE_DIR", "CORE_FILE", "MACHINE_DIR", "INDEX_DIR", "DB_PATH",
-    "LEDGER_PATH", "STOP_FILE", "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_MEETINGS",
+    "SOURCES_DIR", "SOURCES_CLAUDE_AI", "SOURCES_MEETINGS",
     "HISTORICAL_DIR", "PROPOSALS_DIR", "ORIGINALS_DIR", "ALIASES_FILE",
     "BINDINGS_FILE",
     "INBOX_CLAUDE_AI", "INBOX_MEETINGS", "INBOX_DIR",
@@ -117,8 +117,6 @@ def _repoint(knowledge: Path, core: Path) -> None:
     config.MACHINE_DIR = config.machine_dir()
     config.INDEX_DIR = config.MACHINE_DIR / "index"
     config.DB_PATH = config.INDEX_DIR / "gigabite.db"
-    config.LEDGER_PATH = config.INDEX_DIR / "ledger.db"
-    config.STOP_FILE = config.MACHINE_DIR / "STOP"
     config.SOURCES_DIR = config.MACHINE_DIR / "imports"
     config.SOURCES_CLAUDE_AI = config.SOURCES_DIR / "claude_ai"
     config.SOURCES_MEETINGS = config.SOURCES_DIR / "meetings"
