@@ -1,9 +1,8 @@
 """The operating protocol as a set of answerable questions (docs/CORE_SETUP.md §2).
 
-`core.md` is the constitutional layer, and today it is seeded from a static
-template whose sections 2, 3 and 6 are literally marked `[FILL]` for the user to
-finish by hand. Almost nobody does, so most installs run a generic assistant and
-never find out that the protocol layer was the point.
+`core.md` is the constitutional layer. The installer seeds it from a static
+template whose sections 2, 3 and 6 are marked `[FILL]`; `/core-setup` fills them
+by asking, one slot at a time.
 
 This module is the data half of the replacement: a **slot registry** in the same
 shape as the integrations registry, so adding a question to the protocol is
@@ -222,7 +221,7 @@ SLOTS: tuple[Slot, ...] = (
         evidence_terms=("stop saying", "don't preamble", "no summary", "cut the",
                         "you're absolutely right", "skip the intro"),
         default_text=(
-            "*(Seeded from your TONE_OVERRIDE.md (docs/history/) — this is already your voice.)*\n"
+            "*(A default voice — edit freely, or run `/core-setup` to make it yours.)*\n"
             "\n"
             "**Cut**\n"
             "- No validation openers (\"you're absolutely right\", \"great question\", \"perfect\").\n"
@@ -386,10 +385,7 @@ SLOTS: tuple[Slot, ...] = (
             "- Treat project/client data as confidential. Nothing sensitive leaves the device.\n"
             "- Before any web search or external call, strip/anonymise project names and internals,\n"
             "  or refuse. Enforce at the point of egress.\n"
-            "- Credentials come from the OS keychain at runtime, never from files or the repo.\n"
-            "- **The repo is an egress boundary too.** Only code goes to GitHub. Client names,\n"
-            "  stakeholders and internals never enter it — including in examples, comments and\n"
-            "  test fixtures. Use a neutral placeholder."
+            "- Credentials come from the OS keychain at runtime, never from files."
         ),
     ),
     # -- 5. Knowledge routing ------------------------------------------------
@@ -417,9 +413,8 @@ SLOTS: tuple[Slot, ...] = (
         kind="shipped",
         title="A subagent's \"done\" is a claim",
         shipped_text=(
-            "- **A subagent's \"done\" is a claim, not evidence.** Verify delegated work against\n"
-            "  the real artefact before relaying it — an agent reporting success while doing the\n"
-            "  opposite is a real failure mode, not a hypothetical one."
+            "- **A subagent's \"done\" is a claim, not evidence.** Check delegated work against\n"
+            "  the real result before relaying it."
         ),
     ),
 )
@@ -451,7 +446,7 @@ def get_slot(slot_id: str) -> Slot:
 _HEADER = """# Core Protocol
 
 *The constitutional layer. Loaded in full, every session, project-agnostic.*
-*Local only — lives in `~/.core/`, backed up by your OS's file sync, never pushed anywhere.*
+*Local only — lives in `~/.core/` and never leaves this machine.*
 
 This file governs **how** the system works regardless of what you're working on.
 Project knowledge (the **what**) lives in `~/Knowledge/` and loads per task."""
