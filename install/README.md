@@ -1,58 +1,25 @@
 # install/
 
-This directory holds everything `install.sh` copies **onto the machine**. Nothing in
-here is imported by the `gigabite` package at runtime, and nothing in here runs as
-part of the tool itself. It is the integration surface — the files that teach Claude
-Code, launchd, and your home directory how to work with gigabite — kept in one place
-so that the repository root stays about the tool rather than about its plumbing.
-
-The separation matters when you are reading the code. If you are trying to
-understand what gigabite *does*, none of this is relevant. If you are trying to
-understand what changed on your machine after you ran the installer, all of it is.
-
-## What each directory installs
-
-The installer walks these in order, copying templates only where the destination
-does not already exist, so re-running it never overwrites something you have edited.
+Everything `install.sh` copies onto the machine. Nothing here is imported by the
+`gigabite` package at runtime. If you want to know what changed on your machine after
+installing, this is the list; `../uninstall.sh` takes each row back off again.
 
 | Directory | Installs to | What it is |
 |---|---|---|
-| `claude-commands/` | `~/.claude/commands/` | The slash commands — `/search` and `/core-setup`. The placeholder `__GIGABITE_BIN__` is substituted for the real launcher path at install time, because Claude Code needs an absolute path in its `allowed-tools` declaration. |
-| `hooks/` | `~/.claude/gigabite/` | `gg-recall.sh`, the `UserPromptSubmit` hook that injects ambient recall into every turn. The installer also registers it in `~/.claude/settings.json`; remove it there to switch ambient recall off. |
-| `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/CLAUDE.md` | Starter templates: `core.md`, the router block kept in `~/.claude/CLAUDE.md`, and the README that explains the knowledge base to a human who opens it. Copied only if absent — with one exception, below. |
-| `launchd/` | `~/Library/LaunchAgents/` | `com.gigabite.synthesis.plist`, the scheduled daily job that refreshes the index (`bin/gigabite-daily`). The name predates the job's current scope. |
-| `scripts/` | *nothing — run by hand* | `claude-ai-safari-export.js`, which you paste into the claude.ai browser console to export your chats. It is here because it is part of the setup story, not because the installer touches it. |
+| `claude-commands/` | `~/.claude/commands/` | `/search` and `/core-setup`. `__GIGABITE_BIN__` is replaced with the launcher's absolute path at install time. |
+| `hooks/` | `~/.claude/gigabite/` | The Claude Code hooks, registered in `~/.claude/settings.json`: `gg-recall.sh` (`UserPromptSubmit`, ambient recall) and the background index refresh when a session starts. Remove them from `settings.json` to switch them off. |
+| `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/CLAUDE.md` | `core.md` (copied only if absent), the knowledge-base README, and the router block kept between markers in `~/.claude/CLAUDE.md`. |
+| `launchd/` | `~/Library/LaunchAgents/` | The optional daily Granola pull. It's installed by `gigabite integrations`, only if you enable it. |
+| `scripts/` | nothing (you run it) | `claude-ai-safari-export.js`, pasted into the claude.ai browser console to export your chats. |
 
-Every row in that table is something `../uninstall.sh` takes back off the machine
-again, which is the other reason the destinations are worth having written down in
-one place. It removes only what carries gigabite's marker or names gigabite, so a
-file of yours that happens to sit at one of these paths is reported and left alone.
-Neither script touches `~/Knowledge` or `~/.core/core.md`.
+`~/Knowledge/README.md` is the one file refreshed on every run, because it's instructions,
+not content. The old copy is moved to `~/Knowledge/.gigabite/originals/` first. Neither
+script touches your notes or an existing `core.md`.
 
-The `scaffold/` entry seeds `~/.core/core.md` and the README at `~/Knowledge/README.md`.
-Everything it writes is a template with no real content in it.
+When editing here:
 
-That knowledge README is the one file the installer *refreshes* rather than leaves
-alone, and the reason is worth stating: it is instructions, not content. It tells you
-where things go, so a stale copy sends you to a folder that no longer exists — a worse
-outcome than losing a note you wrote. The replaced text is moved into
-`~/Knowledge/.gigabite/originals/` first, so nothing is destroyed and the installer's
-promise still holds.
-
-## Two rules when editing anything here
-
-**Scaffold holds templates, never real content.** Anything with a real client name,
-a stakeholder, a price, or an internal detail belongs in `~/Knowledge`, not in this
-repository. This is the same confidentiality boundary the rest of the project runs
-on, and the scaffold is the easiest place to breach it by accident, because these
-files are the ones that look most like notes.
-
-**Paths here are referenced from `install.sh` as `$REPO/install/...`.** The installer
-copies specific files by name. Move or rename anything in this directory and that
-script has to move with it, or the install will silently seed one fewer file than it
-should. A command that is renamed or retired has to be added to the stale lists in
-both `install.sh` and `uninstall.sh`, or the old copy is stranded on the machine.
-
-Between them these two rules cover the only ways this directory tends to break: by
-leaking content that should have stayed local, or by drifting out of step with the
-script that reads it. Check both before committing a change in here.
+- **Templates only, never real content.** No client names, people, prices or internal
+  details. These files are the easiest place to leak them, because they look like notes.
+- **`install.sh` copies files by name.** Rename or retire a file and update `install.sh`
+  and `uninstall.sh` too, including their lists of stale commands. Otherwise the old copy
+  is stranded on users' machines.

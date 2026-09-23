@@ -172,6 +172,96 @@ class ApplyingAnswers(TempRoot):
         self.assertEqual(plan["remaining_required"], 7)
 
 
+
+class HandEditsSurvive(TempRoot):
+    """`/core-setup` edits the user's file; it does not regenerate it (B7)."""
+
+    def seed_scaffold(self, extra_in_section_4="", tail=""):
+        text = core_slots.render_core_md({})
+        if extra_in_section_4:
+            anchor = "## 5. Knowledge routing"
+            text = text.replace(anchor, extra_in_section_4 + "\n\n" + anchor)
+        if tail:
+            text = text.replace("\n---\n\n*Keep this file",
+                                "\n" + tail + "\n\n---\n\n*Keep this file")
+        config.CORE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.CORE_FILE.write_text(text, encoding="utf-8")
+        return text
+
+    def test_edits_outside_the_answered_section_are_kept(self):
+        self.seed_scaffold(extra_in_section_4="- My own rule: never paste logs into chat.",
+                           tail="## 7. Mine\n\n- A section I added.")
+        result = core_interview.apply_answers({"decisions.momentum": "- **Act.**"})
+        text = config.CORE_FILE.read_text(encoding="utf-8")
+        self.assertIn("- **Act.**", text)
+        self.assertIn("- My own rule: never paste logs into chat.", text)
+        self.assertIn("## 7. Mine\n\n- A section I added.", text)
+        self.assertFalse(result["rewritten_whole"])
+        # still backed up, every time
+        self.assertEqual(len(list(config.ORIGINALS_DIR.glob("replaced-*-core.md"))), 1)
+
+    def test_an_edited_header_and_voice_survive_a_later_section(self):
+        text = self.seed_scaffold()
+        text = text.replace("## 1. Voice & tone\n",
+                            "## 1. Voice & tone\n\n- Write in British English.\n")
+        config.CORE_FILE.write_text(text, encoding="utf-8")
+        core_interview.apply_answers({"info.done_means": "- **Observed working.**"})
+        out = config.CORE_FILE.read_text(encoding="utf-8")
+        self.assertIn("- Write in British English.", out)
+        self.assertIn("- **Observed working.**", out)
+
+    def test_only_the_answered_section_changes(self):
+        before = self.seed_scaffold()
+        core_interview.apply_answers({"decisions.momentum": "- **Act.**"})
+        after = config.CORE_FILE.read_text(encoding="utf-8")
+
+        def section(text, n):
+            start = text.index(f"## {n}.")
+            nxt = text.find("\n## ", start + 1)
+            return text[start:nxt if nxt > 0 else len(text)]
+        for n in (1, 3, 4, 5, 6):
+            self.assertEqual(section(before, n), section(after, n), n)
+        self.assertNotEqual(section(before, 2), section(after, 2))
+
+    def test_answering_everything_clears_the_fill_note(self):
+        self.seed_scaffold()
+        core_interview.apply_answers({
+            "decisions.ambiguity": "- a.", "decisions.momentum": "- b.",
+            "decisions.pushback": "- c.", "autonomy.grid": GRID,
+            "info.verification": "- d.", "info.uncertainty": "- e.",
+            "info.done_means": "- f.",
+        })
+        text = config.CORE_FILE.read_text(encoding="utf-8")
+        self.assertNotIn(core_slots.FILL_MARKER, text)
+        self.assertIn("Every section is filled", text)
+
+    def test_an_unrecognisable_file_is_backed_up_and_reported(self):
+        config.CORE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.CORE_FILE.write_text("# my protocol\n\nbe brief\n", encoding="utf-8")
+        result = core_interview.apply_answers({"decisions.momentum": "- **Act.**"})
+        self.assertTrue(result["rewritten_whole"])
+        kept = list(config.ORIGINALS_DIR.glob("replaced-*-core.md"))
+        self.assertEqual(len(kept), 1)
+        self.assertIn("be brief", kept[0].read_text(encoding="utf-8"))
+
+    def test_a_duplicated_heading_counts_as_unrecognisable(self):
+        text = self.seed_scaffold()
+        config.CORE_FILE.write_text(text + "\n## 2. Decision principles\n\n- again\n",
+                                    encoding="utf-8")
+        result = core_interview.apply_answers({"decisions.momentum": "- **Act.**"})
+        self.assertTrue(result["rewritten_whole"])
+
+    def test_the_cli_says_when_it_rewrote_the_whole_file(self):
+        config.CORE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        config.CORE_FILE.write_text("no headings here\n", encoding="utf-8")
+        payload = self.root / "answers.json"
+        payload.write_text(json.dumps({"answers": {"decisions.momentum": "- **Act.**"}}),
+                           encoding="utf-8")
+        code, out = run("core", "apply", "--file", str(payload))
+        self.assertEqual(code, 0)
+        self.assertIn("rewritten whole", out)
+        self.assertIn("previous version kept in", out)
+
 class TheCli(TempRoot):
 
     def test_interview_json_is_what_the_command_consumes(self):

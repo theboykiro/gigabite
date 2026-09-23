@@ -277,35 +277,27 @@ class TestProjectIsNeverGuessed(_Base):
         self.assertEqual(plan.actionable, [], "it must not be written anywhere")
         self.assertEqual(plan.skipped[0].skip, materialize.UNRESOLVED)
 
-    def test_include_unfiled_files_it_under_personal(self):
+    def test_include_unfiled_leaves_it_loose_at_the_knowledge_root(self):
         self._vague()
         plan, _ = materialize.run(self.store, retire=False, include_unfiled=True)
         item = plan.actionable[0]
         self.assertTrue(item.triaged, "it is still a fallback, not a routed project")
-        self.assertEqual(item.project, config.PERSONAL_PROJECT)
-        self.assertIn("personal/conversations/", item.path.as_posix())
+        self.assertEqual(item.project, config.UNFILED_PROJECT)
+        self.assertEqual(item.path.parent, self.knowledge)
 
-    def test_include_unfiled_leaves_the_knowledge_root_a_list_of_projects(self):
+    def test_include_unfiled_invents_no_folder(self):
         self._vague()
         materialize.run(self.store, retire=False, include_unfiled=True)
-        loose = [q.name for q in self.knowledge.iterdir()
-                 if q.is_file() and q.suffix == ".md"]
-        self.assertEqual(loose, [], "nothing may be left loose at the root")
         visible_dirs = {q.name for q in self.knowledge.iterdir()
                         if q.is_dir() and not q.name.startswith(".")}
-        self.assertEqual(visible_dirs, {"acme", config.PERSONAL_PROJECT})
+        self.assertEqual(visible_dirs, {"acme"})
 
-    def test_personal_attracts_nothing_by_keyword(self):
-        """The folder must not become the drawer everything ambiguous falls into."""
-        from gigabite.features import routing
+    def test_an_unfiled_rendering_is_indexed_with_no_project(self):
+        """The sentinel is a spelling for 'not resolved', never a project name."""
         self._vague()
-        materialize.run(self.store, retire=False, include_unfiled=True)
-        personal = next(p for p in routing._scan_projects()
-                        if p["name"] == config.PERSONAL_PROJECT)
-        self.assertEqual(personal["keywords"], [],
-                         "keywords here would hijack routing for real projects")
-        ctx = routing.resolve_context("some personal thoughts about nothing")
-        self.assertIsNone(ctx["project"])
+        plan, _ = materialize.run(self.store, retire=False, include_unfiled=True)
+        doc = self.store.get_document(plan.actionable[0].doc_id)
+        self.assertEqual(doc.get("project") or "", "")
 
     def test_a_stray_handle_in_a_transcript_cannot_invent_a_project(self):
         """A real defect: '@leonardo' in a chat about sunglasses made a project."""

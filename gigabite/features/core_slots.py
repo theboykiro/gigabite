@@ -1,9 +1,8 @@
 """The operating protocol as a set of answerable questions (docs/CORE_SETUP.md §2).
 
-`core.md` is the constitutional layer, and today it is seeded from a static
-template whose sections 2, 3 and 6 are literally marked `[FILL]` for the user to
-finish by hand. Almost nobody does, so most installs run a generic assistant and
-never find out that the protocol layer was the point.
+`core.md` is the constitutional layer. The installer seeds it from a static
+template whose sections 2, 3 and 6 are marked `[FILL]`; `/core-setup` fills them
+by asking, one slot at a time.
 
 This module is the data half of the replacement: a **slot registry** in the same
 shape as the integrations registry, so adding a question to the protocol is
@@ -49,6 +48,7 @@ rendered from a half-filled grid.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Literal, Mapping
 
@@ -222,7 +222,7 @@ SLOTS: tuple[Slot, ...] = (
         evidence_terms=("stop saying", "don't preamble", "no summary", "cut the",
                         "you're absolutely right", "skip the intro"),
         default_text=(
-            "*(Seeded from your TONE_OVERRIDE.md (docs/history/) — this is already your voice.)*\n"
+            "*(A default voice — edit freely, or run `/core-setup` to make it yours.)*\n"
             "\n"
             "**Cut**\n"
             "- No validation openers (\"you're absolutely right\", \"great question\", \"perfect\").\n"
@@ -386,10 +386,7 @@ SLOTS: tuple[Slot, ...] = (
             "- Treat project/client data as confidential. Nothing sensitive leaves the device.\n"
             "- Before any web search or external call, strip/anonymise project names and internals,\n"
             "  or refuse. Enforce at the point of egress.\n"
-            "- Credentials come from the OS keychain at runtime, never from files or the repo.\n"
-            "- **The repo is an egress boundary too.** Only code goes to GitHub. Client names,\n"
-            "  stakeholders and internals never enter it — including in examples, comments and\n"
-            "  test fixtures. Use a neutral placeholder."
+            "- Credentials come from the OS keychain at runtime, never from files."
         ),
     ),
     # -- 5. Knowledge routing ------------------------------------------------
@@ -417,14 +414,14 @@ SLOTS: tuple[Slot, ...] = (
         kind="shipped",
         title="A subagent's \"done\" is a claim",
         shipped_text=(
-            "- **A subagent's \"done\" is a claim, not evidence.** Verify delegated work against\n"
-            "  the real artefact before relaying it — an agent reporting success while doing the\n"
-            "  opposite is a real failure mode, not a hypothetical one."
+            "- **A subagent's \"done\" is a claim, not evidence.** Check delegated work against\n"
+            "  the real result before relaying it."
         ),
     ),
 )
 
 _BY_ID = {slot.id: slot for slot in SLOTS}
+_TITLES = dict(SECTIONS)
 
 
 def slots_by_section() -> dict[int, list[Slot]]:
@@ -451,7 +448,7 @@ def get_slot(slot_id: str) -> Slot:
 _HEADER = """# Core Protocol
 
 *The constitutional layer. Loaded in full, every session, project-agnostic.*
-*Local only — lives in `~/.core/`, backed up by your OS's file sync, never pushed anywhere.*
+*Local only — lives in `~/.core/` and never leaves this machine.*
 
 This file governs **how** the system works regardless of what you're working on.
 Project knowledge (the **what**) lives in `~/Knowledge/` and loads per task."""
@@ -501,6 +498,31 @@ def _join_blocks(blocks: list[str]) -> str:
     return out
 
 
+def _render_section(number: int, answers: Mapping[str, str],
+                    grouped: dict[int, list[Slot]] | None = None) -> tuple[str, bool]:
+    """One numbered section — heading and body — and whether it is unfinished."""
+    grouped = grouped if grouped is not None else slots_by_section()
+    blocks: list[str] = []
+    unfilled = any(
+        slot.kind != "shipped" and _body_for(slot, answers, number) is None
+        for slot in grouped[number]
+    )
+    if unfilled:
+        fill_text = SECTION_FILL_TEXT.get(number)
+        if fill_text:
+            blocks.append(fill_text)
+
+    for slot in grouped[number]:
+        body = _body_for(slot, answers, number)
+        if body:
+            blocks.append(body)
+
+    heading = f"## {number}. {_TITLES[number]}"
+    if unfilled:
+        heading += f"  {FILL_MARKER}"
+    return (_join_blocks([heading] + blocks) if blocks else heading), unfilled
+
+
 def render_core_md(answers: Mapping[str, str]) -> str:
     """A complete `core.md` from slot answers. Never invents an unanswered slot.
 
@@ -516,28 +538,93 @@ def render_core_md(answers: Mapping[str, str]) -> str:
     sections: list[str] = []
     any_unfilled = False
 
-    for number, title in SECTIONS:
-        blocks: list[str] = []
-        unfilled = any(
-            slot.kind != "shipped" and _body_for(slot, answers, number) is None
-            for slot in grouped[number]
-        )
-        if unfilled:
-            any_unfilled = True
-            fill_text = SECTION_FILL_TEXT.get(number)
-            if fill_text:
-                blocks.append(fill_text)
-
-        for slot in grouped[number]:
-            body = _body_for(slot, answers, number)
-            if body:
-                blocks.append(body)
-
-        heading = f"## {number}. {title}"
-        if unfilled:
-            heading += f"  {FILL_MARKER}"
-        sections.append(_join_blocks([heading] + blocks) if blocks else heading)
+    for number, _title in SECTIONS:
+        text, unfilled = _render_section(number, answers, grouped)
+        any_unfilled = any_unfilled or unfilled
+        sections.append(text)
 
     note = _FILL_NOTE if any_unfilled else _COMPLETE_NOTE
     parts = [_HEADER, note, "---", *sections, "---", _FOOTER]
     return "\n\n".join(parts) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# splicing into a file the user may have edited
+# ---------------------------------------------------------------------------
+#
+# `core.md` is the user's file as much as ours: they are told to edit it freely.
+# Re-rendering all of it on every `/core-setup` pass dropped those edits (a copy
+# was kept, but nobody goes looking for one). So an approved answer replaces only
+# the numbered section(s) its slot renders into, and every other byte of the file
+# stays as the user left it. The unit is the section because that is what the
+# file marks: slot bodies are not delimited inside it.
+
+_SECTION_HEADING = re.compile(r"^## (\d+)\.(\s|$)")
+
+
+def sections_for(slot_ids) -> set[int]:
+    """The section numbers the given slots render into. Unknown ids are ignored."""
+    out: set[int] = set()
+    for slot_id in slot_ids:
+        slot = _BY_ID.get(slot_id)
+        if slot is not None:
+            out.update(slot.section)
+    return out
+
+
+def _find_block(lines: list[str], block: list[str]) -> int:
+    for i in range(len(lines) - len(block) + 1):
+        if lines[i:i + len(block)] == block:
+            return i
+    return -1
+
+
+def splice_sections(text: str, answers: Mapping[str, str], sections) -> str | None:
+    """*text* with each numbered section in *sections* re-rendered from *answers*.
+
+    Everything outside those sections — other sections, the header, a section the
+    user added — is kept exactly. A section runs from its `## N.` heading to the
+    next `## ` heading or the closing `---` rule.
+
+    Returns `None` when the file's structure is not recognisable: a section that
+    should be replaced has no heading, or more than one. The caller then has to
+    decide what to do with a file it cannot edit safely; guessing where a section
+    starts is how a hand edit gets overwritten.
+
+    When no numbered heading is left marked `[FILL]`, the scaffold's "sections
+    marked [FILL]" note is swapped for the complete one — but only if it is still
+    there word for word.
+    """
+    lines = text.splitlines()
+    starts: dict[int, list[int]] = {}
+    for i, line in enumerate(lines):
+        m = _SECTION_HEADING.match(line)
+        if m:
+            starts.setdefault(int(m.group(1)), []).append(i)
+
+    wanted = sorted(n for n in set(sections) if n in _TITLES)
+    if any(len(starts.get(n, ())) != 1 for n in wanted):
+        return None
+
+    grouped = slots_by_section()
+    # Bottom-up, so the indices of sections above stay valid.
+    for n in sorted(wanted, key=lambda n: starts[n][0], reverse=True):
+        start = starts[n][0]
+        end = start + 1
+        while end < len(lines) and not lines[end].startswith("## ") \
+                and lines[end].strip() != "---":
+            end += 1
+        rendered, _ = _render_section(n, answers, grouped)
+        new = rendered.splitlines()
+        if end < len(lines):
+            new.append("")
+        lines[start:end] = new
+
+    still_unfilled = any(_SECTION_HEADING.match(ln) and FILL_MARKER in ln for ln in lines)
+    if not still_unfilled:
+        fill_note = _FILL_NOTE.splitlines()
+        at = _find_block(lines, fill_note)
+        if at >= 0:
+            lines[at:at + len(fill_note)] = _COMPLETE_NOTE.splitlines()
+
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")

@@ -58,7 +58,9 @@ When the required ones are done, mention `ask_optional` once, in a sentence — 
 tone details that already have a working default, so "leave them as they are" is a fine
 answer. Then confirm what was written: the path the tool printed, and anything still
 marked `[FILL]`. Do not edit `~/.core/core.md` yourself with any other tool — this
-command is the only way it gets written, and it sets the previous version aside first.
+command is the only way it gets written. It replaces only the sections just answered,
+keeps the user's own edits elsewhere, and sets the previous version aside first. If it
+says the file was rewritten whole, tell the user and where the previous version is kept.
 
 If `remaining_required` is already 0, say the protocol is complete, name what it covers
 in a line, and offer to revisit any single part rather than running the whole thing again.

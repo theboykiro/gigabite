@@ -1,302 +1,141 @@
 # gigabite
 
-gigabite is a local context router for Claude. It gives Claude a searchable memory
-of everything you have already said and decided — your Claude Code sessions, your
-claude.ai chats, your meetings and your own notes — and it
-loads the relevant parts of that history into each turn before Claude answers. You
-talk to it the way you would talk to an assistant who was in the room last week,
-rather than to a model that starts every conversation from nothing.
+gigabite gives Claude Code a memory of your own past work. It indexes your Claude Code
+sessions, claude.ai chats, meeting notes and files on your Mac, and before Claude answers
+it pulls in what's relevant from the project you're working in. Nothing leaves your machine.
 
-The problem it solves is not retrieval for its own sake. It is the tax you pay for
-having your working memory scattered across four tools, none of which can see the
-others. A decision you argued through in a Claude Code session in March is invisible
-to a claude.ai chat in August, and both are invisible to the meeting where the
-subject comes up again. gigabite closes that gap by keeping one index over all of it
-on your own machine, and by making sure every turn is answered with that index
-already consulted.
+## What you need
 
-Everything here is pure Python standard library. There is no server, no embedding
-model, and no cloud service. The index is a single SQLite file, your content lives
-in a plain folder in your home directory, and only code is ever committed to this
-repository. If you want the reasoning behind the design rather than the mechanics of
-it, start with [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md).
+- macOS.
+- Apple's command line tools: `xcode-select --install`. They provide `git` and
+  `/usr/bin/python3`.
+- Python 3.9 or later **at `/usr/bin/python3`** (Apple's). A Homebrew or pyenv Python
+  doesn't count. Nothing to `pip install`.
+- Claude Code, installed and run at least once.
 
----
-
-## Installing
-
-One command, from nothing to working:
+## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.sh | bash
 ```
 
-That checks your Mac can run it, downloads the code to `~/gigabite`, and runs the
-installer. Run it again any time to update.
+Then **quit and restart Claude Code**. It only reads the new settings when it starts.
 
-If you would rather read a script than pipe it into a shell — a reasonable instinct,
-and the reason the file is short and plain — download it, read it, then run it:
-
-```bash
-curl -fsSL -o bootstrap.sh https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.sh
-less bootstrap.sh
-bash bootstrap.sh
-```
-
-Or skip it entirely and do the two steps yourself. Clone into your home folder
-rather than Desktop, Documents or Downloads: macOS blocks background jobs from
-those, so the daily index refresh would never run.
+The one-liner checks your Mac, clones to `~/gigabite` and runs `install.sh`. Run it again
+to update. If you'd rather not pipe a script into a shell, clone and run it yourself.
+Clone into your home folder, not Desktop, Documents or Downloads, because macOS blocks
+background jobs there:
 
 ```bash
 git clone https://github.com/theboykiro/gigabite.git ~/gigabite
 cd ~/gigabite && ./install.sh
 ```
 
-`install.sh` is the same script in all three cases, and it is safe to re-run. It
-creates the `~/.core` and `~/Knowledge` layouts without ever overwriting content you
-already have, puts the `gigabite` launcher on your `PATH`, appends the router
-protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
-ambient-recall hook in `~/.claude/settings.json`, schedules a daily index refresh
-through launchd, and builds the initial index.
+The installer puts `gigabite` on your `PATH`, adds a managed block to
+`~/.claude/CLAUDE.md`, registers its hooks in `~/.claude/settings.json`, installs `/search`
+and `/core-setup`, creates `~/Knowledge` and `~/.core`, and builds the first index. It's
+safe to re-run, and it never overwrites your notes or your `core.md`.
 
-It also installs the Claude Code slash commands (`/search`, `/core-setup`),
-refreshing its own copies on every run so an update reaches them. If a command of that
-name is already yours, it is left alone and the installer tells you it did so. The
-one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
-beside it. Your knowledge base, your notes and your own `core.md` are never touched.
+## How to use it
 
-You need macOS and Python 3.9 or later; the system Python is fine. There is nothing
-to `pip install`. Claude Code is not strictly required — `gigabite search` works on
-its own in a terminal — but the router, the ambient recall and the slash commands
-all live inside it, so without it you have the index and not the point of it.
+1. **Restart Claude Code** after installing.
+2. **Open Claude Code in a project folder.** The first time, Claude asks which project the
+   folder belongs to. Answer it and Claude runs `gigabite project bind <name>`, which
+   creates the project if it's new. For a folder that isn't project work, the answer is
+   `gigabite project bind --none`. Once you've answered, that folder is never asked
+   about again. If you ignore the question, it comes back once per session.
+3. **Then just talk.** Relevant past sessions, chats and notes from *that project only*
+   are added to your prompt automatically, and Claude cites them. To reach another
+   project for one prompt, name it: `@acme what did we decide about pricing?`
+4. **Search across everything** with `/search <words>` in Claude Code, or
+   `gigabite search "<words>"` in a terminal.
+5. **Once:** run `/core-setup` to teach it your voice and working rules. It fills in
+   `~/.core/core.md`, which is loaded into every session. You can also edit that file
+   by hand.
 
-Code comes from git, but your content does not. `~/.core` and `~/Knowledge` are
-local, and they rebuild themselves as you add sources again. Re-run `./install.sh`
-at any point to pick up changes to the tool.
+The index refreshes in the background whenever a Claude Code session starts. Your notes
+live in `~/Knowledge`, one folder per project, and you can open it in Finder. To add
+something, drop a file into `~/Knowledge/<project>/`, or run `gigabite add <file>` or
+`gigabite paste` (paste reads a copied transcript from your clipboard).
 
-If you would rather keep the stores elsewhere, `GIGABITE_KNOWLEDGE_DIR` and
-`GIGABITE_CORE_DIR` override both paths.
+If you start Claude Code from your home folder (`~`), nothing is recalled unless your
+prompt names a project. This is deliberate: with no project, recall can't know which
+client's history is safe to show.
 
-### Uninstalling
+## Import your claude.ai chats
 
-```bash
-cd ~/gigabite && ./uninstall.sh
-```
+claude.ai has no API for your chats, so you export them from the browser:
 
-It shows you exactly what it is about to remove and waits for a yes. `--dry-run`
-prints that list and stops; `--yes` skips the question, and is required when the
-script is fed down a pipe rather than run at a terminal. It is safe to run twice —
-the second time it tells you everything is already gone.
+1. Log in at claude.ai in Safari. Turn on **Safari → Settings → Advanced → Show features
+   for web developers**, then open **Develop → Show JavaScript Console**.
+2. Paste in the contents of `~/gigabite/install/scripts/claude-ai-safari-export.js` and
+   press Enter. If pasting is blocked, type `allow pasting` first. The script downloads a
+   `conversations.json` file.
+3. In a terminal:
+   ```bash
+   mv ~/Downloads/conversations.json ~/Knowledge/.gigabite/imports/claude_ai/
+   gigabite ingest
+   ```
 
-It reverses `install.sh` step for step: the `gigabite` launcher and the `PATH` line
-in your `.zshrc` and `.bash_profile`, the slash commands (and any subagents or skills
-an older version installed), the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
-`~/.claude/settings.json`, the scheduled daily job and its log. Files it edits
-rather than owns are backed up first, and it tells you where.
+Chats inside a claude.ai project are tagged with that project's name. They show up in
+recall when that name is exactly the name of a gigabite project;
+[docs/CLAUDE_AI.md](docs/CLAUDE_AI.md) explains how to map names that differ. Chats
+outside any project show up in `/search` only. Re-exporting later updates chats instead
+of duplicating them.
 
-**`~/Knowledge` and `~/.core` are never touched**, and the script says so and prints
-where they are. They hold your meetings, your notes and your own `core.md` — the only
-things on the machine a fresh clone cannot rebuild. On the same principle, a command
-or agent carrying one of gigabite's names that gigabite did not write is left exactly
-where it is and reported, never deleted. The clone is left too, because the script is
-running from inside it; it prints the one `rm -rf ~/gigabite` you can run yourself.
+## Meetings (optional)
 
-## Getting content in
+Copy a transcript and run `gigabite paste`, or save an export into
+`~/Knowledge/<project>/meetings/`. If you're on Granola with API access (Business plan),
+run `gigabite integrations`. It stores your API key in the macOS keychain and schedules a
+daily pull at 19:00. The installer offers this step when you run it in a terminal. See
+[docs/MEETINGS.md](docs/MEETINGS.md).
 
-gigabite is only as useful as the history it holds, so the capture paths are
-deliberately cheap. Two of them need nothing from you at all, and the rest are a
-matter of putting a file where it belongs.
+## Troubleshooting
 
-There is one destination, and it is the store itself: a file placed anywhere under
-`~/Knowledge/<project>/[<layer>/]` is indexed where it sits on the next ingest. There
-is no staging folder and no filing step, because that arrangement gave content two
-possible homes and made "where is my meeting?" depend on whether a pass had run yet.
-When something arrives without a project the tool can resolve, it lands loose at the
-top of `~/Knowledge` — visible, indexed, one drag from being filed. No folder is ever
-invented for it, because a confidently misfiled note is worse than an unfiled one.
+- **Nothing gets recalled.** Did you restart Claude Code after installing? Is the folder
+  bound to a project? Run `gigabite project bind <name>` in it. Started from `~`? Open
+  the project folder, or put `@project` in your prompt. Claude only asks in folders that
+  look like a project (a git repo, a package manifest, a `CLAUDE.md` or `.claude/`); bind
+  any other folder by hand. Short replies like "ok, go on" never trigger recall.
+- **Bound the wrong project.** Run `gigabite project bind <right-name>` in the folder,
+  or `gigabite project bind --forget` to be asked again.
+- **`gigabite: command not found`.** Open a new terminal window: the installer added
+  gigabite to your `PATH` in `.zshrc` / `.bash_profile`. Or run
+  `~/gigabite/bin/gigabite` directly.
+- **Something recent is missing.** Run `gigabite ingest` to refresh now, then
+  `gigabite status` to see what's indexed. `gigabite paths` shows where everything lives.
+- **Recall is in the way.** Remove the gigabite hook from `~/.claude/settings.json`.
+  `/search` still works.
 
-| Source | How it arrives |
-|---|---|
-| **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
-| **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
-| **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `gigabite paste` is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
-| **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
-| **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
-
-The claude.ai path deserves a word of explanation, because it looks more awkward
-than it should. claude.ai has no official API for your web chats, and the internal
-endpoints its web app uses are Cloudflare-gated against terminal clients. The
-in-page export script sidesteps that by running inside the browser, where it carries
-your real session, and produces a `conversations.json` that the importer already
-understands — including chats inside projects, tagged with the project name. The
-detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
-
-Meetings arrive by hand, and deliberately so: there is no integration with a
-meeting-notes app, and nothing here reads one's local store — which is why the source
-is called `meeting` rather than after any of them. A meeting is in the index because
-it is a file in `~/Knowledge/<project>/meetings/` — a route with no credential in it
-and nothing to break when the app that recorded it ships an update. A clean pull from
-Granola's public API is the future route whenever you have access; see
-[`docs/MEETINGS.md`](docs/MEETINGS.md).
-
-An export is machine-readable rather than readable, so a claude.ai chat would
-otherwise exist only inside `conversations.json` and inside SQLite — leaving
-`~/Knowledge` a partial view of the store while claiming to be all of it.
-`gigabite materialize` writes every indexed document out as a markdown file under its
-project (meetings into `meetings/`, chats into `conversations/`), so the folder is the
-complete picture. Each file it writes names the document it renders in its
-frontmatter, which is what stops the same conversation being indexed twice; running it
-again does nothing, and raw imports are moved aside rather than deleted.
-
-Whatever the source, the rhythm is the same: put a file where it belongs and run
-`gigabite ingest`. Ingest is incremental — files whose size and modification time
-are unchanged are skipped, and a newer export updates the existing document in place
-rather than creating a duplicate.
-
-## Using it day to day
-
-The primary interface is conversation, not the command line. Because the installer
-registers a `UserPromptSubmit` hook, every message you send in Claude Code already
-has a block of recalled context attached to it, so ordinary questions are answered
-against your history without you asking for it. When you want that explicitly — a
-fresh ingest and a search across every project — use the slash command:
-
-```
-/search <query>                                search everything
-```
-
-The terminal is there when you want to work directly against the index, or when
-Claude is not in front of you. These are the commands that matter most:
+## Uninstall
 
 ```bash
-gigabite search "enterprise pricing anchor"     # search everything
-gigabite search "budget" --source meeting       # restrict to one source
-gigabite search "roadmap" --project acme --all  # scope to a project; --all includes archived
-gigabite doc <doc_id>                           # print a full conversation
-gigabite save "Decided X because Y" -p acme -l delivery -t "Title"
-gigabite project add acme --keywords "acme, acme corp"
-gigabite paste                                  # a copied transcript -> its project folder
-gigabite add ~/Desktop/shot.png -p acme         # store any file in a project folder
-gigabite materialize --dry-run                  # render indexed documents as files
-gigabite ingest                                 # refresh the index, incrementally
-gigabite status                                 # what is indexed
-gigabite paths                                  # where everything lives
+~/gigabite/uninstall.sh            # shows what it will remove, then asks
+~/gigabite/uninstall.sh --dry-run  # only show
 ```
 
-Two more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
-from scratch, and `gigabite route` resolves context and recalls passages as JSON, which is what the
-ambient hook calls underneath. Run `gigabite --help`, or
-`gigabite <command> --help`, for the full flag list on any of them.
+It removes the launcher, the commands, the hooks, the router block and the scheduled jobs.
+**`~/Knowledge` and `~/.core` are never touched.** It then prints the `rm -rf ~/gigabite`
+for you to run. To remove a stored Granola key:
+`security delete-generic-password -s gigabite:granola`.
 
-If you are ever unsure where something ended up, `gigabite paths` prints the resolved
-location of the core directory, the knowledge base, the projects inside it, and the
-hidden `.gigabite/` directory that holds the machinery.
+## Privacy
 
-## How it works
+Everything stays on your Mac. The index is a SQLite file in `~/Knowledge/.gigabite/`,
+your notes are plain files in `~/Knowledge`, and your protocol is `~/.core/core.md`.
+There's no server, no cloud service and no embedding model. Apart from installing and
+updating from GitHub, the only network call is the Granola pull, and only if you turn it
+on. Its key is kept in the keychain.
+Recall only ever shows the current project's history, so one client's material doesn't
+show up in another client's folder. Keep your own backup of `~/Knowledge`: it's the one
+thing a reinstall can't rebuild.
 
-Three moving parts sit behind all of the above, and they are worth understanding
-because they explain most of the tool's behaviour.
+## More
 
-**Ingest** normalises every source into the same shape. A *document* is one
-conversation, meeting, or note; it carries a source, a project, a
-title, and timestamps. Each document holds *messages* — the individual turns of a
-chat, the segments of a transcript, or the single body of a note. Because every
-source lands in that shape, search does not care where something came from.
+- [docs/ROUTING.md](docs/ROUTING.md): how a prompt is matched to a project, and where files land
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works
+- [docs/CORE_SETUP.md](docs/CORE_SETUP.md): what `/core-setup` asks and how it writes `core.md`
+- [CONTRIBUTING.md](CONTRIBUTING.md): tests (`python3 -m unittest discover -s tests`) and the one rule: only code goes in this repo
 
-**The index** is one SQLite FTS5 table with a row per message, kept at
-`~/Knowledge/.gigabite/index/gigabite.db`. The document title is denormalised onto every
-message row so that a title match can be weighted separately, and ranking uses
-`bm25` with the title weighted five times the body. A query first runs as an AND of
-all its terms, with common stop words dropped so that a naturally phrased question
-does not exclude the material that answers it, and falls back to an OR pass ranked by
-`bm25` if the AND pass finds nothing. Your own Claude Code transcripts are ranked
-down by a fixed factor, because a transcript of you asking about something is a dense
-textual match for that question without being evidence about it; the penalty demotes
-them rather than excluding them, so a session transcript still wins when it genuinely
-is the best answer.
-
-**Storage** is split deliberately. Code lives in this repository. Content lives in
-`~/Knowledge`, one top-level folder per project, with everything mechanical — the
-index, raw imports, routing aliases — behind a single hidden
-`.gigabite/` directory, so `ls ~/Knowledge` shows your projects and a README and
-nothing you have to explain. The operating protocol — your voice, tone, and decision
-principles — lives in `~/.core/core.md` and is loaded whole into every Claude Code
-session, because the router block in `~/.claude/CLAUDE.md` imports it
-(`@~/.core/core.md`).
-Secrets, if there are ever any, live in the macOS keychain and nowhere else. The rule
-that keeps this from degrading is that knowledge is never written to the working
-directory, no matter which repository Claude Code happens to be pointed at;
-[`docs/ROUTING.md`](docs/ROUTING.md) explains the mechanism.
-
-The repository itself is arranged around what each thing is *for* — read it, run it,
-the code, the docs, the machine integration, the tests:
-
-```
-README.md            start here
-install.sh           one-shot installer (idempotent, non-destructive)
-uninstall.sh         reverses it, and never touches ~/Knowledge or ~/.core
-bin/gigabite         self-locating launcher — this is what ends up on your PATH
-gigabite/            the package
-  config.py            paths & constants (overridable via env)
-  store.py             SQLite + FTS5 index, upsert & search
-  util.py              text extraction, time parsing, FTS query safety
-  ingest.py            runs every source in order; notes last, and why
-  cli.py               the `gigabite` command
-  features/            save · intake · routing · bindings · materialize ·
-                       core_slots · core_interview · core_proposal · integrations
-  sources/
-    claude_code.py     ~/.claude/projects/**/*.jsonl
-    claude_ai.py       browser export (.zip / conversations.json)
-    meetings.py        meeting notes and exports you supply
-    granola_live.py    opt-in daily pull from Granola's public API
-    notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
-docs/                design & reference — start with PHILOSOPHY.md
-install/             everything install.sh copies onto the machine
-  claude-commands/     /search, /core-setup
-  hooks/               the ambient-recall UserPromptSubmit hook
-  scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/{agents,skills}
-  launchd/             the scheduled daily index refresh
-  scripts/             the claude.ai in-browser export helper
-tests/               python3 -m unittest discover -s tests
-```
-
-Note what is absent: there is no content directory in this tree. The knowledge base
-is not here, and neither is the index.
-
-## Tests
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-The suite touches no network and writes nothing to your home directory — the tests
-redirect the stores to a temporary directory through the same environment variables
-you would use to relocate them yourself.
-
-## Where things live, and why that matters
-
-The separation between code and content is the one rule this project will not bend
-on, and it is a client-confidentiality boundary rather than a preference. Only code
-belongs in git. Your operating protocol in `~/.core` and your knowledge base in
-`~/Knowledge` stay on the device, backed up by your OS's file sync, and the repository
-must remain free of client names, stakeholders, and internal detail — including in
-examples. Every note gigabite writes carries an explicit `share: private` marker, so
-that sharing anything later is a deliberate act and never a side effect.
-
-That leaves one thing worth your attention. File sync is a sync, not a version history,
-and your knowledge base will become the most valuable thing on the machine long
-before you notice. Set up a real versioned backup for `~/Knowledge` — the note in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) covers the reasoning. Everything else
-in this system is reproducible from a clone and a script; that folder is not.
-
-## Contributing
-
-Bug reports, ideas, and pull requests are welcome —
-[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the flow from fork to merge, including for
-people who have not sent a pull request before. The one rule that is not negotiable is
-the boundary above: only code goes in this repository, never content, and never a real
-client name — not even in an example.
-
-## License
-
-MIT — see [`LICENSE`](LICENSE).
+MIT licensed. See [LICENSE](LICENSE).

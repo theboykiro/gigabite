@@ -23,7 +23,7 @@ This module reads the project metadata files directly (it does not depend on the
 knowledge-write feature), so detection works the moment a _project.md exists.
 
 **Two axes.** The above resolves *which project*. `resolve_register` resolves *what
-kind of turn this is* — spar, brief or execute (docs/AUTONOMY.md §7) — which decides
+kind of turn this is* — spar, brief or execute — which decides
 how much recall is worth injecting. It is the same job on a second axis, which is
 why it lives here rather than in a module of its own.
 """
@@ -187,13 +187,13 @@ def resolve_context(prompt: str, projects: Optional[list[dict]] = None, *,
 
 
 # ---------------------------------------------------------------------------
-# the register router — the second axis (docs/AUTONOMY.md §7)
+# the register router — the second axis
 # ---------------------------------------------------------------------------
 #
 # Which of three registers a turn is in decides how much prior context is worth
 # injecting. It is decided from the text alone, with no model call: putting a
 # round-trip in front of every prompt in order to save a round-trip is the one way
-# to get this obviously wrong (ROADMAP item 3, "wrong if").
+# to get this obviously wrong.
 #
 # The rule that governs every tuning choice below: **ambiguity resolves toward
 # `brief`, never toward `spar`.** Suppressing recall on a turn that needed it is a

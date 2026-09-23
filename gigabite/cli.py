@@ -293,20 +293,21 @@ def _core_unfinished() -> None:
 
 
 def _projects_notice() -> None:
-    """Point a project-less user at `project add`. Silent once they have one.
+    """Point a project-less user at `project bind`. Silent once they have one.
 
     A project is what recall is scoped to, so with none there is nothing any
     prompt can resolve to and the tool is inert — the one state where this
-    command has to be named, and it was previously named once, in the README.
+    command has to be named.
     """
     from .features import save as savemod
     if savemod.list_projects():
         return
     print(bold("There are no projects yet, and recall is scoped to projects."))
     print()
-    print("    gigabite project add <name> --keywords <a,b>")
-    print(dim("  Until one exists, an unrecognised folder resolves to nothing and"))
-    print(dim("  recalls nothing. One project is enough to start."))
+    print("    gigabite project bind <name>      (run it in the project's folder)")
+    print(dim("  That creates the project and links the folder to it. Answering when"))
+    print(dim("  Claude asks which project a folder belongs to does the same thing."))
+    print(dim("  Until a folder is linked, nothing is recalled there."))
     print()
 
 
@@ -342,12 +343,12 @@ def _welcome_empty() -> None:
     3.  gigabite search "a word you know is in that document"
 """)
     print(dim("  Optional, and worth it if you have them:"))
-    print(dim("    · your Claude.ai chats — claude.ai → Settings → Export data, then"))
-    print(dim(f"      unzip into {_tilde(config.SOURCES_CLAUDE_AI)}/ and run `gigabite ingest`"))
+    print(dim("    · your claude.ai chats — see \"Import your claude.ai chats\" in"))
+    print(dim(f"      {_tilde(config.REPO_ROOT / 'README.md')}"))
     # Redundant in the branch above, which already told them to run `ingest`.
     if _claude_code_present() and not unindexed:
-        print(dim("    · every Claude Code session from now on is picked up the next time"))
-        print(dim("      you run `gigabite ingest` — no filing, no export"))
+        print(dim("    · every Claude Code session from now on is indexed automatically"))
+        print(dim("      when Claude Code starts — no filing, no export"))
     print()
     print(dim("  Run `gigabite welcome` again once there is something in there."))
     print()
@@ -407,14 +408,18 @@ def cmd_welcome(args) -> int:
         print(dim("  until you have done that."))
         print()
         if query:
-            print(bold("Then just ask it, the way you would ask a colleague:"))
+            print(bold("Then open it in a project folder and just ask:"))
             print()
             print(f'    "what did we decide about {query}?"')
-            print(dim("  Your own history is pulled in before it answers. There is no"))
-            print(dim("  command to remember, and it works in any folder."))
         else:
-            print(bold("Then ask it about anything you have worked on before."))
-            print(dim("  Your own history is pulled in before it answers."))
+            print(bold("Then open it in a project folder and ask about past work."))
+        # The model is project-scoped, and saying otherwise is the fastest way to
+        # make a working install look broken: from ~ or an unlinked folder, nothing
+        # is recalled until the user says which project they are in.
+        print(dim("  Recall is scoped to the project the folder is linked to. The first"))
+        print(dim("  time you work in a folder, Claude asks which project it belongs to;"))
+        print(dim("  answer once. Started from your home folder, nothing is recalled"))
+        print(dim("  unless the prompt names a project: @name."))
         print()
         print(dim("Prefer the terminal? This works now, without restarting:"))
         print(dim(terminal_cmd))
@@ -433,13 +438,13 @@ def cmd_welcome(args) -> int:
         # Demoted rather than dropped. Asking in plain English is the interface
         # worth teaching first, but a command you can reach for on purpose is the
         # thing people want the moment recall does not surface what they meant.
-        print(dim("  \u00b7 /search <anything> in Claude Code, to search on purpose"))
+        print(dim("  \u00b7 /search <anything> in Claude Code searches every project"))
     print(dim(f"  \u00b7 anything you drop in {_tilde(config.KNOWLEDGE_DIR)}/<project>/ is indexed"))
     print(dim("    where it sits — no filing step, no import"))
     if not per_source.get(config.SOURCE_CLAUDE_AI):
-        print(dim("  \u00b7 your Claude.ai chats are not in here — only Claude Code is local."))
-        print(dim("    claude.ai \u2192 Settings \u2192 Export data, unzip into"))
-        print(dim(f"    {_tilde(config.SOURCES_CLAUDE_AI)}/, then run `gigabite ingest`"))
+        print(dim("  \u00b7 your claude.ai chats are not in here — only Claude Code is local."))
+        print(dim("    See \"Import your claude.ai chats\" in"))
+        print(dim(f"    {_tilde(config.REPO_ROOT / 'README.md')}"))
     print()
     print(dim("`gigabite status` for the index itself. This brief re-runs any time: "
               "`gigabite welcome`."))
@@ -536,7 +541,7 @@ def cmd_materialize(args) -> int:
 
     triaged = sum(1 for i in plan.actionable if i.triaged)
     print(dim(f"\n{len(plan.actionable)} materialized "
-              f"({triaged} with no project, filed under {config.PERSONAL_PROJECT}/), "
+              f"({triaged} with no project, left at the top of the knowledge base), "
               f"{len(plan.skipped)} skipped, {len(moved)} original(s) retired."))
     if not args.dry_run and plan.actionable:
         ingest_mod.run(store, sources=[config.SOURCE_NOTE])
@@ -604,8 +609,7 @@ def cmd_granola_sync(args) -> int:
     # ~/Knowledge (config.UNFILED_PROJECT), same as any other unrouted intake, so
     # it's one drag away from the right project folder instead of gone.
     plan, _retired = materialize.run(store, source=config.SOURCE_MEETING,
-                                     include_unfiled=True,
-                                     unfiled_project=config.UNFILED_PROJECT)
+                                     include_unfiled=True)
     for item in plan.actionable:
         if item.triaged:
             print(f"  {yellow('?')} {item.title}: no project resolved — "
@@ -947,6 +951,11 @@ def cmd_core_apply(args) -> int:
         return 0
     print(bold("core setup — protocol updated"))
     print(f"  {result['core_path']}")
+    if result.get("rewritten_whole"):
+        print(yellow("  its numbered section headings were not recognisable, so it was "
+                     "rewritten whole"))
+    if result.get("previous_copy_dir"):
+        print(dim(f"  previous version kept in {result['previous_copy_dir']}"))
     print(dim(f"  answers recorded in {result['answers_path']} — a later run resumes"))
     if result["remaining_required"]:
         print(dim(f"  still [FILL]: {', '.join(result['remaining_required'])}"))
@@ -1035,7 +1044,7 @@ def build_parser() -> argparse.ArgumentParser:
     pmz.add_argument("--layer", help="layer to file them under (default: per source)")
     pmz.add_argument("--include-unfiled", action="store_true",
                      help="also write documents with no resolvable project, "
-                          f"under {config.PERSONAL_PROJECT}/")
+                          "loose at the top of the knowledge base")
     pmz.add_argument("--limit", type=int, help="stop after N documents")
     pmz.add_argument("--keep-sources", action="store_true",
                      help="leave raw imports in place even once they are readable files")

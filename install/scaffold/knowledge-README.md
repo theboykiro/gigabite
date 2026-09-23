@@ -21,8 +21,8 @@ whenever you like.
 ## Finding things
 
 ```
-gigabite search "traffic drop"      # from the terminal
-/search traffic drop                # from Claude Code, in any folder
+gigabite search "pricing decision"  # from the terminal
+/search pricing decision            # from Claude Code, across all projects
 ```
 
 Screenshots and PDFs are kept as files and found by filename and date — gigabite

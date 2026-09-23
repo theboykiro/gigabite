@@ -122,7 +122,12 @@ class TestPopulatedIndex(WelcomeCase):
                                   texts=["Any risk in the rollout?"]))
         store.commit()
         _code, out = run("welcome")
-        self.assertNotIn("Export data", out)
+        self.assertNotIn("Import your claude.ai chats", out)
+
+    def test_it_never_claims_recall_works_in_any_folder(self):
+        _code, out = run("welcome")
+        self.assertNotIn("any folder", out)
+        self.assertIn("which project it belongs to", out)
 
     def test_it_points_at_the_knowledge_root_for_manual_additions(self):
         _code, out = run("welcome")
@@ -326,7 +331,7 @@ if __name__ == "__main__":
 
 
 class TestPointingAProjectLessUserAtProjectAdd(TempRoot):
-    """`project add` was named once, deep in the README, and nowhere the user looks.
+    """`project bind` is the one command that makes recall work at all.
 
     With no projects there is nothing for a prompt to resolve to, so recall is inert
     and the ask (features/bindings.py) has nothing to offer but "create one". The
@@ -337,21 +342,21 @@ class TestPointingAProjectLessUserAtProjectAdd(TempRoot):
     def test_an_empty_install_is_told_how_to_make_a_project(self):
         code, out = run("welcome")
         self.assertEqual(code, 0)
-        self.assertIn("gigabite project add", out)
+        self.assertIn("gigabite project bind", out)
 
     def test_it_goes_quiet_once_a_project_exists(self):
         save.ensure_project("acme", keywords=["widget"])
         code, out = run("welcome")
         self.assertEqual(code, 0)
-        self.assertNotIn("gigabite project add", out)
+        self.assertNotIn("gigabite project bind", out)
 
 
 class TestTheProjectNoticeOnAPopulatedIndex(WelcomeCase):
     def test_a_populated_index_with_a_project_does_not_mention_it(self):
         _code, out = run("welcome")
-        self.assertNotIn("gigabite project add", out)
+        self.assertNotIn("gigabite project bind", out)
 
     def test_a_populated_index_without_one_does(self):
         (self.root / "acme" / "_project.md").unlink()
         _code, out = run("welcome")
-        self.assertIn("gigabite project add", out)
+        self.assertIn("gigabite project bind", out)
