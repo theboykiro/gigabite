@@ -6,10 +6,10 @@ adding a connector means naming its module (which must expose
 `read_token()` / `store_token_interactive()` / `delete_token()`) and, if it has
 a scheduled pull, its plist template and bin script — nothing here changes.
 
-Reached two ways, on purpose (docs/MEETINGS.md background: a prior build made
+Reached two ways, on purpose (a prior build made
 the user run `gigabite granola-login` and then hand-type a `launchctl
-bootstrap` one-liner, which he rejected):
-    * `install.sh` step 6/8, for a first install.
+bootstrap` one-liner):
+    * `install.sh`, for a first install run in a terminal.
     * `gigabite integrations`, any time after, for someone already installed
       who wants to turn one on (or add a new one once it ships) without a
       reinstall.

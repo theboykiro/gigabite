@@ -8,14 +8,8 @@ works and which decisions are load-bearing.
 It is written in the order the system actually runs. Constraints first, because they
 explain everything downstream. Then the context stack, which is what the tool
 assembles on every turn, and the detection that resolves it. Then the routing rule
-that keeps knowledge out of your working directory. Integrations, the security model,
-and the remaining open questions close it out.
-
-A note on the `[VERIFY]` markers you will see below. They were written during design
-to flag assumptions that had not been confirmed, on the principle that getting one of
-them wrong would invalidate part of the design. Most have since been settled by the
-implementation, and each is now annotated with how it resolved. The few that remain
-open are listed together in the final section.
+that keeps knowledge out of your working directory. Integrations and the security
+model close it out.
 
 ---
 
@@ -29,13 +23,13 @@ application and no browser dependency, which keeps the whole system terminal-adj
 and local-file-native, and means there is exactly one place to look when something
 misbehaves.
 
-**Local-first, with nothing sensitive web-facing.** Content lives on the device and is
-backed up by your OS's file sync. Only code reaches GitHub. This is a client-confidentiality
+**Local-first, with nothing sensitive web-facing.** Content lives on the device. Only
+code reaches GitHub. This is a client-confidentiality
 boundary rather than a preference, and it is why several features here are shaped
 more awkwardly than they would otherwise be.
 
 **One consistent operating style.** The core protocol is a single file loaded in full
-on every session. There is no per-project tone, because the operator is one person
+on every session. There is no per-project tone, because the user is one person
 who works one way.
 
 **Clean context separation.** Projects, and the nested sub-contexts within a project,
@@ -68,18 +62,18 @@ content — voice, decision principles, information-handling style, agent-spawn 
 is interdependent enough that loading it selectively would risk incoherent partial
 states, where the tone rules arrive without the principles that justify them. The
 token cost of loading the whole file is negligible against the value of guaranteed
-consistency, and the operator explicitly wants the entire operating system present on
-every call rather than conditionally assembled.
+consistency.
 
 It reaches the model through Claude Code's own memory loading: the managed router
 block that the installer keeps in `~/.claude/CLAUDE.md` ends with `@~/.core/core.md`,
 so the file is expanded into every session with no hook and no command. The two files
 stay separate on purpose. CLAUDE.md belongs to the user, and gigabite only rewrites
-the text between its markers. core.md is gigabite's to regenerate whole, but only
-through the gated `core apply`.
+the text between its markers. core.md is the user's too: gigabite changes it only
+through the gated `core apply`, which replaces just the sections being answered
+(`CORE_SETUP.md` §3).
 
 It lives at `~/.core/core.md`. `~/.core` is emphatically **not** a project; it never
-resolves as one. The whole directory is cloud-synced and never committed.
+resolves as one, and it is never committed.
 
 ### 2.2 Project context
 
@@ -96,10 +90,11 @@ Project knowledge lives in the knowledge base, one top-level folder per project:
   README.md             what this folder is, in twenty lines
   .gigabite/            every moving part, hidden and never browsed:
                           index/       the search index
-                          imports/     raw machine-readable exports (see §7)
+                          imports/     raw machine-readable exports (see §6)
                           originals/   retired imports and pre-migration copies,
                                        kept so a move can be undone; indexed by nothing
                           aliases.json name variants that map onto a project
+                          bindings.json which folder belongs to which project
 ```
 
 A project can hold several nested **layers** that load independently, so a task may
@@ -112,7 +107,7 @@ the folder and none of them were their knowledge; one hidden directory replaces 
 convention entirely.
 
 The knowledge base is a visible folder in the home directory by design. An earlier
-version hid it at `~/.knowledge`, and the practical consequence was that the operator
+version hid it at `~/.knowledge`, and the practical consequence was that its user
 could not find their own knowledge base in Finder — a store you cannot look at is one
 you cannot verify. That is also why `~/Knowledge` is the intake surface rather than
 having one: a file placed anywhere under `{project}/[{layer}/]` is indexed where it
@@ -138,11 +133,9 @@ On each new task the router resolves `{project, layer(s)}` in priority order, an
 stops at the first thing that answers.
 
 An **explicit marker** in the message — `@project` or `@project:layer` — wins
-outright, matched case-insensitively against known projects and accepted as written if
-it names one that does not exist yet. Failing that, **conversation continuity**
-applies: if the thread has already established a context and the new message does not
-signal a switch, stay where you are. Failing that, the **working directory** is
-consulted — but only through a **binding the user made**, never through its name.
+outright, matched case-insensitively against known projects; for recall, a marker
+naming a project that does not exist is ignored. Failing that, the **working
+directory** is consulted — but only through a **binding the user made**, never through its name.
 Matching the folder's basename against the project registry read `clientB/docs/alpha`
 as the `alpha` project and injected `alpha`'s material into another repo's session: a
 folder name is not a project (§4), for retrieval exactly as for filing. The binding is
@@ -177,8 +170,8 @@ short **ask** instead: which project is this folder? — listing the projects th
 exist, offering to create one, and offering "this isn't project work". The answer
 binds the *directory* to a project (`~/Knowledge/.gigabite/bindings.json`, via
 `gigabite project bind`), so the question is asked once per workspace and never
-again, including when the answer is "nothing". Unanswered, it backs off for a month
-rather than arriving on every prompt, and `gigabite project bind --forget` both
+again, including when the answer is "nothing". Unanswered, it comes back once per
+Claude Code session rather than on every prompt, and `gigabite project bind --forget` both
 corrects a wrong answer and brings the question back on demand. A binding on a workspace
 root (a `.git` or package manifest) covers the plain subdirectories beneath it and
 stops at the next workspace, so a checkout with
@@ -187,8 +180,9 @@ every directory it cannot place — and on a fresh install, which has no project
 all, that is every directory, which reads as a tool with no memory rather than one
 that does not know where it is standing. The ask is suppressed where it would be
 meaningless: no workspace marker (a git repo, a package manifest, a `CLAUDE.md`),
-the home directory, scratch space, or inside the knowledge base — and `bind` refuses
-those same places, because a binding on `$HOME` or `/` is a machine-wide one. The
+the home directory, scratch space, or inside the knowledge base. A folder with no
+marker can still be bound by hand, but `bind` refuses `$HOME` and `/`, because a
+binding there is a machine-wide one. The
 folder path is shell-quoted into the block and a name carrying control characters is
 not asked about at all: the ask tells the assistant to *run* a command, so a
 directory name is untrusted input crossing into an instruction. Whether a turn
@@ -206,7 +200,7 @@ be selected — the wrong project — and contexts mix. That is precisely the fa
 design exists to prevent.
 
 **The rule.** Code goes to the working directory, is version-controlled, and reaches
-GitHub. Knowledge — notes, context, synthesised insight, project docs — goes to the
+GitHub. Knowledge — notes, context, transcripts, project docs — goes to the
 resolved path `~/Knowledge/{detected-project}/{layer}/`, *regardless* of the working
 directory. And the knowledge base is always **read** from `~/Knowledge`, never from
 the working directory.
@@ -225,35 +219,28 @@ name each, so `/`, `\`, and `..` cannot escape the knowledge base. This is margi
 less seamless than interception would have been and is fully functional; `ROUTING.md`
 documents it in detail.
 
-## 5. Daily synthesis (removed)
+## 5. Freshness and volume
 
-A scheduled digest that wrote gated "proposals" for knowledge and `core.md` updates was
-built and removed before alpha: nothing read the proposals. The rule it carried still
-holds everywhere — nothing writes to `core.md` without explicit approval.
-
-## 6. Context volume
+The index refreshes itself in the background when a Claude Code session starts, and
+`gigabite ingest` refreshes it on demand. Ingest is incremental: files whose size and
+modification time are unchanged are skipped.
 
 Several meetings a day over months is hundreds of meetings. What keeps a turn from
 dragging all of it along is **layered loading**: a task pulls only the relevant project
 and layer, never the whole store, and recall injects a handful of passages rather than
 documents.
 
-Reference-frequency decay (archiving documents untouched for thirty days) was built
-and removed before alpha, because on a fresh install it archived most imported history
-on the first evening. Documents an older version archived are restored on the next
-`gigabite ingest`. Every default search hit still calls `Store.record_access`.
+There is no decay: nothing is archived out of recall with age. Documents an older
+version archived are restored on the next `gigabite ingest`.
 
-## 7. External integrations
+## 6. External integrations
 
-**Meetings.** There is no integration with a meeting-notes app, which is why the
-source is called `meeting` rather than after one of them. Content arrives because you
-hand it over: an export saved into a project's `meetings/` folder, or a copied
-transcript through `gigabite paste`, which routes it to the same place.
-Nothing in the codebase reads another application's local store — that keeps the path
-free of credentials and immune to whatever that application changes next, which for a
-path used several times a day is worth more than saving the export click. A pull from
-Granola's public API remains the clean future route whenever API access is available;
-the parsing for it is already written. See `MEETINGS.md`.
+**Meetings.** The source is called `meeting` rather than after any app. A meeting
+arrives as an export saved into a project's `meetings/` folder, or as a copied
+transcript through `gigabite paste`, which routes it to the same place. Nothing reads
+another application's local store. The one opt-in exception is a daily pull from
+Granola's public API (`gigabite integrations`), with the key in the keychain; pulled
+meetings are routed by keyword like any other unlabelled document. See `MEETINGS.md`.
 
 **Claude.ai.** Web chats have no official API, and the internal endpoints are
 Cloudflare-gated against non-browser clients. The working route is an in-page export
@@ -273,21 +260,17 @@ idempotent — the stamps on disk are the record, so it survives an index rebuil
 non-destructive, moving raw imports into `.gigabite/originals/` rather than deleting
 them.
 
-**External tool access.** Explicitly shelved. It was flagged as legally and
-contractually fraught in the operating environment, and it is out of scope: not built,
-not stubbed.
-
-## 8. Security model
+## 7. Security model
 
 | Asset | Location | Backup | GitHub |
 |---|---|---|---|
 | Router and scripts (code) | working directory / repo | git | Yes |
-| `core.md` | `~/.core/` | Cloud sync | Never |
-| Project knowledge and notes | `~/Knowledge/` | Cloud sync | Never |
+| `core.md` | `~/.core/` | Your own backup | Never |
+| Project knowledge and notes | `~/Knowledge/` | Your own backup | Never |
 | Credentials | macOS keychain | — | Never |
 
-Content never leaves the device except to cloud sync backup; nothing sensitive touches
-GitHub or any web-facing surface. Credentials are held in the macOS keychain and
+Content never leaves the device; nothing sensitive touches GitHub or any web-facing
+surface. Credentials are held in the macOS keychain and
 retrieved at runtime, never written to files or the repository — the Granola API key
 is entered through the system's own hidden prompt so that it never reaches shell
 history either.
@@ -299,31 +282,8 @@ strip, anonymise, or refuse. This is enforced at the point of egress rather than
 to the judgement of whatever is composing the request.
 
 There is a gap here worth naming, because it is the one the security model does not
-cover. Cloud sync is synchronisation, not version history. A knowledge base accumulated
+cover. File sync is synchronisation, not version history. A knowledge base accumulated
 over months is the most valuable and least reproducible thing on the machine, while
 the code is recoverable from a clone in seconds. A real versioned backup pointed at
 `~/Knowledge` is the sensible complement to everything above, and it is not something
 the tool can do for you.
-
-## 9. Build order
-
-Phasing follows the dependency order set by the open assumptions rather than by
-convenience. The two load-bearing verifications came first, because both changed the
-shape of what got built. Then the core load — `core.md` always loaded, knowledge read
-from `~/Knowledge`. Then context detection with nested-layer resolution, then
-knowledge-write routing, then manual meeting supply.
-
-## 10. Open items
-
-| # | Item | Impact | Status |
-|---|---|---|---|
-| 1 | Claude Code file-write interception (§4) | Load-bearing — determines the write mechanism | **Resolved** — no interception; an explicit write through `features.save` is the mechanism |
-| 2 | Granola API / programmatic export (§7) | Enhancement versus manual supply | **Resolved** — supplied by hand, no local store is read; public API pending access |
-| 4 | Keychain integration (§8) | Security | **Resolved** — macOS `security`, service `gigabite:granola` |
-| 6 | Nested-layer naming per project (§2.2) | Data, not tool | **Open by design** — decided per project |
-
-The two items that could have materially reshaped the design have both resolved, and
-in each case toward the more conservative of the two branches that were planned for.
-What remains open is tuning and data modelling, neither of which requires a structural
-change. The design is therefore settled; the interesting work from here is in ranking
-quality.
