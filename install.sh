@@ -2,8 +2,8 @@
 # gigabite installer — idempotent, additive, non-destructive.
 #   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
 #   • puts `gigabite` on your PATH
-#   • installs /search, /search-status and /core-setup commands (user-level)
-#   • installs the gg-* subagents and the gigabite skills (user-level)
+#   • installs the /search and /core-setup commands (user-level)
+#   • wires the router block and the ambient-recall hook into ~/.claude
 #   • offers to enable the "AI brain" integrations (Granola, more soon)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
@@ -58,7 +58,6 @@ LAUNCHCTL="${GIGABITE_LAUNCHCTL:-launchctl}"
 # ---------------------------------------------------------------------------
 say "1/9  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
-mkdir -p "$CORE_DIR/capability"    # `paths` above created the knowledge layout
 ok "core: $CORE_DIR  ·  knowledge: $KNOW_DIR"
 
 copy_if_absent() { # src dest
@@ -87,16 +86,7 @@ refresh_doc() { # src dest
   cp "$1" "$2"
 }
 copy_if_absent "$REPO/install/scaffold/core.md"              "$CORE_DIR/core.md"
-copy_if_absent "$REPO/install/scaffold/capability-README.md" "$CORE_DIR/capability/README.md"
 refresh_doc    "$REPO/install/scaffold/knowledge-README.md"  "$KNOW_DIR/README.md"
-
-# SOPs the subagents load at runtime
-if [ -d "$REPO/install/scaffold/sops" ]; then
-  mkdir -p "$CORE_DIR/capability/sops"
-  for sop in "$REPO/install/scaffold/sops/"*.md; do
-    [ -e "$sop" ] && copy_if_absent "$sop" "$CORE_DIR/capability/sops/$(basename "$sop")"
-  done
-fi
 
 # ---------------------------------------------------------------------------
 say "2/9  Putting gigabite on your PATH"
@@ -132,10 +122,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-say "3/9  Installing Claude Code commands, subagents + skills (user-level)"
+say "3/9  Installing Claude Code commands (user-level)"
 CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CMD_DIR"
-# A slash command or agent by one of our names may already be the user's own work.
+# A slash command by one of our names may already be the user's own work.
 # Overwriting it unconditionally spent something they never agreed to risk, and did
 # it silently. So a file that shows no sign of being ours is left exactly as it is.
 #
@@ -159,53 +149,39 @@ install_managed() { # src dest label
   detail ok "$3"
   WROTE=$((WROTE + 1))
 }
-for f in gg search search-status calendar meeting core-setup; do
+for f in search core-setup; do
   [ -e "$REPO/install/claude-commands/$f.md" ] || continue
   install_managed "$REPO/install/claude-commands/$f.md" "$CMD_DIR/$f.md" "/$f"
 done
 CMD_N=$WROTE
-# Commands that have been renamed: /recall-status -> /search-status, because it
-# reports on the search index and "recall" named the mechanism rather than the thing
-# being asked about; /granola -> /meeting, because the tool it came from is one
-# person's habit and the job is filing a meeting. The old file keeps working, so
-# leaving it behind would mean two commands for one job. Removed only when it is
+# Commands an older install wrote that no longer ship: /recall-status and /granola
+# were renamed away; /gg, /search-status, /calendar and /meeting were retired (the
+# ambient hook, `gigabite status` and `gigabite paste` cover them). A file left
+# behind keeps working and calls commands that are gone. Removed only when it is
 # ours, on the same test as everything else here.
-for stale_cmd in recall-status granola; do
+for stale_cmd in recall-status granola gg search-status calendar meeting; do
   STALE="$CMD_DIR/$stale_cmd.md"
   if [ -e "$STALE" ] && is_ours "$STALE"; then
-    rm -f "$STALE" && note "removed /$stale_cmd — it has been renamed"
+    rm -f "$STALE" && note "removed /$stale_cmd — it is no longer part of gigabite"
   fi
 done
-AGENT_N=0
-if [ -d "$REPO/install/scaffold/agents" ]; then
-  AGENT_DIR="$HOME/.claude/agents"
-  mkdir -p "$AGENT_DIR"
-  for a in "$REPO/install/scaffold/agents/"*.md; do
-    [ -e "$a" ] || continue
-    install_managed "$a" "$AGENT_DIR/$(basename "$a")" "subagent $(basename "$a" .md)"
-  done
-  AGENT_N=$((WROTE - CMD_N))
-fi
-
-# Skills auto-trigger off their own description, so they need no invocation by name —
-# which is also why the directory layout is not optional: Claude Code reads a skill
-# from `<name>/SKILL.md`, and a bare `<name>.md` is ignored in silence.
-#
-# The directory name is the skill's name, and a skill SHADOWS a slash command of the
-# same name. That is why none of these is called `meeting`: it would disable /meeting
-# without saying anything. tests/test_skills.py pins that rule.
-SKILL_N=0
-if [ -d "$REPO/install/scaffold/skills" ]; then
-  SKILL_DIR="$HOME/.claude/skills"
-  for s in "$REPO/install/scaffold/skills/"*/SKILL.md; do
-    [ -e "$s" ] || continue
-    skill="$(basename "$(dirname "$s")")"
-    mkdir -p "$SKILL_DIR/$skill"
-    install_managed "$s" "$SKILL_DIR/$skill/SKILL.md" "skill $skill"
-  done
-  SKILL_N=$((WROTE - CMD_N - AGENT_N))
-fi
-ok "$CMD_N commands, $AGENT_N subagents, $SKILL_N skills"
+# Subagents and skills an older install wrote. They are deferred until after the
+# alpha, and a copy left behind keeps triggering on its own and calls commands that
+# are gone. Removed only when ours; a skill's directory goes only if that empties it.
+for a in gg-builder gg-researcher gg-reviewer; do
+  STALE="$HOME/.claude/agents/$a.md"
+  if [ -e "$STALE" ] && is_ours "$STALE"; then
+    rm -f "$STALE" && note "removed subagent $a — it is no longer part of gigabite"
+  fi
+done
+for skill in meeting-prep decision-record design-critique; do
+  STALE="$HOME/.claude/skills/$skill/SKILL.md"
+  if [ -e "$STALE" ] && is_ours "$STALE"; then
+    rm -f "$STALE" && note "removed skill $skill — it is no longer part of gigabite"
+    rmdir "$HOME/.claude/skills/$skill" 2>/dev/null || true
+  fi
+done
+ok "slash commands installed: $CMD_N"
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +272,7 @@ esac
 ok "router protocol + ambient recall (remove the hook from ~/.claude/settings.json to disable)"
 
 # ---------------------------------------------------------------------------
-say "5/9  Scheduling the gated end-of-day synthesis (launchd)"
+say "5/9  Scheduling the daily index refresh (launchd)"
 DAILY="$REPO/bin/gigabite-daily"; chmod +x "$DAILY"
 LOG="$HOME/Library/Logs/gigabite-synthesis.log"
 LA_DIR="$HOME/Library/LaunchAgents"; PLIST="$LA_DIR/com.gigabite.synthesis.plist"
@@ -305,7 +281,7 @@ sed -e "s|__DAILY_BIN__|$DAILY|g" -e "s|__LOG__|$LOG|g" \
     "$REPO/install/launchd/com.gigabite.synthesis.plist" > "$PLIST"
 "$LAUNCHCTL" bootout "gui/$(id -u)/com.gigabite.synthesis" 2>/dev/null || true
 if "$LAUNCHCTL" bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null; then
-  ok "scheduled: gigabite synthesize + decay daily at 18:00 (gated; nothing auto-applies)"
+  ok "scheduled: gigabite ingest daily at 18:00"
 else
   warn "installed the LaunchAgent plist but couldn't load it now; it will load at next login. ($PLIST)"
 fi

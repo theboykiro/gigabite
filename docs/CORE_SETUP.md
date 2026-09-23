@@ -5,13 +5,13 @@ six sections are marked `[FILL]` for the user to complete by hand. Almost nobody
 This document designs the replacement: a setup pass that treats `core.md` as a set of
 questions rather than a document, works out which of them the user's own history can
 already answer, interviews them for the rest, and proposes a finished protocol for
-approval. The slot registry, coverage pass, proposal writer, interview and installer
-step are built; the extraction half is demoted to optional corroboration, for the reason
-in §8.
+approval. The slot registry, interview, per-slot applier and installer step are built.
+The coverage pass and proposal writer (§3, and steps 2–3 of §7) were built and then
+removed before alpha: `/core-setup` did not use them, so the interview carries the
+whole load.
 
 It sits between three things that already exist. The scaffold it replaces is
-`install/scaffold/core.md`; the approval gate it reuses is the proposal mechanism in
-[SYNTHESIS.md](SYNTHESIS.md); the first-run screen it extends is the welcome brief
+`install/scaffold/core.md`; the first-run screen it extends is the welcome brief
 described in [FEATURES.md](FEATURES.md). Read [PHILOSOPHY.md](PHILOSOPHY.md) first if
 the question "why not just ask a model to write it" seems obvious — the answer is in
 §4, and it is not obvious.
@@ -134,52 +134,14 @@ does not go in `core.md` — the scaffold's closing line, "if a rule isn't load-
 it's noise", is the acceptance test, and a setup flow that grows the file is a
 regression even when every added line is true.
 
-## 3. Coverage, and the stopping condition
+## 3. Coverage (removed)
 
-The question this design exists to answer is "how do we know we have enough context",
-and per-slot coverage is what makes it answerable. Rather than judging the corpus as a
-whole, each slot is evaluated independently against the index and lands in one of four
-states: **shipped** (no question to ask), **evidenced** (the corpus supports a specific
-draft), **thin** (some signal, not enough to draft), or **empty**.
-
-Evidenced slots are not asked. They are shown, with their evidence, for confirmation or
-edit. Thin and empty slots are interviewed. The pass is complete when every slot is
-shipped, confirmed, answered, or explicitly declined — which is a real terminal
-condition rather than a judgement call, and it is the same mechanism for a new user and
-an existing one. A brand-new user simply has every non-shipped slot empty and receives
-the full interview; nothing special-cases them.
-
-This is also why both paths are always offered. A fresh install on a second laptop has
-an empty index, so coverage correctly reports no evidence for everything and the
-interview carries the whole load. Once that machine has months of history, re-running
-the pass finds evidence where there was none. The same command does both jobs.
-
-Extraction has three failure modes that the implementation must design against, because
-each produces a plausible-looking and wrong result.
-
-The first is **learning the assistant's voice instead of the user's**. The corpus is
-mostly assistant output by volume. Search hits carry a `role`, and extraction must
-filter to the user's own turns; skip that filter and the pass concludes that the user
-writes in fluent, hedged, well-structured paragraphs, and writes a `core.md` instructing
-the assistant to sound exactly like an assistant.
-
-The second is **mistaking speech for preference**. Meeting transcripts record how
-someone talks to colleagues, which is not a statement about how they want software to
-behave. Someone diplomatic in a room may want blunt tooling. Meeting sources are
-therefore weak evidence for tone slots and no evidence at all for the stated ones.
-
-The third is **stated versus revealed preference**, which is the reason the interview is
-not simply replaced by extraction. Nisbett and Wilson (1977) is the grounding here: people
-have limited introspective access to their own processes and will readily supply a
-plausible account of themselves that is not the operative one. Users describe themselves
-aspirationally. The
-strongest available signal for the stated slots is neither self-description nor prose
-style but **corrections** — the turns where the user told an assistant to stop doing
-something, be shorter, skip the summary, or just act. Those are direct evidence about
-desired assistant behaviour rather than a proxy for it, and they are the one class of
-evidence that can legitimately populate a `[FILL]` section. Where a correction supports
-a draft, the draft must be shown with the correction quoted beside it, so the user is
-confirming a claim about themselves rather than accepting an assertion.
+A model-free pass that scored each slot against the index (shipped / evidenced / thin /
+empty) was built and removed before alpha, because `/core-setup` never called it. If it
+returns, the constraints that shaped it still hold: evidence must come from the user's
+own typed turns (never assistant output or tool results), meeting speech is not a
+preference, and corrections are the only evidence strong enough to draft a `[FILL]`
+section.
 
 ## 4. Where the drafting happens
 
@@ -188,12 +150,10 @@ gigabite has no model of its own, and that is a deliberate property rather than 
 is not strictly required. Turning `core.md` generation into a model call inside the CLI
 would make the tool depend on the thing it is meant to feed.
 
-The split that preserves this is that **gigabite retrieves and Claude drafts**. A
-model-free subcommand runs the coverage pass — read-only queries against the index, the
-user's own turns, per-slot evidence bundles — and prints a structured result including
-which slots are evidenced and which are empty. The interview and the drafting happen in
-Claude Code, through a command that runs the coverage pass and conducts the rest as a
-conversation.
+The split that preserves this is that **gigabite stores and Claude asks**. A model-free
+subcommand (`gigabite core interview --json`) prints which slots are still open; the
+interview and the drafting happen in Claude Code, in `/core-setup`, and the approved
+answers go back through `gigabite core apply`.
 
 This is better on its own merits, not merely more architecturally convenient. "How do
 you want ambiguous calls made?" is a bad question in a terminal questionnaire and a
@@ -202,17 +162,11 @@ when an answer contradicts the evidence. The CLI half stays useful without a mod
 degrades to an honest "run this in Claude Code" when there isn't one, and remains
 testable deterministically.
 
-Read-only means read-only: the coverage pass must query with recording disabled, so
-inspecting the corpus does not stamp access times or resurrect archived documents and
-thereby corrupt the ranking signal it just consumed.
-
 ## 5. The write gate
 
-Nothing generated is applied. The pass produces a **proposal**, exactly as the daily
-synthesis loop already does when it suggests protocol updates, and the user approves it
-explicitly before anything reaches `~/.core/core.md`. The existing protocol already
-states this gate as absolute, a test already pins synthesis to it, and a setup flow that
-wrote directly would be the one component permitted to overwrite the constitutional
+Nothing generated is applied. The user approves each answer explicitly before anything
+reaches `~/.core/core.md`. The existing protocol already states this gate as absolute,
+and a setup flow that wrote directly would be the one component permitted to overwrite the constitutional
 layer — which is precisely backwards.
 
 Approval is per-slot, not all-or-nothing, because a user who disagrees with one inferred
@@ -250,18 +204,14 @@ later ones `/8`. Adding a step forces a renumber, which is the moment to fix it.
 1. The slot registry as data, with the three kinds distinguished and the shipped slots
    carrying their final text. No retrieval yet. Done when the existing scaffold can be
    rendered from the registry and matches the current file.
-2. The coverage pass, model-free and read-only, with role filtering and per-slot
-   evidence bundles. Done when a populated index yields evidence for tone slots and an
-   empty one reports every slot empty without error.
-3. The proposal writer, reusing the synthesis proposal path and gate. Done when a test
+2. *(removed)* The coverage pass.
+3. *(removed)* The proposal writer. The gate it carried survives in the applier: a test
    pins that no code path writes `core.md` without explicit approval.
 4. The conversational interview and per-slot approval in Claude Code. Done when a new
    user reaches a complete, personal `core.md` without hand-editing markdown.
 5. Installer step and welcome check, both TTY-correct. Done when the piped one-liner
    completes without hanging and tells the user what to run next.
 
-Steps 1–3 are useful shipped alone: they make the protocol inspectable and give the
-synthesis loop a schema to propose against.
 
 ## 8. What would make this the wrong thing to build
 

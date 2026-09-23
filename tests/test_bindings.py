@@ -423,7 +423,7 @@ class TestTheAskBacksOff(BindingCase):
         self.emit()
         stale = (datetime.now(timezone.utc)
                  - timedelta(days=bindings.ASK_AGAIN_AFTER_DAYS + 1)).isoformat()
-        bindings._save(bindings.load(), {os.path.realpath(self.work): stale})
+        bindings._write(bindings.load(), {os.path.realpath(self.work): stale})
         self.assertTrue(self.emit(), "permanent silence is the other failure")
 
     def test_binding_clears_the_record_rather_than_leaving_it_behind(self):
@@ -433,7 +433,7 @@ class TestTheAskBacksOff(BindingCase):
         self.assertIsNone(self.route()["ask"])
 
     def test_an_unreadable_timestamp_resolves_toward_quiet(self):
-        bindings._save({}, {os.path.realpath(self.work): "not a date"})
+        bindings._write({}, {os.path.realpath(self.work): "not a date"})
         self.assertIsNone(self.route()["ask"])
 
 

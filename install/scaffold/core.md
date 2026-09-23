@@ -70,7 +70,6 @@ How you want calls made when they're ambiguous. Examples to replace with your ow
 ## 6. How agents get spun up  **[FILL]**
 
 - When to delegate to a sub-agent vs. do it inline.
-- Which SOP a spawned agent loads for its role (SOPs are modular; see `~/.core/capability/`).
 - **A subagent's "done" is a claim, not evidence.** Verify delegated work against
   the real artefact before relaying it — an agent reporting success while doing the
   opposite is a real failure mode, not a hypothetical one.

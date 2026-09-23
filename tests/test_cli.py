@@ -3,16 +3,14 @@
 Until now every CLI command was untested. That mattered more than it sounds,
 because the shipped slash commands are thin wrappers around these:
 
-    /gg             -> core, ingest --no-remote, route --json
     /search         -> ingest, search
-    /search-status  -> ingest, status
-    /calendar       -> calendar add --json-file, calendar agenda --day today
+    ambient hook    -> route --json
 
 `Store.search` had good coverage; `gigabite search` had none, so argument parsing,
 filters, output shape and exit codes were all unverified.
 
 These are **characterisation** tests: they pin what the commands do today so that
-the changes queued in ROADMAP item 8 — taking the inline ingest out of `/gg`,
+the changes queued in ROADMAP item 8 — taking the inline ingest out of `/search`,
 stopping index writes on the recall path — are refactors with a safety net rather
 than rewrites of untested code.
 
@@ -627,7 +625,7 @@ class TestCore(CliTestCase):
         self.assertIn("Answer first", out)
 
     def test_a_missing_protocol_is_not_a_crash(self):
-        """/gg runs this on every turn; it must degrade, not fail."""
+        """Skills fall back on this to load the protocol; it must degrade, not fail."""
         code, _out = run("core")
         self.assertIn(code, (0, 1))
 
@@ -639,16 +637,6 @@ class TestReindex(CliTestCase):
         self.assertEqual(run("reindex")[0], 0)
         run("ingest")
         self.assertEqual({d["doc_id"] for d in self.store().iter_documents()}, before)
-
-    def test_the_ledger_survives_a_reindex(self):
-        from gigabite.features import ledger as L
-        led = L.Ledger.open()
-        rid = led.start_run("outlive a reindex").run_id
-        led.close()
-        run("reindex")
-        led = L.Ledger.open()
-        self.addCleanup(led.close)
-        self.assertIsNotNone(led.get_run(rid))
 
 
 class TestSaveAndProject(CliTestCase):
@@ -676,47 +664,11 @@ class TestSaveAndProject(CliTestCase):
         self.assertTrue((self.root / "vendor-x").is_dir())
 
 
-class TestDecayAndSynthesis(CliTestCase):
-    def test_decay_status_reports_without_archiving(self):
-        active_before = len([d for d in self.store().iter_documents()])
-        code, _out = run("decay", "--status")
-        self.assertEqual(code, 0)
-        self.assertEqual(len(self.store().iter_documents()), active_before)
-
-    def test_decay_defaults_to_a_dry_run(self):
-        code, out = run("decay")
-        self.assertEqual(code, 0)
-        self.assertTrue(out.strip())
-
-    def test_synthesize_print_writes_no_proposal(self):
-        code, _out = run("synthesize", "--print")
-        self.assertEqual(code, 0)
-        self.assertFalse(list(config.PROPOSALS_DIR.glob("*.md")))
-
-
-class TestCalendar(CliTestCase):
-    MEETINGS = [{"title": "Widget steering", "date": "2099-03-01",
-                 "time": "10:00", "attendees": ["Dana"]}]
-
-    def test_add_from_stdin_then_agenda(self):
-        stdin = sys.stdin
-        sys.stdin = io.StringIO(json.dumps(self.MEETINGS))
-        try:
-            code, _out = run("calendar", "add", "--stdin")
-        finally:
-            sys.stdin = stdin
-        self.assertEqual(code, 0)
-        code, out = run("calendar", "agenda", "--day", "all")
-        self.assertEqual(code, 0)
-        self.assertIn("Widget steering", out)
-
-
 class TestPaths(CliTestCase):
-    def test_names_the_ledger_and_the_knowledge_root(self):
+    def test_names_the_knowledge_root(self):
         code, out = run("paths")
         self.assertEqual(code, 0)
         self.assertIn(str(self.root), out)
-        self.assertIn("ledger", out)
 
 
 class TestNoArguments(CliTestCase):
@@ -727,23 +679,22 @@ class TestNoArguments(CliTestCase):
 
 
 class TestHelpSurface(CliTestCase):
-    """The autonomy commands are wired but nothing drives them yet, so they stay
-    out of --help. Hidden, not removed: help has to omit them and they still
-    have to run."""
+    """Commands cut before alpha must be gone from --help and must not dispatch."""
 
-    HIDDEN = ("run", "policy", "connect", "audit")
+    REMOVED = ("run", "policy", "connect", "audit", "synthesize", "decay", "relocate",
+               "claude-login", "claude-sync", "calendar")
 
     def _help(self):
         # format_help() rather than run("--help"), which exits via SystemExit.
         return cli.build_parser().format_help()
 
-    def test_help_omits_the_undriven_autonomy_commands(self):
+    def test_help_omits_the_removed_commands(self):
         listed = {
             line.split()[0]
             for line in self._help().splitlines()
             if line.startswith("    ") and line.split()
         }
-        for name in self.HIDDEN:
+        for name in self.REMOVED:
             self.assertNotIn(name, listed)
 
     def test_help_still_lists_the_commands_with_callers(self):
@@ -751,12 +702,13 @@ class TestHelpSurface(CliTestCase):
         for name in ("search", "save", "paste", "add", "ingest", "route"):
             self.assertIn(name, out)
 
-    def test_hidden_commands_still_dispatch(self):
-        for args in (("run", "list"), ("policy", "show"),
-                     ("connect", "list"), ("audit",)):
-            with self.subTest(command=" ".join(args)):
-                code, _ = run(*args)
-                self.assertEqual(code, 0)
+    def test_removed_commands_no_longer_parse(self):
+        parser = cli.build_parser()
+        for name in self.REMOVED:
+            with self.subTest(command=name), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args([name])
 
     def test_suppress_sentinel_never_leaks_into_help(self):
         # argparse formats subactions without the SUPPRESS check it applies to

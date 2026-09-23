@@ -612,12 +612,6 @@ def _update(change, *, only_if_intact: bool = False) -> bool:
     return True
 
 
-def _save(entries: dict, asked_at: dict) -> None:
-    """Whole-file write. Only for callers that already hold the whole picture."""
-    with _exclusive():
-        _write(entries, asked_at)
-
-
 def bind(directory, project: Optional[str]) -> str:
     """Record *directory* → *project* (``None`` = not project work). Returns the key.
 
@@ -662,20 +656,6 @@ def forget(directory) -> bool:
 
     _update(change)
     return hit
-
-
-def is_workspace(path) -> bool:
-    """Is *path* a body of work of its own, rather than only a subdirectory?
-
-    The boundary ``lookup`` stops at. See ``_is_own_work`` for the rule and why it
-    is the way round it is; this is the same question asked in one value, with a
-    recognised workspace marker counting too.
-    """
-    try:
-        p = Path(path)
-        return _is_askable(p) or _is_own_work(p)[0]
-    except OSError:
-        return True                                # unknown shape: do not inherit
 
 
 def lookup(cwd) -> tuple[bool, Optional[str]]:

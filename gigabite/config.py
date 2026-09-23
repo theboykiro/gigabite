@@ -2,7 +2,7 @@
 
 Everything content-bearing lives under the home directory, never in the repo:
 
-    ~/.core/       operating protocol (core.md) + reusable capability
+    ~/.core/       operating protocol (core.md)
     ~/Knowledge/   project knowledge — and nothing else
 
 ``~/Knowledge`` is deliberately visible, and deliberately boring to look at. It
@@ -23,7 +23,7 @@ what this folder is::
         contoso/           where they sit — no drop box, no filing step.
         README.md          what this folder is, in twenty lines
         .gigabite/         every moving part, hidden: the index, raw imports,
-                           archive, proposals, routing aliases
+                           routing aliases
 
 ``ls`` shows projects and a README. Everything mechanical is behind the single dot
 folder, which is not content and never needs opening.
@@ -77,26 +77,11 @@ def machine_dir(root=None) -> Path:
     return (Path(root) if root else KNOWLEDGE_DIR) / MACHINE_DIRNAME
 
 
-def proposals_dir(root=None) -> Path:
-    return machine_dir(root) / "proposals"
-
-
 MACHINE_DIR = machine_dir()
 
 # The SQLite index. Derived data: deletable at any time, rebuilt by `reindex`.
 INDEX_DIR = MACHINE_DIR / "index"
 DB_PATH = INDEX_DIR / "gigabite.db"
-
-# The autonomy ledger (docs/AUTONOMY.md §3). A SEPARATE file from the index, and
-# deliberately so: the index is derived data that `reindex` deletes and rebuilds
-# from the files on disk, whereas a run's history is a primary record that
-# nothing can regenerate. Different durability class, different file.
-LEDGER_PATH = INDEX_DIR / "ledger.db"
-
-# Global kill switch (docs/AUTONOMY.md §4). A file rather than a database row so
-# that it can be set, read and cleared by hand — with `touch` and `rm`, from any
-# process, while the database is locked, and while nothing of ours is running.
-STOP_FILE = MACHINE_DIR / "STOP"
 
 # Raw machine-readable imports — a claude.ai export's conversations.json. Not
 # content: every readable form of what they hold lives in a project folder (see
@@ -105,13 +90,6 @@ STOP_FILE = MACHINE_DIR / "STOP"
 SOURCES_DIR = MACHINE_DIR / "imports"
 SOURCES_CLAUDE_AI = SOURCES_DIR / "claude_ai"
 SOURCES_MEETINGS = SOURCES_DIR / "meetings"
-
-# Decayed knowledge: still indexed and retrievable, just no longer in the way
-# (ARCHITECTURE §6).
-HISTORICAL_DIR = MACHINE_DIR / "archive"
-
-# Gated synthesis output, listed by `gigabite synthesize --list` (ARCHITECTURE §5).
-PROPOSALS_DIR = MACHINE_DIR / "proposals"
 
 # Originals preserved by a migration: the "before" copy of a file that has been
 # rewritten into the current layout. Nothing here is indexed; it exists only so a
@@ -126,11 +104,6 @@ ALIASES_FILE = MACHINE_DIR / "aliases.json"
 # the record that they were asked, so they are never asked about it twice. User
 # state about their own machine, not knowledge, so it lives with the machinery.
 BINDINGS_FILE = MACHINE_DIR / "bindings.json"
-
-# Older names for the two import paths, kept so an out-of-tree caller keeps working.
-INBOX_CLAUDE_AI = SOURCES_CLAUDE_AI
-INBOX_MEETINGS = SOURCES_MEETINGS
-INBOX_DIR = SOURCES_DIR
 
 # Sentinel project meaning "not resolved". Content saved under it lands at the
 # knowledge root: no folder is invented, nothing new appears in Finder, and the
@@ -219,6 +192,5 @@ def ensure_dirs() -> None:
         SOURCES_DIR,
         SOURCES_CLAUDE_AI,
         SOURCES_MEETINGS,
-        HISTORICAL_DIR,
     ):
         d.mkdir(parents=True, exist_ok=True)

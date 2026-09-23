@@ -1,4 +1,4 @@
-"""Tests for the core-setup proposal writer and its write gate.
+"""Tests for the core-setup applier and its write gate.
 
 Pure stdlib (unittest). No network, no writes to the real home directory — the
 harness repoints `~/.core` and `~/Knowledge` into a temp dir before `gigabite`
@@ -15,7 +15,6 @@ import inspect
 import sys
 import os
 import unittest
-from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
@@ -26,104 +25,11 @@ from gigabite import config  # noqa: E402
 # The real sibling modules, always. An earlier version of this file installed
 # stubs for `core_slots` and `core_coverage` when they failed to import, which
 # was defensible while the three modules were being built in parallel and is not
-# any more: all three exist, and a fallback that fires on ImportError can only
+# any more: they all exist, and a fallback that fires on ImportError can only
 # hide breakage. Masking `core_slots` used to leave the suite green; it must now
 # fail loudly. Where a test needs a controlled slot set, it builds one visibly
 # in the test rather than through an import-time fallback.
 from gigabite.features import core_proposal, core_slots  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# local fixtures for build_proposal
-#
-# `build_proposal` reads its input by attribute, so these plain objects exercise
-# it without depending on the sibling module's exact types.
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class FakeEvidence:
-    doc_id: str = "claude_code:abc123"
-    source: str = "claude_code"
-    title: str = "A past session"
-    created_utc: str = "2026-01-02T10:00:00+00:00"
-    snippet: str = "stop summarising at the end, just give me the answer"
-    why: str = "a correction: an explicit instruction about assistant behaviour"
-
-
-@dataclass(frozen=True)
-class FakeCoverage:
-    slot_id: str
-    state: str
-    evidence: tuple = field(default=())
-
-
-class TestBuildProposal(unittest.TestCase):
-    def test_every_slot_gets_its_own_approval_checkbox(self):
-        coverages = [
-            FakeCoverage("tone.cut", "evidenced", (FakeEvidence(),)),
-            FakeCoverage("decisions.ambiguity", "empty"),
-            FakeCoverage("tone.invariants", "shipped"),
-        ]
-        text = core_proposal.build_proposal(coverages)
-        for slot_id in ("tone.cut", "decisions.ambiguity", "tone.invariants"):
-            self.assertIn(f"- [ ] Approve `{slot_id}`", text)
-        # per slot, not all-or-nothing
-        self.assertEqual(text.count("- [ ] Approve `"), 3)
-        self.assertIn("GATED", text)
-
-    def test_evidenced_slot_shows_the_draft_beside_its_evidence(self):
-        ev = FakeEvidence()
-        coverages = [FakeCoverage("tone.cut", "evidenced", (ev,))]
-        text = core_proposal.build_proposal(
-            coverages, drafts={"tone.cut": "- No closing summary."})
-        self.assertIn("- No closing summary.", text)
-        self.assertIn("Evidence", text)
-        self.assertIn(ev.snippet, text)
-        self.assertIn(ev.doc_id, text)
-        self.assertIn(ev.why, text)
-
-    def test_evidenced_slot_without_a_draft_never_invents_one(self):
-        text = core_proposal.build_proposal(
-            [FakeCoverage("tone.cut", "evidenced", (FakeEvidence(),))])
-        self.assertIn(core_proposal.DRAFT_PLACEHOLDER, text)
-
-    def test_thin_and_empty_slots_show_the_question_not_a_draft(self):
-        coverages = [
-            FakeCoverage("decisions.ambiguity", "empty"),
-            FakeCoverage("decisions.pushback", "thin", (FakeEvidence(),)),
-        ]
-        text = core_proposal.build_proposal(coverages)
-        self.assertIn("Question", text)
-        self.assertIn(core_slots.get_slot("decisions.ambiguity").question, text)
-        self.assertIn(core_slots.get_slot("decisions.pushback").question, text)
-        self.assertNotIn("**Proposed**", text)
-
-    def test_existing_core_md_is_shown_as_a_change(self):
-        # Headings taken from the registry, so this fixture cannot drift out of
-        # step with the real slot titles and quietly stop exercising the lookup.
-        cut = core_slots.get_slot("tone.cut").title
-        existing = (
-            f"# Core Protocol\n\n## {cut}\n\n- No validation openers.\n\n"
-            "## Push-back\n\n[FILL]\n"
-        )
-        text = core_proposal.build_proposal(
-            [FakeCoverage("tone.cut", "evidenced", (FakeEvidence(),)),
-             FakeCoverage("info.uncertainty", "empty")],
-            existing_core_md=existing,
-            drafts={"tone.cut": "- No validation openers. No closing summary."},
-        )
-        self.assertIn("**Currently**", text)
-        self.assertIn("> - No validation openers.", text)
-        # a slot with nothing in the current file is reported as an addition,
-        # not silently presented as if it replaced something
-        self.assertIn("Not present — this would be added.", text)
-
-    def test_accepts_a_generator(self):
-        gen = (FakeCoverage(sid, "empty")
-               for sid in ("tone.cut", "decisions.pushback"))
-        text = core_proposal.build_proposal(gen)
-        self.assertIn("Slots: 2.", text)
-        self.assertIn("- [ ] Approve `decisions.pushback`", text)
 
 
 class TestTheWriteGate(_harness.TempRoot):
@@ -131,33 +37,11 @@ class TestTheWriteGate(_harness.TempRoot):
 
     `core.md` is the constitutional layer, loaded in full into every session. The
     whole design rests on one rule: nothing generated reaches that file without
-    the user approving it, per slot. `write_proposal` runs retrieval and drafting
-    and must leave `core.md` byte-identical; the only function permitted to write
-    it is `apply_proposal`, and only when a caller hands it an explicit mapping of
-    approved slots. If either of these tests is failing, the feature is unsafe to
-    ship — fix the code, not the test.
+    the user approving it, per slot. The only function permitted to write it is
+    `apply_proposal`, and only when a caller hands it an explicit mapping of
+    approved slots. If this test is failing, the feature is unsafe to ship — fix
+    the code, not the test.
     """
-
-    def test_write_proposal_leaves_core_md_byte_identical(self):
-        before = "# Core Protocol\n\n## Cut\n\n- The user's own words.\n"
-        config.CORE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        config.CORE_FILE.write_bytes(before.encode("utf-8"))
-        stat_before = config.CORE_FILE.stat().st_mtime_ns
-
-        store = _harness.scratch_store("core_proposal_gate")
-        path = core_proposal.write_proposal(store)
-
-        self.assertTrue(path.exists())
-        self.assertEqual(path.parent, config.PROPOSALS_DIR)
-        self.assertEqual(config.CORE_FILE.read_bytes(), before.encode("utf-8"))
-        self.assertEqual(config.CORE_FILE.stat().st_mtime_ns, stat_before)
-        self.assertIn("GATED", path.read_text(encoding="utf-8"))
-
-    def test_write_proposal_does_not_create_core_md_when_absent(self):
-        self.assertFalse(config.CORE_FILE.exists())
-        store = _harness.scratch_store("core_proposal_gate_absent")
-        core_proposal.write_proposal(store)
-        self.assertFalse(config.CORE_FILE.exists())
 
     def test_no_unallowed_filesystem_mutation_in_the_core_setup_modules(self):
         """A static check, so a future writer path fails here rather than in the wild.
@@ -166,7 +50,7 @@ class TestTheWriteGate(_harness.TempRoot):
         search over one file was blind to `open(..., 'w')`, `shutil.*`,
         `os.replace` and `Path.replace` — and in fact could not see the
         `core_path.replace(kept)` in `set_aside`, which mutates `core.md`. It is
-        the AST of all three `core_*.py` modules that establishes the invariant,
+        the AST of the `core_*.py` modules that establishes the invariant,
         not the intentions in the docstrings.
 
         Every mutating primitive is collected as (module, enclosing function,
@@ -221,18 +105,16 @@ class TestTheWriteGate(_harness.TempRoot):
             Walk().visit(ast.parse(path.read_text(encoding="utf-8")))
             return found
 
-        # The only three call sites that may touch disk, and why each is safe:
-        #   write_proposal  — writes the proposal, never core.md
+        # The only call sites that may touch disk, and why each is safe:
         #   set_aside       — moves the existing core.md to a dated copy
         #   apply_proposal  — the sole writer of core.md, gated on `approved`
         ALLOWED = {
-            ("core_proposal", "write_proposal", "write_text"),
             ("core_proposal", "set_aside", "replace"),
             ("core_proposal", "apply_proposal", "write_text"),
         }
 
         found = set()
-        for module in ("core_slots", "core_coverage", "core_proposal"):
+        for module in ("core_slots", "core_proposal"):
             path = Path(core_proposal.__file__).with_name(f"{module}.py")
             self.assertTrue(path.exists(), path)
             found.update(mutations(path, module))
@@ -241,22 +123,6 @@ class TestTheWriteGate(_harness.TempRoot):
         # and the known-good ones are still there, so the check cannot pass by
         # having silently stopped finding anything
         self.assertEqual(found, ALLOWED)
-
-
-class TestWriteProposal(_harness.TempRoot):
-    def test_idempotent_for_the_day(self):
-        store = _harness.scratch_store("core_proposal_idem")
-        p1 = core_proposal.write_proposal(store)
-        p2 = core_proposal.write_proposal(store)
-        self.assertEqual(p1, p2)
-        self.assertEqual(len(core_proposal.list_proposals()), 1)
-
-    def test_explicit_path_is_honoured(self):
-        store = _harness.scratch_store("core_proposal_path")
-        out = self.root / "elsewhere" / "proposal.md"
-        path = core_proposal.write_proposal(store, path=out)
-        self.assertEqual(path, out)
-        self.assertTrue(out.exists())
 
 
 class TestApplyProposal(_harness.TempRoot):

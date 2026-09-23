@@ -1,8 +1,7 @@
 """Live daily pull of Granola meetings via the official public API.
 
 Granola Business unlocks `https://public-api.granola.ai/v1` — a real, documented
-API, unlike claude.ai's undocumented endpoints (see `claude_ai_live.py`, which
-this module mirrors). The API key is created by you in the Granola desktop app
+API. The API key is created by you in the Granola desktop app
 (Settings -> Connectors -> API keys) and stored by YOU in the macOS keychain via
 `gigabite granola-login`; this module only ever reads your own keychain at
 runtime and never logs or prints the key.

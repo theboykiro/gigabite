@@ -6,7 +6,7 @@
 #   • clones to ~/gigabite (or updates an existing clone there)
 #   • hands over to ./install.sh, which does the real work
 # Safe to run again any time. Your notes and settings are left alone; the Claude Code
-# commands and subagents that gigabite itself installs are replaced with current ones.
+# commands that gigabite itself installs are replaced with current ones.
 set -euo pipefail
 
 REPO_SLUG="theboykiro/gigabite"
@@ -83,7 +83,7 @@ else
   warn "Claude Code is not installed on this Mac."
   note "gigabite will still work in the terminal: gigabite search \"...\" over all your history."
   note "What you will not get is the part that matters most — Claude answering with your"
-  note "own past work already loaded, and the /gg, /search and /meeting commands."
+  note "own past work already loaded, and the /search and /core-setup commands."
   note "Install Claude Code, run this again, and the rest switches on. Nothing is lost."
 fi
 

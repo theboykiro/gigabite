@@ -2,8 +2,8 @@
 
 This document is an overview of what gigabite does, written for someone deciding
 whether a capability already exists before building it. It describes the system in
-four groups — the context stack, the ways knowledge gets in, the loops that maintain
-it, and the security posture — and closes with what has been deliberately left out.
+three groups — the context stack, the ways knowledge gets in, and the security
+posture — and closes with what has been deliberately left out.
 Each capability is stated here in terms of what it gives you; `ARCHITECTURE.md` has
 the mechanism behind any of them.
 
@@ -65,7 +65,7 @@ were not read. There is no OCR and nothing is inferred about an image — the in
 what is known and no more, because refusing a file you cannot read means losing it.
 
 **Meeting notes** arrive as an export saved into the project's `meetings/` folder, or
-through `/meeting`, which files the transcript on your clipboard without it ever
+through `gigabite paste`, which files the transcript on your clipboard without it ever
 passing through the chat. Either way the meeting sits in that folder alongside
 anything you wrote by hand.
 
@@ -86,39 +86,9 @@ file lands loose at the top of `~/Knowledge` — visible, indexed, one drag from
 filed. No folder is invented for it, because a confidently misfiled note is worse than
 an unfiled one.
 
-**Calendar awareness** comes from a pasted screenshot, because the calendar sits in a
-managed environment with no AI access. The meetings are parsed out, mapped to
-projects, filed as searchable documents, and matched with recalled prep for the
-meeting ahead.
-
 **Search across all of it** is a single full-text index with title-weighted ranking,
 an AND pass that falls back to OR, and a deliberate rank penalty on your own session
 transcripts, which otherwise match your questions perfectly while answering nothing.
-
-## Keeping it maintained
-
-**Daily synthesis** runs at day's end, reviews the documents that changed, and writes
-a proposal into `~/Knowledge/.gigabite/proposals/`: a per-project digest with checklists for
-proposed knowledge updates and proposed changes to the core protocol. Nothing is
-applied without your approval, and the module that writes it cannot write anywhere
-else.
-
-**Reference-frequency decay** archives documents you have not touched inside a thirty-
-day window. Archived is not deleted: the rows stay in the index, remain searchable on
-request, and are restored automatically the moment a search matches them. Active
-context therefore stays a function of what you actually use.
-
-**Reusable SOPs** are modular, versioned operating procedures loaded by role. They
-drive agent chains such as build → QA → user-review, and they are what the `gg-builder`
-and `gg-reviewer` subagents load before they start work.
-
-**Skills** are the other half, and the distinction is worth holding: an SOP governs a
-hand-off between roles, a skill produces an output for a person. Three ship —
-`meeting-prep` builds a brief on an upcoming meeting from what you have already said
-about it, `decision-record` captures a decision along with what was rejected and what
-would change the answer, and `design-critique` reviews a screen against the decisions
-already taken on it. All three consult the index before they answer, and they trigger
-on what you ask for rather than having to be invoked by name.
 
 ## Security posture
 

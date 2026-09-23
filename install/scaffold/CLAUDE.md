@@ -30,13 +30,11 @@ by the `gigabite` tool. Behave as their **context router**, not a blank-slate mo
   shortening it. Spawn a subagent whenever you only need the *conclusion* of an
   operation, judged by its shape, not whether it looks like a "task": scanning many
   files, grepping the codebase, reading transcripts/logs/jsonl, sizing up an unfamiliar
-  area, any sweep whose raw output you'd skim once and never cite. Match the work to
-  `gg-builder` / `gg-researcher` / `gg-reviewer` (each loads its SOP from
-  `~/.core/capability/sops/`), or `Explore` for a plain search. Read a file directly
+  area, any sweep whose raw output you'd skim once and never cite. Read a file directly
   only when you need its exact contents to edit or quote it. When a session is running
   long, say so and suggest `/clear` — don't quietly keep paying for it.
-- **Entry points.** `/gg <anything>` is the explicit routed turn; ambient recall is
-  also injected per message via the UserPromptSubmit hook.
+- **Entry points.** Ambient recall is injected per message via the UserPromptSubmit
+  hook; `/search <terms>` searches everything, across all projects.
 
 @~/.core/core.md
 <!-- gigabite:router:end -->

@@ -15,9 +15,8 @@ can be filled:
     revealed  evidenced from the user's own corpus (how they actually write).
     stated    can only be asked, though corrections in the corpus can draft it.
 
-No retrieval and no model live here, by design: the coverage pass
-(`core_coverage`) and the proposal writer (`core_proposal`) are separate, and
-this module is a pure function from answers to markdown. It does no file I/O and
+No retrieval and no model live here, by design: the writer (`core_proposal`)
+is separate, and this module is a pure function from answers to markdown. It does no file I/O and
 resolves no paths — the `~/.core/` and `~/Knowledge/` in the rendered prose are
 *document text* describing the default layout, not locations this code reads or
 writes. Anything that actually touches disk takes its paths from `config`.
@@ -207,8 +206,7 @@ SECTION_FILL_TEXT: dict[int, str] = {
         "- What counts as \"done\" (e.g. tested end-to-end, not just written)."
     ),
     6: (
-        "- When to delegate to a sub-agent vs. do it inline.\n"
-        "- Which SOP a spawned agent loads for its role (SOPs are modular; see `~/.core/capability/`)."
+        "- When to delegate to a sub-agent vs. do it inline."
     ),
 }
 
@@ -461,8 +459,7 @@ Project knowledge (the **what**) lives in `~/Knowledge/` and loads per task."""
 _FILL_NOTE = """> Sections marked **[FILL]** are yours to complete — they encode how *you* operate
 > and can't be inferred. Everything else is a working default you can edit freely."""
 
-_COMPLETE_NOTE = """> Every section is filled. Edit any of it freely — this is a living file. The
-> daily synthesis loop proposes updates here; nothing writes without you."""
+_COMPLETE_NOTE = """> Every section is filled. Edit any of it freely — this is a living file."""
 
 _FOOTER = "*Keep this file tight. If a rule isn't load-bearing, it's noise.*"
 

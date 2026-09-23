@@ -137,7 +137,7 @@ class TestPhrasedQuestionFindsTheSource(_IndexBase):
 
 
 class TestRouteContext(_IndexBase):
-    """`route` powers /gg and the ambient recall hook, and had no test at all.
+    """`route` powers the ambient recall hook, and had no test at all.
 
     A pasted shell prompt carries `@Janes-MacBook-Pro`, which was accepted as an
     explicit project marker. Recall then scoped the search to a project that holds
@@ -281,6 +281,14 @@ class TestArchivedFallback(unittest.TestCase):
     def test_record_false_leaves_it_archived(self):
         self.st.search("seasonal surcharge model", limit=5, record=False)
         self.assertFalse(self.st.get_document(self.old)["active"])
+
+    def test_ingest_restores_what_an_older_version_archived(self):
+        """Nothing archives any more; an index a past decay run left behind must
+        not keep its documents out of recall."""
+        from gigabite import ingest
+        ingest.run(self.st, sources=[config.SOURCE_NOTE])
+        self.assertTrue(self.st.get_document(self.old)["active"])
+        self.assertEqual(self.st.stats()["archived"], 0)
 
 
 class TestEvalHarnessTargets(unittest.TestCase):

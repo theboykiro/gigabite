@@ -2,7 +2,7 @@
 
 gigabite is a local context router for Claude. It gives Claude a searchable memory
 of everything you have already said and decided — your Claude Code sessions, your
-claude.ai chats, your meetings, your own notes, and your calendar — and it
+claude.ai chats, your meetings and your own notes — and it
 loads the relevant parts of that history into each turn before Claude answers. You
 talk to it the way you would talk to an assistant who was in the room last week,
 rather than to a model that starts every conversation from nothing.
@@ -45,7 +45,7 @@ bash bootstrap.sh
 
 Or skip it entirely and do the two steps yourself. Clone into your home folder
 rather than Desktop, Documents or Downloads: macOS blocks background jobs from
-those, so the daily synthesis would never run.
+those, so the daily index refresh would never run.
 
 ```bash
 git clone https://github.com/theboykiro/gigabite.git ~/gigabite
@@ -56,14 +56,11 @@ cd ~/gigabite && ./install.sh
 creates the `~/.core` and `~/Knowledge` layouts without ever overwriting content you
 already have, puts the `gigabite` launcher on your `PATH`, appends the router
 protocol to `~/.claude/CLAUDE.md` inside markers it manages, registers the
-ambient-recall hook in `~/.claude/settings.json`, schedules the gated end-of-day
-synthesis job through launchd, and builds the initial index.
+ambient-recall hook in `~/.claude/settings.json`, schedules a daily index refresh
+through launchd, and builds the initial index.
 
-It also installs the Claude Code slash commands (`/gg`, `/search`,
-`/search-status`, `/calendar`, `/meeting`), the `gg-*` subagents, and three skills
-(`meeting-prep`, `decision-record`, `design-critique`) that trigger on what you ask
-for rather than needing to be named, refreshing its own copies on every run so an
-update reaches them. If a command or agent of that
+It also installs the Claude Code slash commands (`/search`, `/core-setup`),
+refreshing its own copies on every run so an update reaches them. If a command of that
 name is already yours, it is left alone and the installer tells you it did so. The
 one file it replaces outright is `~/Knowledge/README.md`, and your old copy is kept
 beside it. Your knowledge base, your notes and your own `core.md` are never touched.
@@ -77,19 +74,8 @@ Code comes from git, but your content does not. `~/.core` and `~/Knowledge` are
 local, and they rebuild themselves as you add sources again. Re-run `./install.sh`
 at any point to pick up changes to the tool.
 
-### If you installed an earlier version
-
-The layout has moved on since earlier releases, and `gigabite relocate` brings an
-existing store up to date in one pass — `--dry-run` first if you want to see every
-move before it happens. Earlier
-releases kept the knowledge base hidden at `~/.knowledge`, which is precisely why it
-was hard to find and trust; it is now `~/Knowledge`, an ordinary folder you can open
-in Finder. Making it visible exposed the second problem: the tool's own furniture was
-visible with it, so all of it now sits behind one hidden `.gigabite/` directory, and
-the staging folder that used to sit alongside the projects is gone — you put a file
-where it belongs instead. Nothing is deleted by the migration; the index is rebuilt
-afterwards because it is derived data. If you would rather keep the stores elsewhere,
-`GIGABITE_KNOWLEDGE_DIR` and `GIGABITE_CORE_DIR` override both paths.
+If you would rather keep the stores elsewhere, `GIGABITE_KNOWLEDGE_DIR` and
+`GIGABITE_CORE_DIR` override both paths.
 
 ### Uninstalling
 
@@ -103,9 +89,9 @@ script is fed down a pipe rather than run at a terminal. It is safe to run twice
 the second time it tells you everything is already gone.
 
 It reverses `install.sh` step for step: the `gigabite` launcher and the `PATH` line
-in your `.zshrc` and `.bash_profile`, the slash commands, the `gg-*` subagents, the
-three skills, the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
-`~/.claude/settings.json`, the scheduled synthesis job and its log. Files it edits
+in your `.zshrc` and `.bash_profile`, the slash commands (and any subagents or skills
+an older version installed), the router block in `~/.claude/CLAUDE.md`, the ambient-recall hook in
+`~/.claude/settings.json`, the scheduled daily job and its log. Files it edits
 rather than owns are backed up first, and it tells you where.
 
 **`~/Knowledge` and `~/.core` are never touched**, and the script says so and prints
@@ -133,9 +119,8 @@ invented for it, because a confidently misfiled note is worse than an unfiled on
 |---|---|
 | **Claude Code** | Every session under `~/.claude/projects/` is read automatically on each `gigabite ingest`. Nothing to do. |
 | **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
-| **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `/meeting` in Claude Code is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
+| **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `gigabite paste` is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
-| **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
 | **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
 
 The claude.ai path deserves a word of explanation, because it looks more awkward
@@ -143,10 +128,8 @@ than it should. claude.ai has no official API for your web chats, and the intern
 endpoints its web app uses are Cloudflare-gated against terminal clients. The
 in-page export script sidesteps that by running inside the browser, where it carries
 your real session, and produces a `conversations.json` that the importer already
-understands — including chats inside projects, tagged with the project name. A
-keychain-token route (`gigabite claude-login` and `gigabite claude-sync`) is built
-and documented, but Cloudflare currently blocks it, so the browser export is the
-route that works. The detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
+understands — including chats inside projects, tagged with the project name. The
+detail is in [`docs/CLAUDE_AI.md`](docs/CLAUDE_AI.md).
 
 Meetings arrive by hand, and deliberately so: there is no integration with a
 meeting-notes app, and nothing here reads one's local store — which is why the source
@@ -168,9 +151,7 @@ again does nothing, and raw imports are moved aside rather than deleted.
 Whatever the source, the rhythm is the same: put a file where it belongs and run
 `gigabite ingest`. Ingest is incremental — files whose size and modification time
 are unchanged are skipped, and a newer export updates the existing document in place
-rather than creating a duplicate. Documents you have not touched for thirty days are
-archived out of the default search, non-destructively, and a search that matches one
-brings it straight back.
+rather than creating a duplicate.
 
 ## Using it day to day
 
@@ -178,14 +159,10 @@ The primary interface is conversation, not the command line. Because the install
 registers a `UserPromptSubmit` hook, every message you send in Claude Code already
 has a block of recalled context attached to it, so ordinary questions are answered
 against your history without you asking for it. When you want that explicitly — a
-fresh ingest and a deliberate recall pass — use the slash commands:
+fresh ingest and a search across every project — use the slash command:
 
 ```
-/gg what's still open on the traffic drop?    load core + recall + answer
 /search <query>                                search everything
-/search-status                                 what is indexed right now
-/calendar                                      after pasting a calendar screenshot
-/meeting                                       file the transcript on your clipboard
 ```
 
 The terminal is there when you want to work directly against the index, or when
@@ -201,18 +178,14 @@ gigabite project add acme --keywords "acme, acme corp"
 gigabite paste                                  # a copied transcript -> its project folder
 gigabite add ~/Desktop/shot.png -p acme         # store any file in a project folder
 gigabite materialize --dry-run                  # render indexed documents as files
-gigabite calendar agenda --day today            # meetings with attached prep
-gigabite synthesize                             # write the gated end-of-day proposal
-gigabite decay --status                         # reference-frequency archiving
 gigabite ingest                                 # refresh the index, incrementally
 gigabite status                                 # what is indexed
 gigabite paths                                  # where everything lives
 ```
 
-Three more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
-from scratch, `gigabite relocate` brings an older layout up to date, and
-`gigabite route` resolves context and recalls passages as JSON, which is what `/gg`
-and the ambient hook call underneath. Run `gigabite --help`, or
+Two more exist for narrower jobs: `gigabite reindex` clears and rebuilds the index
+from scratch, and `gigabite route` resolves context and recalls passages as JSON, which is what the
+ambient hook calls underneath. Run `gigabite --help`, or
 `gigabite <command> --help`, for the full flag list on any of them.
 
 If you are ever unsure where something ended up, `gigabite paths` prints the resolved
@@ -225,7 +198,7 @@ Three moving parts sit behind all of the above, and they are worth understanding
 because they explain most of the tool's behaviour.
 
 **Ingest** normalises every source into the same shape. A *document* is one
-conversation, meeting, note, or calendar entry; it carries a source, a project, a
+conversation, meeting, or note; it carries a source, a project, a
 title, and timestamps. Each document holds *messages* — the individual turns of a
 chat, the segments of a transcript, or the single body of a note. Because every
 source lands in that shape, search does not care where something came from.
@@ -244,7 +217,7 @@ is the best answer.
 
 **Storage** is split deliberately. Code lives in this repository. Content lives in
 `~/Knowledge`, one top-level folder per project, with everything mechanical — the
-index, raw imports, the archive, proposals, routing aliases — behind a single hidden
+index, raw imports, routing aliases — behind a single hidden
 `.gigabite/` directory, so `ls ~/Knowledge` shows your projects and a README and
 nothing you have to explain. The operating protocol — your voice, tone, and decision
 principles — lives in `~/.core/core.md` and is loaded whole into every Claude Code
@@ -269,19 +242,20 @@ gigabite/            the package
   util.py              text extraction, time parsing, FTS query safety
   ingest.py            runs every source in order; notes last, and why
   cli.py               the `gigabite` command
-  features/            save · intake · routing · materialize · relocate ·
-                       calendar · synthesis · decay · sops
+  features/            save · intake · routing · bindings · materialize ·
+                       core_slots · core_interview · core_proposal · integrations
   sources/
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)
     meetings.py        meeting notes and exports you supply
+    granola_live.py    opt-in daily pull from Granola's public API
     notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
-  claude-commands/     /gg, /search, /search-status, /calendar, /meeting
+  claude-commands/     /search, /core-setup
   hooks/               the ambient-recall UserPromptSubmit hook
   scaffold/            templates for ~/.core, ~/Knowledge, ~/.claude/{agents,skills}
-  launchd/             the scheduled daily synthesis job
+  launchd/             the scheduled daily index refresh
   scripts/             the claude.ai in-browser export helper
 tests/               python3 -m unittest discover -s tests
 ```

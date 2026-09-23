@@ -203,8 +203,8 @@ def word_count(s: str) -> int:
 
 # Every markdown file this tool reads or writes may carry a YAML-ish header. One
 # parser for all of them, here rather than in a source module, because nothing
-# about it belongs to a source: notes, meeting exports, saved notes, project meta
-# and SOPs all use it.
+# about it belongs to a source: notes, meeting exports, saved notes and project meta
+# all use it.
 _FRONTMATTER = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 
 
