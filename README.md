@@ -4,6 +4,9 @@ gigabite gives Claude Code a memory of your own past work. It indexes your Claud
 sessions, claude.ai chats, meeting notes and files on your Mac, and before Claude answers
 it pulls in what's relevant from the project you're working in. Nothing leaves your machine.
 
+**New to gigabite?** Start with the [Quickstart](docs/QUICKSTART.md) and the guide to
+[your Knowledge folder](docs/KNOWLEDGE.md). This README is the full reference.
+
 ## What you need
 
 - macOS.
@@ -134,6 +137,8 @@ thing a reinstall can't rebuild.
 
 ## More
 
+- [docs/QUICKSTART.md](docs/QUICKSTART.md): install and first steps, for non-technical users
+- [docs/KNOWLEDGE.md](docs/KNOWLEDGE.md): how the Knowledge folder works and how to add to it
 - [docs/ROUTING.md](docs/ROUTING.md): how a prompt is matched to a project, and where files land
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it works
 - [docs/CORE_SETUP.md](docs/CORE_SETUP.md): what `/core-setup` asks and how it writes `core.md`
