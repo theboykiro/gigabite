@@ -114,10 +114,27 @@ def ensure_project(
     meta_path = proj_dir / "_project.md"
     if not meta_path.exists():
         meta_path.write_text(
-            _project_meta(project, keywords or [], layers or []),
+            _project_meta(project, _with_name(project, keywords or []), layers or []),
             encoding="utf-8",
         )
     return proj_dir
+
+
+def _with_name(project: str, keywords: List[str]) -> List[str]:
+    """*keywords* led by the project's own name, so mentioning it is enough to route.
+
+    Seeded once, at creation, rather than implied at routing time: a project that
+    must never be chosen by keyword (``personal/``) stays that way by deleting the
+    name from its ``_project.md``, which an implicit rule would not allow. A slug
+    name also gets its spaced form — nobody writes "checkout-redesign" in prose.
+    """
+    name = project.strip().lower()
+    out: List[str] = []
+    for kw in [name, re.sub(r"[-_]+", " ", name), *keywords]:
+        kw = kw.strip()
+        if kw and kw.lower() not in {k.lower() for k in out}:
+            out.append(kw)
+    return out
 
 
 def project_exists(project: str) -> bool:

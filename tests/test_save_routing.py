@@ -118,7 +118,7 @@ class TestEnsureProject(_Base):
         self.assertTrue(meta.exists())
         text = meta.read_text(encoding="utf-8")
         self.assertIn("project: Acme", text)
-        self.assertIn("keywords: pricing, roadmap", text)
+        self.assertIn("keywords: acme, pricing, roadmap", text)
         self.assertIn("layers: delivery, strategy", text)
 
     def test_existing_meta_is_not_clobbered(self):
@@ -133,9 +133,25 @@ class TestEnsureProject(_Base):
         save.ensure_project("Beta Co", keywords=["infra", "cost"])
         listed = {p["name"]: p for p in save.list_projects()}
         self.assertEqual(set(listed), {"Acme", "Beta Co"})
-        self.assertEqual(listed["Acme"]["keywords"], ["pricing"])
+        self.assertEqual(listed["Acme"]["keywords"], ["acme", "pricing"])
         self.assertEqual(listed["Acme"]["layers"], ["delivery"])
-        self.assertEqual(listed["Beta Co"]["keywords"], ["infra", "cost"])
+        self.assertEqual(listed["Beta Co"]["keywords"], ["beta co", "infra", "cost"])
+
+    def test_name_is_a_keyword_so_mentioning_it_routes(self):
+        # A project made with no keywords used to be unreachable by its own name.
+        save.ensure_project("checkout-redesign")
+        listed = {p["name"]: p for p in save.list_projects()}
+        self.assertEqual(listed["checkout-redesign"]["keywords"],
+                         ["checkout-redesign", "checkout redesign"])
+        from gigabite.features import routing
+        ctx = routing.resolve_context("what did we decide on the checkout redesign?",
+                                      cwd=str(self.tmp))
+        self.assertEqual(ctx.get("project"), "checkout-redesign")
+
+    def test_name_not_repeated_when_already_a_keyword(self):
+        save.ensure_project("Acme", keywords=["ACME", "pricing"])
+        listed = {p["name"]: p for p in save.list_projects()}
+        self.assertEqual(listed["Acme"]["keywords"], ["acme", "pricing"])
 
 
 class TestNotesIngester(_Base):
