@@ -120,6 +120,13 @@ def ensure_project(
     return proj_dir
 
 
+def project_exists(project: str) -> bool:
+    """Is there already a ``~/Knowledge/{project}/_project.md``? Raises
+    ``ValueError`` for a name that is not a usable folder, like ``ensure_project``."""
+    folder = _safe_folder(project, "project")
+    return (config.KNOWLEDGE_DIR / folder / "_project.md").exists()
+
+
 # ---------------------------------------------------------------------------
 # notes
 # ---------------------------------------------------------------------------

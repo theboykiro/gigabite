@@ -123,7 +123,8 @@ class TestRouteJsonContract(CliTestCase):
         d = self.payload("what", "did", "we", "decide", "about", "widget", "pricing")
         self.assertTrue(d["hits"], "expected the corpus to match this prompt")
         for hit in d["hits"]:
-            for key in ("score", "doc_id", "title", "source", "created_utc", "snippet"):
+            for key in ("score", "doc_id", "title", "source", "created_utc", "snippet",
+                        "inject"):
                 self.assertIn(key, hit, f"gg-recall.sh reads {key!r} off every hit")
 
     def test_scores_are_negative_numbers(self):
@@ -137,10 +138,11 @@ class TestRouteJsonContract(CliTestCase):
             self.assertLess(s, 0)
 
     def test_at_least_one_hit_clears_the_hook_threshold(self):
-        """A canary on the -1.0 cut-off. If ranking drifts such that nothing ever
-        clears it, ambient recall is dead and nothing else in the suite notices."""
+        """A canary on the recall gate (`inject`). If it drifts such that nothing
+        ever clears it, ambient recall is dead and nothing else in the suite
+        notices."""
         d = self.payload("widget", "pricing", "anchor", "decision")
-        self.assertTrue([h for h in d["hits"] if h["score"] < -1.0])
+        self.assertTrue([h for h in d["hits"] if h["inject"] is True])
 
     def test_json_is_a_single_line(self):
         """The hook captures stdout into a shell variable and json.loads it once."""
@@ -424,13 +426,24 @@ class TestProjectBind(CliTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(self.bindings(), {os.path.realpath(self.work): None})
 
-    def test_it_refuses_a_project_that_does_not_exist_and_creates_nothing(self):
+    def test_a_new_name_is_created_and_reported_in_the_same_step(self):
+        """Answering the ask is one command: the name the user gave becomes a
+        project, and the command says so — never silently."""
         code, out = run("project", "bind", "newthing", "--dir", str(self.work))
+        self.assertEqual(code, 0)
+        self.assertIn("created project newthing", out)
+        self.assertTrue((self.root / "newthing" / "_project.md").exists())
+        self.assertEqual(self.bindings(), {os.path.realpath(self.work): "newthing"})
+
+    def test_an_existing_project_is_not_reported_as_created(self):
+        code, out = run("project", "bind", "acme", "--dir", str(self.work))
+        self.assertEqual(code, 0)
+        self.assertNotIn("created project", out)
+
+    def test_a_name_that_is_not_a_usable_folder_binds_nothing(self):
+        code, out = run("project", "bind", "...", "--dir", str(self.work))
         self.assertEqual(code, 1)
-        self.assertIn("gigabite project add newthing", out)
         self.assertEqual(self.bindings(), {})
-        self.assertFalse((self.root / "newthing").exists(),
-                         "a folder name is not a project")
 
     def test_it_needs_a_name_or_none(self):
         code, _out = run("project", "bind", "--dir", str(self.work))

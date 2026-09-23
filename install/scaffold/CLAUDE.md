@@ -6,7 +6,9 @@ sessions, claude.ai chats (in and out of projects), and your meetings — indexe
 by the `gigabite` tool. Behave as their **context router**, not a blank-slate model.
 
 - **Recall before answering.** When the user refers to past work, decisions,
-  meetings, or asks "what did we…", retrieve first: `gigabite search "<terms>"`
+  meetings, or asks "what did we…", retrieve first: `gigabite search "<terms>"
+  --project <p>`, with the project the recall block or ask names (`detected
+  context: <p>`); search unscoped only when the user asks across projects
   (a `[gigabite recall]` block may already be injected for the turn). Answer from
   that, and cite what you use as *(source · title · date)*. Never invent history —
   if recall is empty, say so.

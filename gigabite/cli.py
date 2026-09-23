@@ -622,14 +622,16 @@ def cmd_route(args) -> int:
     prompt = " ".join(args.prompt)
     result = routing.route(store, prompt, limit=args.limit,
                            previous_was_correction=args.after_correction,
-                           seconds_since_last=args.seconds_since_last)
+                           seconds_since_last=args.seconds_since_last,
+                           session_id=args.session_id)
     ask = result.get("ask") or None
     if ask:
-        # Emitting the block is what spends the one question, so the record is
-        # written here rather than inside `route` — a caller that only inspects a
-        # routing result must not use it up. Never raises (features/bindings.py).
+        # Emitting the block is recorded here rather than inside `route` — a
+        # caller that only inspects a routing result must not record it. The
+        # record only quiets the rest of this session; the answer (`project
+        # bind`) is what ends the question. Never raises (features/bindings.py).
         from .features import bindings
-        bindings.record_ask(ask["dir"])
+        bindings.record_ask(ask["dir"], session_id=args.session_id)
     if args.json:
         print(json.dumps(result, ensure_ascii=False))
         return 0
@@ -669,12 +671,17 @@ def cmd_save(args) -> int:
     try:
         # save_note validates + creates dirs; run it first so a bad project/layer
         # doesn't leave an orphan project folder behind.
+        existed = savemod.project_exists(args.project)
         path = savemod.save_note(text, args.project, layer=args.layer,
                                  title=args.title, ts=args.date)
-        savemod.ensure_project(args.project)   # add _project.md scaffold if absent
+        proj_dir = savemod.ensure_project(args.project)  # _project.md if absent
     except ValueError as e:
         print(yellow(f"can't save: {e} (check --project/--layer)"))
         return 1
+    if not existed:
+        # Creating a project is allowed here, but never silently: a typo in
+        # --project would otherwise start a second project nobody asked for.
+        print(green(f"✓ created project {proj_dir.name}"))
     # index it immediately so it's searchable now
     store = _open()
     from .sources import notes as notes_src
@@ -688,9 +695,9 @@ def cmd_project(args) -> int:
     if args.action == "bind":
         # The answer to the hook's question. It records which project a directory
         # belongs to — or, with --none, that it is not project work — so the
-        # question is asked once and never again. It creates nothing: binding to a
-        # project that does not exist yet is refused, because a directory is not
-        # permission to invent a project.
+        # question is not asked again. A name that is not a project yet is
+        # created, and said so: answering is one command. The name is always the
+        # user's answer; nothing here derives one from the directory.
         # From a subfolder, bind the workspace it belongs to — the same directory
         # the hook's question names — not the subfolder the shell happens to be in.
         target = args.dir or str(bindings.workspace_root(os.getcwd()) or os.getcwd())
@@ -699,6 +706,7 @@ def cmd_project(args) -> int:
             if bindings.forget(target):
                 print(green(f"✓ forgotten: {target}"))
                 print(dim("  this folder will be asked about again."))
+                _retag_sessions(target)
             else:
                 print(dim(f"nothing recorded for {target}."))
             return 0
@@ -714,6 +722,7 @@ def cmd_project(args) -> int:
             key = bindings.bind(target, None)
             print(green(f"✓ not project work: {key}"))
             print(dim("  nothing is recalled here, and you will not be asked again."))
+            _retag_sessions(key)
             return 0
         if not args.name:
             print(yellow("bind what? `gigabite project bind <name> --dir <path>` "
@@ -722,11 +731,16 @@ def cmd_project(args) -> int:
         known = {p["name"].lower(): p["name"] for p in savemod.list_projects()}
         real = known.get(args.name.strip().lower())
         if real is None:
-            print(yellow(f"no project named {args.name!r} yet — create it first:"))
-            print(f"    gigabite project add {args.name} --keywords <a,b>")
-            return 1
+            try:
+                real = savemod.ensure_project(
+                    savemod.slugify(args.name) or args.name).name
+            except ValueError as e:
+                print(yellow(f"can't create project: {e}"))
+                return 1
+            print(green(f"✓ created project {real}"))
         key = bindings.bind(target, real)
         print(green(f"✓ bound to {real}: {key}"))
+        _retag_sessions(key)
         return 0
     if args.action == "add":
         kws = [k.strip() for k in (args.keywords or "").split(",") if k.strip()]
@@ -745,6 +759,20 @@ def cmd_project(args) -> int:
         if p["keywords"]:
             print(dim(f"    keywords: {', '.join(p['keywords'])}"))
     return 0
+
+
+def _retag_sessions(directory) -> None:
+    """Bring already-indexed Claude Code sessions under *directory* in line with
+    its binding, so a folder bound to a project recalls its own past sessions
+    straight away. Best effort: a failure here must not undo the binding."""
+    try:
+        from .sources import claude_code
+        n = claude_code.retag(_open(), directory)
+    except Exception as e:  # pragma: no cover — reported, never fatal
+        print(yellow(f"  ! could not re-file indexed sessions: {e}"))
+        return
+    if n:
+        print(dim(f"  re-filed {n} indexed Claude Code session(s) from this folder."))
 
 
 def _parse_meeting_header(text: str) -> dict:
@@ -1026,9 +1054,12 @@ def build_parser() -> argparse.ArgumentParser:
     pgs.add_argument("--force", action="store_true", help="re-fetch every note")
     pgs.set_defaults(func=cmd_granola_sync)
 
-    pv = sub.add_parser("save", help="persist a note into ~/Knowledge/{project}/{layer}/ (never the working dir)")
+    pv = sub.add_parser("save", help="persist a note into ~/Knowledge/{project}/{layer}/ "
+                             "(never the working dir); a new --project is created "
+                             "and reported")
     pv.add_argument("text", nargs="*", help="note text (or - / --stdin to read stdin)")
-    pv.add_argument("--project", "-p", required=True)
+    pv.add_argument("--project", "-p", required=True,
+                    help="project to file under; created (and reported) if it does not exist")
     pv.add_argument("--layer", "-l")
     pv.add_argument("--title", "-t")
     pv.add_argument("--date")
@@ -1037,7 +1068,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     pj = sub.add_parser("project", help="create, list or bind projects (name + keywords drive context detection)")
     pj.add_argument("action", choices=["add", "list", "bind"])
-    pj.add_argument("name", nargs="?")
+    pj.add_argument("name", nargs="?",
+                    help="project name (bind: created, and reported, if it does not exist)")
     pj.add_argument("--keywords")
     pj.add_argument("--layers")
     pj.add_argument("--dir", help="the directory to bind (bind; default: the current one)")
@@ -1068,6 +1100,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="the previous turn corrected the answer (biases away from spar)")
     prt.add_argument("--seconds-since-last", type=float, default=None,
                      help="seconds since the previous prompt (a long pause vetoes spar)")
+    prt.add_argument("--session-id", default=None,
+                     help="the Claude Code session asking (an unanswered project "
+                          "question is repeated at most once per session)")
     prt.set_defaults(func=cmd_route)
 
     pco = sub.add_parser("core", help="print the operating protocol (~/.core/core.md)")
