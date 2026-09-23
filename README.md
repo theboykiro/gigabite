@@ -248,6 +248,7 @@ gigabite/            the package
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)
     meetings.py        meeting notes and exports you supply
+    granola_live.py    opt-in daily pull from Granola's public API
     notes.py           ~/Knowledge/{project}/[{layer}/] — every file in it
 docs/                design & reference — start with PHILOSOPHY.md
 install/             everything install.sh copies onto the machine
