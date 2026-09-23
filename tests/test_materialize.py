@@ -752,6 +752,11 @@ class TestGranolaSyncUnfiledMeeting(_Base):
         self._orig_get = granola_live._get
         granola_live._get = self._fake_get
         self.addCleanup(lambda: setattr(granola_live, "_get", self._orig_get))
+        # A stored key, without the keychain: these tests passed only on a machine
+        # that really had one, and read it with a real `security` call to find out.
+        self._orig_read_token = granola_live.read_token
+        granola_live.read_token = lambda: "fake-key"
+        self.addCleanup(lambda: setattr(granola_live, "read_token", self._orig_read_token))
         from gigabite import cli
         self.cli = cli
         self._orig_db = (config.DB_PATH, config.INDEX_DIR)

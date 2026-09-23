@@ -43,6 +43,69 @@ _SESSION_ROOT = Path(tempfile.mkdtemp(prefix="gigabite-tests-"))
 os.environ["GIGABITE_CORE_DIR"] = str(_SESSION_ROOT / "core")
 os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(_SESSION_ROOT / "knowledge")
 
+# HOME too, for the whole run and every subprocess it starts. Several paths are
+# derived from it rather than from the two variables above — ~/.claude/projects,
+# ~/Library/LaunchAgents, the keychain account's defaults — and a test that
+# reached any of them would read or write the real user's.
+_FAKE_HOME = _SESSION_ROOT / "home"
+_FAKE_HOME.mkdir(parents=True, exist_ok=True)
+os.environ["HOME"] = str(_FAKE_HOME)
+
+# No test may reach the real keychain — not even a test of the code that talks to
+# it. Every `security` invocation made in-process (subprocess.run/call/check_output
+# all build a Popen) raises instead of running, so a test that forgets to mock fails
+# loudly rather than quietly reading, or prompting for, the user's secrets. A test
+# that needs a stored key patches the reader (e.g. `granola_live.read_token`); a
+# test of the reader itself patches `subprocess.run` and asserts the command.
+import subprocess  # noqa: E402
+
+_REAL_POPEN = subprocess.Popen
+
+
+class KeychainAccessInTest(AssertionError):
+    """Raised when a test would have run the macOS `security` tool for real."""
+
+
+def _is_security(args) -> bool:
+    argv0 = args if isinstance(args, (str, bytes)) else (args[0] if args else "")
+    if isinstance(argv0, bytes):
+        argv0 = argv0.decode(errors="replace")
+    words = str(argv0).split()
+    return bool(words) and os.path.basename(words[0]) == "security"
+
+
+_KEYCHAIN_ATTEMPTS = []
+
+
+class _NoKeychainPopen(_REAL_POPEN):
+    def __init__(self, args, *a, **kw):
+        if _is_security(args):
+            _KEYCHAIN_ATTEMPTS.append(args)
+            raise KeychainAccessInTest(
+                "a test tried to run the macOS keychain tool: %r. Mock the credential "
+                "reader (or subprocess.run) instead — see tests/_harness.py." % (args,))
+        super().__init__(args, *a, **kw)
+
+
+subprocess.Popen = _NoKeychainPopen
+
+
+def _fail_the_run_if_the_keychain_was_reached():
+    """Loud even when the code under test swallowed the exception: the run as a
+    whole exits non-zero, whatever the individual tests reported."""
+    if _KEYCHAIN_ATTEMPTS:
+        sys.stderr.write("\nFAILED: %d attempt(s) to run the macOS keychain tool from a "
+                         "test (tests/_harness.py):\n" % len(_KEYCHAIN_ATTEMPTS))
+        for args in _KEYCHAIN_ATTEMPTS:
+            sys.stderr.write("  %r\n" % (args,))
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
+
+
+import atexit  # noqa: E402
+atexit.register(_fail_the_run_if_the_keychain_was_reached)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from gigabite import config  # noqa: E402

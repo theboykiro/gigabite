@@ -15,7 +15,7 @@ directory, and the two seams that would otherwise reach outside it are redirecte
 * `GIGABITE_BIN_DIRS` — otherwise the script would look in `/opt/homebrew/bin` and
   `/usr/local/bin` and find the launcher belonging to whoever is running the suite.
 * `GIGABITE_LAUNCHCTL` — otherwise `launchctl bootout` would unload the real user's
-  scheduled job. Pointed at a recorder script, so the call is asserted, not made.
+  scheduled jobs. Pointed at a recorder script, so the call is asserted, not made.
 
     python3 -m unittest discover -s tests        (from the repo root)
 """
@@ -121,12 +121,24 @@ class UninstallCase(unittest.TestCase):
                                 "command": str(self.home / ".claude/gigabite/gg-recall.sh")}]},
                     {"hooks": [{"type": "command", "command": "/opt/mine/notify.sh"}]},
                 ],
+                "SessionStart": [
+                    {"hooks": [{"type": "command",
+                                "command": str(self.home / ".claude/gigabite/gg-refresh.sh")}]},
+                ],
                 "Stop": [{"hooks": [{"type": "command", "command": "say done"}]}],
             },
         }, indent=2))
         self.write(".claude/gigabite/gg-recall.sh", "#!/bin/bash\n# gigabite recall\n")
+        self.write(".claude/gigabite/gg-refresh.sh", "#!/bin/bash\n# gigabite refresh\n")
+        # Every com.gigabite.* job: the retired daily job an older install left, and
+        # the optional Granola pull `gigabite integrations` installs.
         self.write("Library/LaunchAgents/com.gigabite.synthesis.plist", "<plist/>\n")
         self.write("Library/Logs/gigabite-synthesis.log", "ran at 18:00\n")
+        self.write("Library/LaunchAgents/com.gigabite.granola-pull.plist", "<plist/>\n")
+        self.write("Library/Logs/gigabite-granola-pull.log", "pulled\n")
+        # Someone else's job and log, which must survive.
+        self.write("Library/LaunchAgents/com.example.other.plist", "<plist/>\n")
+        self.write("Library/Logs/other.log", "theirs\n")
 
     # -- running it ----------------------------------------------------------
 
@@ -272,6 +284,25 @@ class TestSurgeryOnSharedFiles(UninstallCase):
                          cfg["hooks"]["Stop"])
         self.assertEqual([{"hooks": [{"type": "command", "command": "/opt/mine/notify.sh"}]}],
                          cfg["hooks"]["UserPromptSubmit"])
+        self.assertNotIn("SessionStart", cfg["hooks"], "our refresh hook was all it held")
+
+    def test_a_settings_file_holding_only_our_hooks_is_removed_without_a_backup(self):
+        """install.sh created it; leaving `{}` and a backup behind is residue."""
+        self.write(".claude/settings.json", json.dumps({"hooks": {
+            "UserPromptSubmit": [{"hooks": [{"type": "command", "command":
+                                             str(self.home / ".claude/gigabite/gg-recall.sh")}]}],
+            "SessionStart": [{"hooks": [{"type": "command", "command":
+                                         str(self.home / ".claude/gigabite/gg-refresh.sh")}]}],
+        }}))
+        self.run_uninstall("--yes")
+        self.assertFalse((self.home / ".claude/settings.json").exists())
+        self.assertFalse((self.home / ".claude/settings.json.gigabite.bak").exists())
+
+    def test_a_claude_md_holding_only_the_block_is_removed_without_a_backup(self):
+        self.write(".claude/CLAUDE.md", ROUTER_BLOCK)
+        self.run_uninstall("--yes")
+        self.assertFalse((self.home / ".claude/CLAUDE.md").exists())
+        self.assertFalse((self.home / ".claude/CLAUDE.md.gigabite-bak").exists())
 
     def test_a_users_hook_sharing_the_entry_with_ours_survives(self):
         """Both hooks under one matcher: dropping the entry whole would take theirs."""
@@ -296,11 +327,13 @@ class TestSurgeryOnSharedFiles(UninstallCase):
         self.assertEqual(digest, hashlib.sha256(backup.read_bytes()).hexdigest())
         self.assertIn("isn't valid JSON", out)
 
-    def test_the_rc_files_lose_only_the_tagged_line(self):
+    def test_the_rc_files_lose_only_the_tagged_line_and_its_separator(self):
+        """install.sh writes a blank line before the export; both go, and nothing
+        else. A file the export was all of was created by install.sh, and goes."""
         self.run_uninstall("--yes")
-        self.assertEqual("export EDITOR=vim\n\nalias k=kubectl\n",
+        self.assertEqual("export EDITOR=vim\nalias k=kubectl\n",
                          (self.home / ".zshrc").read_text(encoding="utf-8"))
-        self.assertEqual("", (self.home / ".bash_profile").read_text(encoding="utf-8"))
+        self.assertFalse((self.home / ".bash_profile").exists())
 
 
 # ---------------------------------------------------------------------------
@@ -308,9 +341,13 @@ class TestItReversesTheInstall(UninstallCase):
 
     def test_every_piece_of_machinery_is_gone(self):
         self.run_uninstall("--yes")
-        gone = [".local/bin/gigabite", ".claude/gigabite/gg-recall.sh", ".claude/gigabite",
+        gone = [".local/bin/gigabite", ".local/bin", ".local",
+                ".claude/gigabite/gg-recall.sh", ".claude/gigabite/gg-refresh.sh",
+                ".claude/gigabite", ".claude/commands", ".claude/agents", ".claude/skills",
                 "Library/LaunchAgents/com.gigabite.synthesis.plist",
-                "Library/Logs/gigabite-synthesis.log"]
+                "Library/Logs/gigabite-synthesis.log",
+                "Library/LaunchAgents/com.gigabite.granola-pull.plist",
+                "Library/Logs/gigabite-granola-pull.log"]
         gone += [".claude/commands/%s.md" % n for n in COMMANDS + STALE_COMMANDS]
         gone += [".claude/agents/%s.md" % n for n in AGENTS]
         gone += [".claude/skills/%s" % n for n in SKILLS]
@@ -318,10 +355,43 @@ class TestItReversesTheInstall(UninstallCase):
             path = self.home / rel
             self.assertFalse(path.exists() or path.is_symlink(), "%s survived" % rel)
 
-    def test_the_launchd_job_is_booted_out_before_the_plist_goes(self):
+    def test_every_gigabite_launchd_job_is_booted_out_and_nothing_else(self):
         self.run_uninstall("--yes")
-        self.assertIn("bootout gui/", self.launchctl_log.read_text(encoding="utf-8"))
-        self.assertIn("com.gigabite.synthesis", self.launchctl_log.read_text(encoding="utf-8"))
+        calls = self.launchctl_log.read_text(encoding="utf-8")
+        for label in ("com.gigabite.synthesis", "com.gigabite.granola-pull"):
+            self.assertIn("bootout gui/%d/%s" % (os.getuid(), label), calls)
+        self.assertNotIn("com.example.other", calls)
+        self.assertTrue((self.home / "Library/LaunchAgents/com.example.other.plist").exists())
+        self.assertTrue((self.home / "Library/Logs/other.log").exists())
+
+    def test_folders_holding_other_files_are_kept_quietly(self):
+        """~/.claude has Claude Code's own files in it; that is not worth a word."""
+        self.write(".claude/projects/x/session.jsonl", "{}\n")
+        out = self.run_uninstall("--yes")
+        self.assertTrue((self.home / ".claude/projects/x/session.jsonl").exists())
+        self.assertNotIn("kept %s " % (self.home / ".claude"), out)
+
+    def test_an_empty_backup_an_older_install_left_goes_but_a_real_one_stays(self):
+        # CLAUDE.md holding only the block, so this run takes no backup of its own.
+        self.write(".claude/CLAUDE.md", ROUTER_BLOCK)
+        empty = self.write(".claude/CLAUDE.md.gigabite-bak", "")
+        self.run_uninstall("--yes")
+        self.assertFalse(empty.exists(), "an empty backup is residue")
+        real = self.write(".claude/CLAUDE.md.gigabite-bak", "my old instructions\n")
+        self.run_uninstall("--yes")
+        self.assertTrue(real.exists(), "a backup with content is the user's to delete")
+
+    def test_launch_agents_and_logs_folders_go_only_when_emptied(self):
+        (self.home / "Library/LaunchAgents/com.example.other.plist").unlink()
+        self.run_uninstall("--yes")
+        self.assertFalse((self.home / "Library/LaunchAgents").exists())
+        self.assertTrue((self.home / "Library/Logs/other.log").exists())
+
+    def test_it_prints_the_keychain_commands_but_runs_none(self):
+        """The service names come from the code, so a new integration is covered."""
+        out = self.run_uninstall("--yes")
+        self.assertIn("security delete-generic-password -s gigabite:granola", out)
+        self.assertNotIn("security", self.launchctl_log.read_text(encoding="utf-8"))
 
     def test_a_job_that_was_never_loaded_is_not_an_error(self):
         self.launchctl.write_text("#!/bin/sh\nexit 113\n", encoding="utf-8")
