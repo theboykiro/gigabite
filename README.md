@@ -2,7 +2,8 @@
 
 gigabite gives Claude Code a memory of your own past work. It indexes your Claude Code
 sessions, claude.ai chats, meeting notes and files on your Mac, and before Claude answers
-it pulls in what's relevant from the project you're working in. Nothing leaves your machine.
+it pulls in what's relevant from the project your message is about. Nothing leaves your
+machine.
 
 **New to gigabite?** Start with the [Quickstart](docs/QUICKSTART.md) and the guide to
 [your Knowledge folder](docs/KNOWLEDGE.md). This README is the full reference.
