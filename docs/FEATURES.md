@@ -86,11 +86,6 @@ file lands loose at the top of `~/Knowledge` — visible, indexed, one drag from
 filed. No folder is invented for it, because a confidently misfiled note is worse than
 an unfiled one.
 
-**Calendar awareness** comes from a pasted screenshot, because the calendar sits in a
-managed environment with no AI access. The meetings are parsed out, mapped to
-projects, filed as searchable documents, and matched with recalled prep for the
-meeting ahead.
-
 **Search across all of it** is a single full-text index with title-weighted ranking,
 an AND pass that falls back to OR, and a deliberate rank penalty on your own session
 transcripts, which otherwise match your questions perfectly while answering nothing.

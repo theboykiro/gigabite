@@ -2,7 +2,7 @@
 
 gigabite is a local context router for Claude. It gives Claude a searchable memory
 of everything you have already said and decided — your Claude Code sessions, your
-claude.ai chats, your meetings, your own notes, and your calendar — and it
+claude.ai chats, your meetings and your own notes — and it
 loads the relevant parts of that history into each turn before Claude answers. You
 talk to it the way you would talk to an assistant who was in the room last week,
 rather than to a model that starts every conversation from nothing.
@@ -124,7 +124,6 @@ invented for it, because a confidently misfiled note is worse than an unfiled on
 | **Claude.ai** | Run `install/scripts/claude-ai-safari-export.js` in the claude.ai browser console, put the downloaded `conversations.json` in `~/Knowledge/.gigabite/imports/claude_ai/`, then `gigabite ingest && gigabite materialize`. |
 | **Meetings** | Export the meeting as Markdown (from Granola, or anything else) into `~/Knowledge/<project>/meetings/`. That is the only destination — `gigabite paste` is a shortcut that puts a copied transcript in that same folder, not a second place to look. |
 | **Notes** | `gigabite save "…" --project <p> [--layer <l>]`, which routes the note into `~/Knowledge/<project>/<layer>/`. |
-| **Calendar** | Paste a screenshot into Claude Code and run `/calendar`; the meetings are parsed, filed, and matched with prep. |
 | **Anything else** | `gigabite add path/to/file` — a screenshot, a PDF, a transcript. Nothing is refused: a file whose text cannot be read is kept and indexed by name, type, size and date, with no pretence that its contents were read. |
 
 The claude.ai path deserves a word of explanation, because it looks more awkward
@@ -182,7 +181,6 @@ gigabite project add acme --keywords "acme, acme corp"
 gigabite paste                                  # a copied transcript -> its project folder
 gigabite add ~/Desktop/shot.png -p acme         # store any file in a project folder
 gigabite materialize --dry-run                  # render indexed documents as files
-gigabite calendar agenda --day today            # meetings with attached prep
 gigabite ingest                                 # refresh the index, incrementally
 gigabite status                                 # what is indexed
 gigabite paths                                  # where everything lives
@@ -203,7 +201,7 @@ Three moving parts sit behind all of the above, and they are worth understanding
 because they explain most of the tool's behaviour.
 
 **Ingest** normalises every source into the same shape. A *document* is one
-conversation, meeting, note, or calendar entry; it carries a source, a project, a
+conversation, meeting, or note; it carries a source, a project, a
 title, and timestamps. Each document holds *messages* — the individual turns of a
 chat, the segments of a transcript, or the single body of a note. Because every
 source lands in that shape, search does not care where something came from.
@@ -247,7 +245,7 @@ gigabite/            the package
   util.py              text extraction, time parsing, FTS query safety
   ingest.py            runs every source in order; notes last, and why
   cli.py               the `gigabite` command
-  features/            save · intake · routing · materialize · calendar · sops
+  features/            save · intake · routing · materialize · sops
   sources/
     claude_code.py     ~/.claude/projects/**/*.jsonl
     claude_ai.py       browser export (.zip / conversations.json)

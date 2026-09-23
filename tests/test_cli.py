@@ -664,23 +664,6 @@ class TestSaveAndProject(CliTestCase):
         self.assertTrue((self.root / "vendor-x").is_dir())
 
 
-class TestCalendar(CliTestCase):
-    MEETINGS = [{"title": "Widget steering", "date": "2099-03-01",
-                 "time": "10:00", "attendees": ["Dana"]}]
-
-    def test_add_from_stdin_then_agenda(self):
-        stdin = sys.stdin
-        sys.stdin = io.StringIO(json.dumps(self.MEETINGS))
-        try:
-            code, _out = run("calendar", "add", "--stdin")
-        finally:
-            sys.stdin = stdin
-        self.assertEqual(code, 0)
-        code, out = run("calendar", "agenda", "--day", "all")
-        self.assertEqual(code, 0)
-        self.assertIn("Widget steering", out)
-
-
 class TestPaths(CliTestCase):
     def test_names_the_knowledge_root(self):
         code, out = run("paths")
@@ -699,7 +682,7 @@ class TestHelpSurface(CliTestCase):
     """Commands cut before alpha must be gone from --help and must not dispatch."""
 
     REMOVED = ("run", "policy", "connect", "audit", "synthesize", "decay", "relocate",
-               "claude-login", "claude-sync")
+               "claude-login", "claude-sync", "calendar")
 
     def _help(self):
         # format_help() rather than run("--help"), which exits via SystemExit.

@@ -51,7 +51,7 @@ Every session assembles its context in a fixed order:
         +
 [ 2. PROJECT CONTEXT ] resolved by detection → ~/Knowledge/{project}/{layer}/
         +
-[ 3. CONVERSATION ]    the live turn: question, pasted notes, calendar screenshot
+[ 3. CONVERSATION ]    the live turn: question, pasted notes
 ```
 
 Layer one never changes. Layers two and three are resolved per task. The rest of this
@@ -132,8 +132,7 @@ guessing.
 
 ### 2.3 Conversation context
 
-The live turn: the current question, pasted meeting notes, a pasted calendar
-screenshot, the running thread. It is ephemeral. It feeds detection, but it is not
+The live turn: the current question, pasted meeting notes, the running thread. It is ephemeral. It feeds detection, but it is not
 itself persisted as knowledge unless it is saved through the tool.
 
 ## 3. Context detection
@@ -277,13 +276,6 @@ idempotent — the stamps on disk are the record, so it survives an index rebuil
 non-destructive, moving raw imports into `.gigabite/originals/` rather than deleting
 them.
 
-**Calendar.** The calendar sits in a managed environment where direct AI access is not
-permitted, so the input is a pasted screenshot. Reading the image is the model's job,
-not the code's: in a Claude Code turn the model extracts the meetings as JSON, and the
-calendar module maps each to a project, files it as a searchable document, and
-attaches recalled prep for the meeting ahead. No credentials are handled and nothing
-connects to the calendar system.
-
 **External tool access.** Explicitly shelved. It was flagged as legally and
 contractually fraught in the operating environment, and it is out of scope: not built,
 not stubbed.
@@ -322,7 +314,7 @@ Phasing follows the dependency order set by the open assumptions rather than by
 convenience. The two load-bearing verifications came first, because both changed the
 shape of what got built. Then the core load — `core.md` always loaded, knowledge read
 from `~/Knowledge`. Then context detection with nested-layer resolution, then
-knowledge-write routing, then manual meeting supply and the calendar screenshot parse.
+knowledge-write routing, then manual meeting supply.
 The SOP system with role-based agent spawning came last, because it depends
 on everything beneath it working.
 

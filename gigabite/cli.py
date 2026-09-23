@@ -828,40 +828,6 @@ def cmd_paste(args) -> int:
     return 0
 
 
-def cmd_calendar(args) -> int:
-    from .features import calendar as cal
-    store = _open()
-    if args.action == "add":
-        raw = sys.stdin.read() if args.stdin or args.json_file in (None, "-") else open(args.json_file).read()
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as e:
-            print(yellow(f"couldn't parse meetings JSON: {e}"))
-            return 1
-        meetings = data if isinstance(data, list) else data.get("meetings", [])
-        ids = cal.add_meetings(store, meetings)
-        print(green(f"✓ filed {len(ids)} meeting(s) into the index."))
-        return 0
-    # agenda
-    items = cal.agenda(store, day=args.day)
-    if not items:
-        print(dim("no meetings found. Paste a calendar screenshot and I'll file them "
-                  "(or `gigabite calendar add --stdin` with JSON)."))
-        return 0
-    for it in items:
-        m = it["meeting"]
-        when = (m.get("created_utc") or "")[:16].replace("T", " ") or "—"
-        proj = f" · {m['project']}" if m.get("project") else ""
-        print(f"{bold(m['title'])}  {dim(when + proj)}")
-        for h in it["prep"]:
-            label = config.SOURCE_LABELS.get(h["source"], h["source"])
-            print(dim(f"    prep: {h['title']} [{label}] — ") + " ".join((h.get("snippet") or "").split())[:120])
-        if not it["prep"]:
-            print(dim("    (no prior context found)"))
-        print()
-    return 0
-
-
 def cmd_core(args) -> int:
     """Print the operating protocol (~/.core/core.md) on stdout.
 
@@ -1091,13 +1057,6 @@ def build_parser() -> argparse.ArgumentParser:
                      help="what the text is, recorded as provenance on the note")
     ppa.add_argument("--stdin", action="store_true", help="read from stdin instead of the clipboard")
     ppa.set_defaults(func=cmd_paste)
-
-    pc = sub.add_parser("calendar", help="file meetings from a parsed screenshot + show agenda with prep")
-    pc.add_argument("action", choices=["add", "agenda"])
-    pc.add_argument("--json-file", help="path to a JSON list of meetings (add)")
-    pc.add_argument("--stdin", action="store_true", help="read meetings JSON from stdin (add)")
-    pc.add_argument("--day", help="agenda scope: next (default) | today | YYYY-MM-DD | all")
-    pc.set_defaults(func=cmd_calendar)
 
     prt = sub.add_parser("route", help="resolve context + recall relevant prior conversations (powers the recall hook)")
     prt.add_argument("prompt", nargs="+")

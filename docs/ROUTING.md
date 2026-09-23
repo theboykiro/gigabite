@@ -60,8 +60,7 @@ losing it, and a screenshot is content. `list_projects()` enumerates
 
 Everything else that writes knowledge goes through those. `features.intake` calls
 them for anything handed over, `gigabite save` calls `save_note`, `features.materialize`
-calls it for each rendered document, and the calendar module calls it for meeting
-records. The invariant is that knowledge is only ever written by `features.save`;
+calls it for each rendered document. The invariant is that knowledge is only ever written by `features.save`;
 there is no second path, and adding one would be the way this guarantee gets broken.
 
 ## The layout that results
