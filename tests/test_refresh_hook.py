@@ -10,7 +10,9 @@ the ones that job could not offer and the ones a hook must not break:
      parallel — and a finished refresh releases the lock for the next session;
   D. a launcher that has gone away (repo moved or deleted) is a silent no-op;
   E. for real: a session written after the index was built is recallable once
-     the hook has run.
+     the hook has run;
+  F. the one exception to A: the first session after a first install prints a
+     one-time notice of what the install made, once, and never again.
 
 Every run gets its own HOME and knowledge root; nothing here reads the real ones.
 
@@ -136,6 +138,59 @@ class TestOneRefreshAtATime(RefreshCase):
         self.assertTrue(self.wait_for(lambda: self.log().count("refresh done") == 2),
                         self.log())
         self.assertEqual(["ingest", "ingest"], self.calls_made())
+
+
+class TestTheFirstSessionNotice(RefreshCase):
+
+    def pend(self):
+        self.data.mkdir(parents=True, exist_ok=True)
+        (self.data / "welcome-pending").touch()
+
+    def notice(self, proc) -> dict:
+        self.assertEqual(0, proc.returncode)
+        self.assertEqual("", proc.stderr)
+        return json.loads(proc.stdout)
+
+    def test_it_is_shown_once_to_the_user_and_to_claude(self):
+        self.pend()
+        hook = self.install_hook(self.fake_launcher(0))
+        proc, took = self.fire(hook)
+        self.assertLess(took, 1.0)
+        out = self.notice(proc)
+        self.assertIn("~/Knowledge", out["systemMessage"])
+        self.assertIn("~/Knowledge/README.md", out["systemMessage"])
+        spec = out["hookSpecificOutput"]
+        self.assertEqual("SessionStart", spec["hookEventName"])
+        self.assertIn(out["systemMessage"], spec["additionalContext"])
+        self.assertFalse((self.data / "welcome-pending").exists())
+        self.assertTrue(self.wait_for(lambda: "refresh done" in self.log()),
+                        "the notice replaced the refresh instead of preceding it")
+
+        proc, _took = self.fire(hook)
+        self.assertEqual("", proc.stdout, "shown a second time")
+
+    def test_an_unfinished_protocol_is_pointed_at_core_setup(self):
+        self.pend()
+        core = self.home / ".core" / "core.md"
+        core.parent.mkdir(parents=True)
+        core.write_text("## Voice\n**[FILL]**\n", encoding="utf-8")
+        proc, _took = self.fire(self.install_hook(self.fake_launcher(0)))
+        self.assertIn("/core-setup", self.notice(proc)["systemMessage"])
+
+    def test_a_finished_protocol_is_not_mentioned(self):
+        self.pend()
+        core = self.home / ".core" / "core.md"
+        core.parent.mkdir(parents=True)
+        core.write_text("## Voice\nterse\n", encoding="utf-8")
+        proc, _took = self.fire(self.install_hook(self.fake_launcher(0)))
+        self.assertNotIn("/core-setup", self.notice(proc)["systemMessage"])
+
+    def test_a_launcher_that_is_gone_announces_nothing(self):
+        self.pend()
+        proc, _took = self.fire(self.install_hook(self.base / "moved-away" / "gigabite"))
+        self.assertEqual("", proc.stdout)
+        self.assertTrue((self.data / "welcome-pending").exists(),
+                        "consumed the notice without showing it")
 
 
 class TestItReallyRefreshesTheIndex(RefreshCase):

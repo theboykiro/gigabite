@@ -37,8 +37,10 @@ cd ~/gigabite && ./install.sh
 
 The installer puts `gigabite` on your `PATH`, adds a managed block to
 `~/.claude/CLAUDE.md`, registers its hooks in `~/.claude/settings.json`, installs `/search`
-and `/core-setup`, creates `~/Knowledge` and `~/.core`, and builds the first index. It's
-safe to re-run, and it never overwrites your notes or your `core.md`.
+and `/core-setup`, creates `~/Knowledge` and `~/.core`, and builds the first index. On a first install it
+opens `~/Knowledge` in Finder, and the first Claude Code session afterwards says once what
+was created, so an install Claude Code ran for you doesn't leave the folder a surprise.
+It's safe to re-run, and it never overwrites your notes or your `core.md`.
 
 ## How it works
 

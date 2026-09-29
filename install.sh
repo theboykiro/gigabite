@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # gigabite installer — idempotent, additive, non-destructive.
-#   • creates ~/.core and ~/Knowledge layout (copies templates only if absent)
+#   • creates ~/.core and ~/Knowledge layout (copies templates only if absent), and
+#     on a first install opens ~/Knowledge in Finder so you know it exists
 #   • puts `gigabite` on your PATH
 #   • installs the /search and /core-setup commands (user-level)
 #   • wires the router block and two hooks into ~/.claude: ambient recall on every
@@ -58,6 +59,9 @@ KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}"
 # already lived there. uninstall.sh still searches those, to clean up after them.
 BIN_DIRS="${GIGABITE_BIN_DIRS:-$HOME/.local/bin}"
 LAUNCHCTL="${GIGABITE_LAUNCHCTL:-launchctl}"
+# What shows the new knowledge folder in Finder at the end of a first install. A seam
+# for the same reason as the two above: a test run must not open windows.
+OPEN="${GIGABITE_OPEN:-open}"
 
 # ---------------------------------------------------------------------------
 # Preflight — the same rule bootstrap.sh applies, for anyone who cloned by hand.
@@ -103,10 +107,19 @@ has_claude_code() {
 HAS_CLAUDE=0
 has_claude_code && HAS_CLAUDE=1
 
+# A first install is the one that creates the machinery folder. Taken before step 1,
+# which creates it. A re-run, or a reinstall after uninstall (which keeps it), is not.
+FIRST_INSTALL=0
+[ -d "$KNOW_DIR/.gigabite" ] || FIRST_INSTALL=1
+
 # ---------------------------------------------------------------------------
 say "1/8  Creating the local store layout"
 "$BIN" paths >/dev/null           # triggers ensure_dirs()
 ok "core: $CORE_DIR  ·  knowledge: $KNOW_DIR"
+# Consumed by the SessionStart hook in the first Claude Code session, which says once
+# what the install made. Whoever ran this may never read its output: when Claude Code
+# runs the installer, the user sees only Claude's summary of it.
+if [ "$FIRST_INSTALL" = 1 ]; then : > "$KNOW_DIR/.gigabite/welcome-pending"; fi
 
 copy_if_absent() { # src dest
   if [ -e "$2" ]; then detail note "kept existing $(label "$2")"; else cp "$1" "$2"; detail ok "seeded $(label "$2")"; fi
@@ -425,3 +438,36 @@ echo
 # them one command that is verified to find something in it. Read-only, and
 # re-runnable at any time with `gigabite welcome`.
 "$BIN" welcome || warn "installed, but couldn't summarise the index — try: gigabite welcome"
+
+tilde() { case "$1" in "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;; *) printf '%s' "$1" ;; esac; }
+KNOW_T="$(tilde "$KNOW_DIR")"
+
+# A folder appearing in Finder is harder to miss than any line of output. First
+# install only, and not over SSH, where there is no screen to open it on.
+OPENED=0
+if [ "$FIRST_INSTALL" = 1 ] && [ -z "${SSH_CONNECTION:-}${SSH_TTY:-}" ] \
+   && "$OPEN" "$KNOW_DIR" >/dev/null 2>&1; then
+  OPENED=1
+  note "opened $KNOW_T in Finder — that's where your notes and files go"
+fi
+
+# Claude Code sets CLAUDECODE=1 in the shells it runs. Then the reader of everything
+# above is the assistant, not the person, and it relays a summary: the restart
+# survives it, and a dimmed line about a folder does not. So say it to the assistant.
+if [ "${CLAUDECODE:-}" = 1 ]; then
+  grep -q '\[FILL\]' "$CORE_DIR/core.md" 2>/dev/null && CORE_FILL=1 || CORE_FILL=0
+  if [ "$FIRST_INSTALL" = 1 ]; then made="created a folder at"; else made="keeps everything in"; fi
+  if [ "$OPENED" = 1 ]; then shown=" (now open in Finder)"; else shown=""; fi
+  echo
+  say "── For the assistant running this install ──"
+  echo "The person who asked for this install cannot see this output. Tell them"
+  echo "these points in your reply, in plain words, before anything else:"
+  echo "  • gigabite $made $KNOW_T$shown. It holds their notes,"
+  echo "    meeting transcripts and files, one subfolder per project, and everything"
+  echo "    in it is searchable from Claude Code. What goes where: $KNOW_T/README.md"
+  if [ "$CORE_FILL" = 1 ]; then
+    echo "  • Their working rules for Claude are in $(tilde "$CORE_DIR")/core.md, still unfilled."
+    echo "    /core-setup in Claude Code fills them in, one question at a time."
+  fi
+  echo "  • Quit and restart Claude Code. Nothing is live until then."
+fi
