@@ -26,6 +26,8 @@ the same two `uninstall.sh` already names, spelled the same way:
 * `GIGABITE_LAUNCHCTL` — the installer only calls launchctl to retire the old daily
   job an earlier install scheduled. Pointed at a recorder script, so the calls are
   asserted rather than made.
+* `GIGABITE_OPEN` — a first install shows the knowledge folder in Finder. Pointed at
+  a recorder too, so a test run opens no windows.
 
 A run of install.sh takes about two seconds, so a class whose assertions are all
 about the same install shares one — `install_once` — rather than paying for a fresh
@@ -130,6 +132,15 @@ class Sandbox:
             '#!/bin/sh\necho "$@" >> "%s"\nexit 0\n' % self.launchctl_log,
             encoding="utf-8")
         self.launchctl.chmod(0o755)
+        self.open_log = self.base / "open.log"
+        self.open = self.base / "open"
+        self.open.write_text('#!/bin/sh\necho "$@" >> "%s"\nexit 0\n' % self.open_log,
+                             encoding="utf-8")
+        self.open.chmod(0o755)
+
+    def opened(self) -> list:
+        return (self.open_log.read_text(encoding="utf-8").splitlines()
+                if self.open_log.exists() else [])
 
     def destroy(self):
         shutil.rmtree(str(self.base), True)
@@ -150,6 +161,7 @@ class Sandbox:
             "PYTHONDONTWRITEBYTECODE": "1",
             "GIGABITE_BIN_DIRS": str(self.bin_dir),
             "GIGABITE_LAUNCHCTL": str(self.launchctl),
+            "GIGABITE_OPEN": str(self.open),
         }
         env.update(extra_env or {})
         proc = subprocess.run(["/bin/bash", str(INSTALL)] + list(args),
@@ -697,7 +709,8 @@ class TestPreflight(InstallCase):
         env = {"HOME": str(self.sandbox.home), "PATH": "/usr/bin:/bin",
                "PYTHONDONTWRITEBYTECODE": "1",
                "GIGABITE_BIN_DIRS": str(self.sandbox.bin_dir),
-               "GIGABITE_LAUNCHCTL": str(self.sandbox.launchctl)}
+               "GIGABITE_LAUNCHCTL": str(self.sandbox.launchctl),
+               "GIGABITE_OPEN": str(self.sandbox.open)}
         proc = subprocess.run(["/bin/bash", str(clone / "install.sh")], input="",
                               env=env, cwd=str(clone), stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, universal_newlines=True)
@@ -708,6 +721,61 @@ class TestPreflight(InstallCase):
     def test_an_empty_claude_md_is_not_backed_up(self):
         self.install()
         self.assertFalse((self.sandbox.home / ".claude/CLAUDE.md.gigabite-bak").exists())
+
+
+
+# ---------------------------------------------------------------------------
+class TestAFirstInstallIsAnnounced(InstallCase):
+    """The installer creates ~/Knowledge, and a user who let Claude Code run it
+    never saw the line that said so. Three channels, pinned here: the folder opened
+    in Finder, a block addressed to the assistant when one is running the install,
+    and the marker the SessionStart hook turns into a one-time notice."""
+
+    AGENT = {"CLAUDECODE": "1"}
+    HEADING = "For the assistant running this install"
+
+    def test_a_first_install_opens_the_knowledge_folder_once(self):
+        self.install()
+        know = str(self.sandbox.home / "Knowledge")
+        self.assertEqual([know], self.sandbox.opened())
+        self.install()
+        self.assertEqual([know], self.sandbox.opened(), "a re-run opened it again")
+
+    def test_nothing_is_opened_over_ssh(self):
+        out = self.install(extra_env={"SSH_CONNECTION": "10.0.0.1 22 10.0.0.2 22"})
+        self.assertEqual([], self.sandbox.opened())
+        self.assertNotIn("in Finder", out)
+
+    def test_a_first_install_leaves_the_notice_for_the_first_session(self):
+        self.install()
+        marker = self.sandbox.home / "Knowledge/.gigabite/welcome-pending"
+        self.assertTrue(marker.exists())
+        marker.unlink()                  # what the hook does with it
+        self.install()
+        self.assertFalse(marker.exists(), "a re-run queued the notice again")
+
+    def test_a_person_at_a_terminal_gets_no_block_addressed_to_an_assistant(self):
+        self.assertNotIn(self.HEADING, self.install())
+
+    def test_an_assistant_is_told_what_to_relay(self):
+        out = self.install(extra_env=self.AGENT)
+        block = out[out.index(self.HEADING):]
+        for must in ("created a folder at ~/Knowledge (now open in Finder)",
+                     "~/Knowledge/README.md", "/core-setup", "restart Claude Code"):
+            self.assertIn(must, block)
+
+    def test_a_re_run_by_an_assistant_does_not_claim_it_created_anything(self):
+        self.install()
+        out = self.install(extra_env=self.AGENT)
+        block = out[out.index(self.HEADING):]
+        self.assertIn("keeps everything in ~/Knowledge", block)
+        self.assertNotIn("created", block)
+        self.assertNotIn("Finder", block)
+
+    def test_a_filled_in_protocol_is_not_mentioned(self):
+        self.sandbox.write(".core/core.md", "# my rules\n")
+        out = self.install(extra_env=self.AGENT)
+        self.assertNotIn("/core-setup", out[out.index(self.HEADING):])
 
 
 if __name__ == "__main__":

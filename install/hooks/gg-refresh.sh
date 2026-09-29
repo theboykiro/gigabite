@@ -7,6 +7,8 @@
 #
 # Contract with Claude Code: return at once, print nothing (SessionStart stdout is
 # added to the session's context), and never fail the session — always exit 0.
+#   · one exception to "print nothing": the first session after a first install
+#     prints a one-time notice of what the install made (see below)
 #   · one refresh at a time: a second session starting mid-refresh skips it (flock,
 #     released by the kernel if the refresh dies, so a crash can't wedge it)
 #   · time-boxed: a refresh still running after 15 minutes is stopped
@@ -19,10 +21,46 @@ GIGABITE_BIN="__GIGABITE_BIN__"
 [ -t 0 ] || cat >/dev/null 2>&1
 
 # Mirrors gigabite/config.py: the machinery folder under the knowledge base.
-DATA_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}/.gigabite"
+KNOW_DIR="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}"
+DATA_DIR="$KNOW_DIR/.gigabite"
 
 # The launcher is gone (repo moved or deleted): nothing to run, nothing to create.
 [ -x "$GIGABITE_BIN" ] || exit 0
+
+# First session after a first install: say once what the install made. When Claude
+# Code ran the installer, the user saw only its summary, and this session is the one
+# step every install reaches, because a restart is required. install.sh leaves the
+# marker; claiming it by rename means two sessions starting together print it once.
+# `systemMessage` is shown to the user; `additionalContext` reaches Claude, in case
+# the client does not show the former and so Claude can answer questions about it.
+if mv "$DATA_DIR/welcome-pending" "$DATA_DIR/welcome-shown" 2>/dev/null; then
+  /usr/bin/python3 - "$KNOW_DIR" "${GIGABITE_CORE_DIR:-$HOME/.core}/core.md" "$HOME" \
+    2>/dev/null <<'PY'
+import json, sys
+
+know, core, home = sys.argv[1:4]
+tilde = lambda p: "~" + p[len(home):] if p.startswith(home + "/") else p
+try:
+    with open(core, encoding="utf-8", errors="replace") as fh:
+        unfilled = "[FILL]" in fh.read()
+except OSError:
+    unfilled = False
+
+k = tilde(know)
+message = (f"gigabite is set up. It made {k}, the folder for your notes, meeting "
+           f"transcripts and files, one subfolder per project. Everything in it is "
+           f"searchable from Claude Code. What goes where: {k}/README.md")
+if unfilled:
+    message += (f"\nYour working rules for Claude are in {tilde(core)}. "
+                f"Run /core-setup to fill them in.")
+context = ("[gigabite: first session since install] The user may not know what the "
+           "install created. At the start of your first reply, pass this on in two or "
+           "three plain sentences, once:\n" + message)
+print(json.dumps({"systemMessage": message,
+                  "hookSpecificOutput": {"hookEventName": "SessionStart",
+                                         "additionalContext": context}}))
+PY
+fi
 
 /usr/bin/python3 - "$GIGABITE_BIN" "$DATA_DIR" >/dev/null 2>&1 <<'PY'
 import os, sys
