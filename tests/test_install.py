@@ -506,8 +506,8 @@ class TestTheSeamsAreRealSeams(InstallCase):
 
 # ---------------------------------------------------------------------------
 class TestTheHooks(InstallCase):
-    """Two hooks, both registered by absolute path in the nested form Claude Code's
-    settings schema uses, both installed with the launcher's path baked in."""
+    """Three hooks, all registered by absolute path in the nested form Claude Code's
+    settings schema uses; recall and refresh carry the launcher's path baked in."""
 
     @classmethod
     def setUpClass(cls):
@@ -523,6 +523,21 @@ class TestTheHooks(InstallCase):
         self.assertEqual(
             [{"hooks": [{"type": "command", "command": str(hook_dir / "gg-refresh.sh")}]}],
             self.cfg["hooks"]["SessionStart"])
+
+    def test_the_agent_model_guard_is_on_pre_tool_use_for_the_agent_tool(self):
+        hook = self.sandbox_.home / ".claude/gigabite/gg-agent-model.sh"
+        self.assertEqual(
+            [{"matcher": "Agent|Task",
+              "hooks": [{"type": "command", "command": str(hook)}]}],
+            self.cfg["hooks"]["PreToolUse"])
+        self.assertTrue(os.access(str(hook), os.X_OK))
+
+    def test_the_agent_model_guard_blocks_a_spawn_with_no_model_once_installed(self):
+        hook = self.sandbox_.home / ".claude/gigabite/gg-agent-model.sh"
+        spawn = {"tool_name": "Agent", "tool_input": {"prompt": "x"}}
+        proc = subprocess.run(["/bin/bash", str(hook)], input=json.dumps(spawn),
+                              text=True, capture_output=True, timeout=30)
+        self.assertEqual(2, proc.returncode, proc.stderr)
 
     def test_both_scripts_are_executable_and_name_the_launcher_absolutely(self):
         for name in ("gg-recall.sh", "gg-refresh.sh"):
