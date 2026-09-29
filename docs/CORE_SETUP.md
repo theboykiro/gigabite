@@ -57,6 +57,7 @@ so the interview asks.
 | `egress.*` | 4 | shipped | Ships filled |
 | `routing.*` | 5 | shipped | Ships filled |
 | `agents.verification` | 6 | shipped | Ships filled |
+| `agents.model_tier` | 6 | shipped | Ships filled |
 
 **Autonomy is a grid, not a principle.** Delegation is the question users answer worst in
 prose, because "check with me before anything risky" sounds complete and specifies

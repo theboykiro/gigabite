@@ -69,6 +69,11 @@ How you want calls made when they're ambiguous. Examples to replace with your ow
 - When to delegate to a sub-agent vs. do it inline.
 - **A subagent's "done" is a claim, not evidence.** Check delegated work against
   the real result before relaying it.
+- **Pick the model tier by the cost of being wrong.** Search, fan-out, mechanical
+  edits and summaries → the fast tier (Sonnet). Architecture, security review,
+  ambiguous judgement calls and the final QA gate → the strongest tier (Opus).
+  Name the tier when spawning; an agent left to inherit gets whatever the session
+  happens to run.
 
 ---
 
