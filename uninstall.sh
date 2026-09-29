@@ -2,7 +2,7 @@
 # gigabite uninstaller — reverses install.sh, and touches nothing else.
 #   • removes the `gigabite` launcher from your PATH and the line it added to your shell rc
 #   • removes the Claude Code commands (and any subagents or skills an older install wrote)
-#   • removes the router block from ~/.claude/CLAUDE.md and both hooks from settings.json
+#   • removes the router block from ~/.claude/CLAUDE.md and its hooks from settings.json
 #   • unloads and removes every com.gigabite.* launchd job, and the gigabite logs
 #   • removes the folders it created, once they are empty
 # Your knowledge base (~/Knowledge) and your operating protocol (~/.core) are never
@@ -274,7 +274,7 @@ step_claude_files() {
 
 # ---------------------------------------------------------------------------
 step_conversational() {
-  say "3/6  Unwiring the conversational layer (router protocol + recall and refresh hooks)"
+  say "3/6  Unwiring the conversational layer (router protocol + recall, refresh and agent-model hooks)"
   local status
   # Older installs backed up the zero-byte CLAUDE.md they had just created. An empty
   # backup holds nothing of the user's; a non-empty one is theirs to delete. Checked
@@ -332,7 +332,7 @@ import json, os, shutil, sys
 
 path = sys.argv[1]
 mode = os.environ["GIGABITE_MODE"]
-NEEDLES = ("gg-recall.sh", "gg-refresh.sh")
+NEEDLES = ("gg-recall.sh", "gg-refresh.sh", "gg-agent-model.sh")
 ours = lambda x: any(n in json.dumps(x) for n in NEEDLES)
 if not os.path.exists(path):
     print("absent"); sys.exit(0)
@@ -351,7 +351,7 @@ hooks = cfg.get("hooks")
 if not isinstance(hooks, dict):
     print("absent"); sys.exit(0)
 
-# Every event, not just the two install.sh uses: an older install or a hand edit
+# Every event, not just the three install.sh uses: an older install or a hand edit
 # may have put ours elsewhere. Filtered at the inner hook level, not the entry
 # level: an entry may carry the user's own hook alongside ours under one matcher,
 # and dropping the entry whole would take theirs with it.
@@ -397,19 +397,20 @@ print("removed")
 PY
   ) || status="error"
   case "$status" in
-    hook)        PLANNED=$((PLANNED + 1)); note "remove the recall and refresh hooks from $SETTINGS" ;;
+    hook)        PLANNED=$((PLANNED + 1)); note "remove the recall, refresh and agent-model hooks from $SETTINGS" ;;
     hook-file)   plan_path "$SETTINGS"; note "remove $SETTINGS — gigabite's hooks are all it holds" ;;
-    removed)     ok "removed the recall and refresh hooks from ~/.claude/settings.json (backup: settings.json.gigabite.bak)"
+    removed)     ok "removed the recall, refresh and agent-model hooks from ~/.claude/settings.json (backup: settings.json.gigabite.bak)"
                  record BACKUPS "$SETTINGS.gigabite.bak" ;;
     removed-file) ok "removed ~/.claude/settings.json — gigabite's hooks were all it held" ;;
     absent)      note "already gone: the hooks in ~/.claude/settings.json" ;;
     unparseable) warn "~/.claude/settings.json isn't valid JSON — backed it up to .gigabite.bak and did NOT modify it"
-                 [ "$MODE" = apply ] && record KEPT "$SETTINGS" "it is not valid JSON; remove the gg-recall.sh and gg-refresh.sh hooks by hand" || true ;;
+                 [ "$MODE" = apply ] && record KEPT "$SETTINGS" "it is not valid JSON; remove the gg-recall.sh, gg-refresh.sh and gg-agent-model.sh hooks by hand" || true ;;
     *)           warn "could not read ~/.claude/settings.json ($status) — left it untouched" ;;
   esac
 
   remove_path "$HOOK_DIR/gg-recall.sh" "the ambient recall hook script"
   remove_path "$HOOK_DIR/gg-refresh.sh" "the index refresh hook script"
+  remove_path "$HOOK_DIR/gg-agent-model.sh" "the agent-model hook script"
   [ -d "$HOOK_DIR" ] && remove_dir_if_empty "$HOOK_DIR" "$HOOK_DIR"
   tidy_dir "$HOME/.claude"
 }

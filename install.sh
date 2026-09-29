@@ -4,8 +4,9 @@
 #     on a first install opens ~/Knowledge in Finder so you know it exists
 #   • puts `gigabite` on your PATH
 #   • installs the /search and /core-setup commands (user-level)
-#   • wires the router block and two hooks into ~/.claude: ambient recall on every
-#     prompt, and a background index refresh when a session starts
+#   • wires the router block and three hooks into ~/.claude: ambient recall on every
+#     prompt, a background index refresh when a session starts, and a guard that
+#     makes every agent spawn name its model
 #   • offers to enable the "AI brain" integrations (Granola, more soon)
 #   • builds the initial index
 # Nothing here overwrites content you already have. Re-run any time.
@@ -278,7 +279,7 @@ ok "slash commands installed: $CMD_N"
 
 
 # ---------------------------------------------------------------------------
-say "4/8  Wiring the conversational layer (router protocol + recall and refresh hooks)"
+say "4/8  Wiring the conversational layer (router protocol + recall, refresh and agent-model hooks)"
 # Router constitution: keep a marker-bounded managed block in ~/.claude/CLAUDE.md in
 # sync with the scaffold. Only the block is touched; the user's own content is kept.
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
@@ -326,23 +327,26 @@ case "$ROUTER_STATUS" in
   corrupt) note "router markers in ~/.claude/CLAUDE.md look damaged — left untouched" ;;
   *)       note "could not sync router protocol in ~/.claude/CLAUDE.md" ;;
 esac
-# The two hooks. Each script is installed with the launcher's absolute path baked in,
-# and registered by absolute path, so neither depends on the PATH Claude Code runs
+# The three hooks. Each script is installed with the launcher's absolute path baked
+# in, and registered by absolute path, so none depends on the PATH Claude Code runs
 # hooks with:
-#   UserPromptSubmit → gg-recall.sh   recalls prior context into every prompt
-#   SessionStart     → gg-refresh.sh  refreshes the index in the background, so the
-#                                     work from earlier today is recallable now
+#   UserPromptSubmit → gg-recall.sh       recalls prior context into every prompt
+#   SessionStart     → gg-refresh.sh      refreshes the index in the background, so
+#                                         the work from earlier today is recallable now
+#   PreToolUse       → gg-agent-model.sh  refuses an agent spawn that names no model
+#                      (Agent|Task)       (core.md §6), so the tier is always chosen
 HOOK_DIR="$HOME/.claude/gigabite"
 mkdir -p "$HOOK_DIR"
-for h in gg-recall gg-refresh; do
+for h in gg-recall gg-refresh gg-agent-model; do
   sed "s|__GIGABITE_BIN__|$BIN|g" "$REPO/install/hooks/$h.sh" > "$HOOK_DIR/$h.sh"
   chmod +x "$HOOK_DIR/$h.sh"
 done
 HOOK_STATUS=$(GIGABITE_HOOK_DIR="$HOOK_DIR" /usr/bin/python3 - "$HOME/.claude/settings.json" <<'PY'
 import json, os, sys, shutil
 path = sys.argv[1]; hook_dir = os.environ["GIGABITE_HOOK_DIR"]
-WANTED = (("UserPromptSubmit", os.path.join(hook_dir, "gg-recall.sh")),
-          ("SessionStart", os.path.join(hook_dir, "gg-refresh.sh")))
+WANTED = (("UserPromptSubmit", None, os.path.join(hook_dir, "gg-recall.sh")),
+          ("SessionStart", None, os.path.join(hook_dir, "gg-refresh.sh")),
+          ("PreToolUse", "Agent|Task", os.path.join(hook_dir, "gg-agent-model.sh")))
 cfg = {}
 if os.path.exists(path):
     try:
@@ -359,15 +363,19 @@ hooks = cfg.setdefault("hooks", {})
 if not isinstance(hooks, dict):
     print("hooks-not-dict"); sys.exit(0)          # leave user's config untouched
 added = []
-for event, hook in WANTED:
+for event, matcher, hook in WANTED:
     entries = hooks.setdefault(event, [])
     if not isinstance(entries, list):
         print(f"{event}-not-list"); sys.exit(0)
     if hook in json.dumps(entries):
         continue
-    # The nested form Claude Code's settings schema uses; no matcher, so it fires
-    # for every prompt / every way a session starts.
-    entries.append({"hooks": [{"type": "command", "command": hook}]})
+    # The nested form Claude Code's settings schema uses. Recall and refresh have
+    # no matcher, so they fire for every prompt / every way a session starts; the
+    # agent-model guard matches the agent tool under its current and older name.
+    entry = {"hooks": [{"type": "command", "command": hook}]}
+    if matcher:
+        entry = {"matcher": matcher, **entry}
+    entries.append(entry)
     added.append(event)
 if not added:
     print("exists"); sys.exit(0)
@@ -380,7 +388,7 @@ case "$HOOK_STATUS" in
   added:*)       detail ok "hooks registered (${HOOK_STATUS#added:})" ;;
   exists)        detail note "hooks already registered" ;;
   unparseable)   warn "~/.claude/settings.json isn't valid JSON — backed it up to .gigabite.bak and did NOT modify it. Add the hooks manually or fix the file and re-run." ;;
-  *)             warn "could not register the hooks automatically ($HOOK_STATUS). The scripts are in $HOOK_DIR; add them to settings.json manually (gg-recall.sh on UserPromptSubmit, gg-refresh.sh on SessionStart)." ;;
+  *)             warn "could not register the hooks automatically ($HOOK_STATUS). The scripts are in $HOOK_DIR; add them to settings.json manually (gg-recall.sh on UserPromptSubmit, gg-refresh.sh on SessionStart, gg-agent-model.sh on PreToolUse matching Agent|Task)." ;;
 esac
 # The daily 18:00 launchd job earlier installs scheduled is retired: the refresh
 # hook above does its one remaining job (ingest) when the index is about to be
@@ -395,7 +403,7 @@ fi
 [ "$HAS_CLAUDE" = 1 ] || warn "Claude Code isn't installed yet — all of this switches on once it is"
 # The step's one line. It carries the way out, because hooks that run by themselves
 # are not something to leave someone unable to switch off.
-ok "router protocol + recall and refresh hooks (remove them from ~/.claude/settings.json to disable)"
+ok "router protocol + recall, refresh and agent-model hooks (remove them from ~/.claude/settings.json to disable)"
 
 # ---------------------------------------------------------------------------
 say "5/8  Enabling the \"AI brain\" integrations (Granola, more soon)"

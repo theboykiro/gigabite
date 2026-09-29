@@ -125,11 +125,16 @@ class UninstallCase(unittest.TestCase):
                     {"hooks": [{"type": "command",
                                 "command": str(self.home / ".claude/gigabite/gg-refresh.sh")}]},
                 ],
+                "PreToolUse": [
+                    {"matcher": "Agent|Task", "hooks": [{"type": "command",
+                                "command": str(self.home / ".claude/gigabite/gg-agent-model.sh")}]},
+                ],
                 "Stop": [{"hooks": [{"type": "command", "command": "say done"}]}],
             },
         }, indent=2))
         self.write(".claude/gigabite/gg-recall.sh", "#!/bin/bash\n# gigabite recall\n")
         self.write(".claude/gigabite/gg-refresh.sh", "#!/bin/bash\n# gigabite refresh\n")
+        self.write(".claude/gigabite/gg-agent-model.sh", "#!/bin/bash\n# gigabite agent model\n")
         # Every com.gigabite.* job: the retired daily job an older install left, and
         # the optional Granola pull `gigabite integrations` installs.
         self.write("Library/LaunchAgents/com.gigabite.synthesis.plist", "<plist/>\n")
@@ -285,6 +290,7 @@ class TestSurgeryOnSharedFiles(UninstallCase):
         self.assertEqual([{"hooks": [{"type": "command", "command": "/opt/mine/notify.sh"}]}],
                          cfg["hooks"]["UserPromptSubmit"])
         self.assertNotIn("SessionStart", cfg["hooks"], "our refresh hook was all it held")
+        self.assertNotIn("PreToolUse", cfg["hooks"], "our agent-model hook was all it held")
 
     def test_a_settings_file_holding_only_our_hooks_is_removed_without_a_backup(self):
         """install.sh created it; leaving `{}` and a backup behind is residue."""
@@ -343,6 +349,7 @@ class TestItReversesTheInstall(UninstallCase):
         self.run_uninstall("--yes")
         gone = [".local/bin/gigabite", ".local/bin", ".local",
                 ".claude/gigabite/gg-recall.sh", ".claude/gigabite/gg-refresh.sh",
+                ".claude/gigabite/gg-agent-model.sh",
                 ".claude/gigabite", ".claude/commands", ".claude/agents", ".claude/skills",
                 "Library/LaunchAgents/com.gigabite.synthesis.plist",
                 "Library/Logs/gigabite-synthesis.log",
