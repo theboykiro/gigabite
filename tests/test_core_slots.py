@@ -94,6 +94,7 @@ class RegistryShape(unittest.TestCase):
         "egress.invariants": ((4,), "shipped"),
         "routing.invariants": ((5,), "shipped"),
         "agents.verification": ((6,), "shipped"),
+        "agents.model_tier": ((6,), "shipped"),
     }
 
     def test_every_spec_slot_is_present_with_the_right_kind_and_section(self):
@@ -120,7 +121,8 @@ class RegistryShape(unittest.TestCase):
     def test_shipped_sections_four_and_five_come_from_the_scaffold(self):
         scaffold = SCAFFOLD.read_text(encoding="utf-8")
         for slot_id in ("egress.invariants", "routing.invariants",
-                        "tone.invariants", "agents.verification"):
+                        "tone.invariants", "agents.verification",
+                        "agents.model_tier"):
             self.assertIn(core_slots.get_slot(slot_id).shipped_text, scaffold, slot_id)
 
     def test_slots_by_section_covers_six_sections_and_spans_the_grid(self):

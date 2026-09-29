@@ -418,6 +418,19 @@ SLOTS: tuple[Slot, ...] = (
             "  the real result before relaying it."
         ),
     ),
+    Slot(
+        id="agents.model_tier",
+        section=(6,),
+        kind="shipped",
+        title="Pick the model tier by the cost of being wrong",
+        shipped_text=(
+            "- **Pick the model tier by the cost of being wrong.** Search, fan-out, mechanical\n"
+            "  edits and summaries → the fast tier (Sonnet). Architecture, security review,\n"
+            "  ambiguous judgement calls and the final QA gate → the strongest tier (Opus).\n"
+            "  Name the tier when spawning; an agent left to inherit gets whatever the session\n"
+            "  happens to run."
+        ),
+    ),
 )
 
 _BY_ID = {slot.id: slot for slot in SLOTS}
