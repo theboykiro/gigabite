@@ -450,6 +450,15 @@ class TestItIsIdempotent(InstallCase):
                      text.index("<!-- gigabite:router:end -->")]
         self.assertIn("Delegate by the operation's shape", block)
 
+    def test_the_router_block_says_every_spawn_names_a_model(self):
+        # The tier rule in core.md §6 reaches only a core.md rendered after it
+        # shipped, and the agent-model hook refuses a spawn without a model. Said
+        # here, the first call names one instead of bouncing off the hook.
+        text = (self.sandbox_.home / ".claude/CLAUDE.md").read_text(encoding="utf-8")
+        block = text[text.index("<!-- gigabite:router:start -->"):
+                     text.index("<!-- gigabite:router:end -->")]
+        self.assertIn("Every agent spawn names its `model`", block)
+
 
 # ---------------------------------------------------------------------------
 class TestTheSeamsAreRealSeams(InstallCase):

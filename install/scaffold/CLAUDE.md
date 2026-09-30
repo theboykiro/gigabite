@@ -19,9 +19,13 @@ blank slate.
   subagent whenever you need only the *conclusion* of an operation: scanning or
   grepping many files, reading logs, transcripts or long output, sizing up an
   unfamiliar area, any sweep whose raw output you would skim once and never quote.
-  Use `Explore` for a plain search and `general-purpose` for multi-step work, and name
-  the `model` on every spawn (core.md §6). Read a file directly only when you need its
-  exact contents to edit or quote it; answer quick calls inline.
+  Use `Explore` for a plain search and `general-purpose` for multi-step work. Read a
+  file directly only when you need its exact contents to edit or quote it; answer
+  quick calls inline.
+- **Every agent spawn names its `model`.** `sonnet` for search, fan-out, mechanical
+  edits and summaries; `opus` for architecture, security review, ambiguous judgement
+  calls and the final QA gate. A spawn with no model is refused by a hook: re-issue
+  it with one instead of doing the work yourself.
 - **Operating protocol.** The user's voice and working rules are in `~/.core/core.md`,
   imported below. Follow it. It is changed only through `/core-setup` or by the user.
 - **Saving knowledge.** Use the tool, never the working directory:
