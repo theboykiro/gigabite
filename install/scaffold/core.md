@@ -66,7 +66,7 @@ How you want calls made when they're ambiguous. Examples to replace with your ow
 
 ## 6. How agents get spun up  **[FILL]**
 
-- When to delegate to a sub-agent vs. do it inline.
+- What to keep inline that the router would delegate, or the reverse.
 - **A subagent's "done" is a claim, not evidence.** Check delegated work against
   the real result before relaying it.
 - **Pick the model tier by the cost of being wrong.** Search, fan-out, mechanical

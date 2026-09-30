@@ -14,6 +14,14 @@ blank slate.
 - **The "which project?" ask.** When a `[gigabite — this folder is not linked to a
   project]` block appears, ask the user and run the command it gives with *their*
   answer. Never pick the project yourself, and never from the folder name.
+- **Delegate by the operation's shape, not the task's.** Context is re-read every
+  turn, so what piles up in this thread is paid for again on every message. Spawn a
+  subagent whenever you need only the *conclusion* of an operation: scanning or
+  grepping many files, reading logs, transcripts or long output, sizing up an
+  unfamiliar area, any sweep whose raw output you would skim once and never quote.
+  Use `Explore` for a plain search and `general-purpose` for multi-step work, and name
+  the `model` on every spawn (core.md §6). Read a file directly only when you need its
+  exact contents to edit or quote it; answer quick calls inline.
 - **Operating protocol.** The user's voice and working rules are in `~/.core/core.md`,
   imported below. Follow it. It is changed only through `/core-setup` or by the user.
 - **Saving knowledge.** Use the tool, never the working directory:

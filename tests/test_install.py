@@ -441,6 +441,15 @@ class TestItIsIdempotent(InstallCase):
                      text.index("<!-- gigabite:router:end -->")]
         self.assertIn("\n@~/.core/core.md\n", block)
 
+    def test_the_router_block_says_when_to_delegate(self):
+        # core.md is never overwritten once it exists, so the router block is the one
+        # place a delegation rule reaches every install. Without it the main thread
+        # does every sweep itself, and pays for the output on every later turn.
+        text = (self.sandbox_.home / ".claude/CLAUDE.md").read_text(encoding="utf-8")
+        block = text[text.index("<!-- gigabite:router:start -->"):
+                     text.index("<!-- gigabite:router:end -->")]
+        self.assertIn("Delegate by the operation's shape", block)
+
 
 # ---------------------------------------------------------------------------
 class TestTheSeamsAreRealSeams(InstallCase):

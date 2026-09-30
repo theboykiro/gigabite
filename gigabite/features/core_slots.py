@@ -206,7 +206,7 @@ SECTION_FILL_TEXT: dict[int, str] = {
         "- What counts as \"done\" (e.g. tested end-to-end, not just written)."
     ),
     6: (
-        "- When to delegate to a sub-agent vs. do it inline."
+        "- What to keep inline that the router would delegate, or the reverse."
     ),
 }
 
