@@ -37,6 +37,7 @@ from pathlib import Path
 import json
 import re
 import unittest
+from unittest import mock
 
 import os
 import sys
@@ -612,6 +613,55 @@ class TestStatus(CliTestCase):
         code, out = run("status", "--json")
         self.assertEqual(code, 0)
         self.assertIsInstance(json.loads(out), dict)
+
+
+class TestStatusRefreshWarnings(CliTestCase):
+    """A pull that retires a job or adds a hook leaves the machine as it was until
+    install.sh is re-run. `status` has to say so, or the only symptom is an index
+    that silently stopped growing."""
+
+    def setUp(self):
+        super().setUp()
+        import plistlib
+        self.plistlib = plistlib
+        self.home = Path(tempfile.mkdtemp(prefix="gigabite-home-"))
+        self.addCleanup(shutil.rmtree, self.home, True)
+        self.agents = self.home / "Library" / "LaunchAgents"
+        self.agents.mkdir(parents=True)
+        projects = self.home / ".claude" / "projects"
+        projects.mkdir(parents=True)
+        patches = (mock.patch.object(cli.Path, "home", return_value=self.home),
+                   mock.patch.object(cli.config, "CLAUDE_CODE_PROJECTS_DIR", projects))
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def _plist(self, label, program):
+        with (self.agents / f"{label}.plist").open("wb") as fh:
+            self.plistlib.dump({"Label": label, "ProgramArguments": [str(program)]}, fh)
+
+    def _settings(self, text):
+        (self.home / ".claude" / "settings.json").write_text(text, encoding="utf-8")
+
+    def test_a_job_whose_script_was_deleted_is_reported(self):
+        self._settings('{"hooks": {"SessionStart": "gg-refresh.sh"}}')
+        self._plist("com.gigabite.example", self.home / "bin" / "gone")
+        out = run("status")[1]
+        self.assertIn("needs attention", out)
+        self.assertIn("com.gigabite.example", out)
+        self.assertIn("install.sh", out)
+
+    def test_a_missing_refresh_hook_is_reported(self):
+        self._settings('{"hooks": {}}')
+        self.assertIn("SessionStart refresh hook", run("status")[1])
+
+    def test_a_current_install_reports_nothing(self):
+        self._settings('{"hooks": {"SessionStart": "gg-refresh.sh"}}')
+        present = self.home / "bin" / "present"
+        present.parent.mkdir()
+        present.write_text("#!/bin/sh\n")
+        self._plist("com.gigabite.example", present)
+        self.assertNotIn("needs attention", run("status")[1])
 
 
 class TestDoc(CliTestCase):

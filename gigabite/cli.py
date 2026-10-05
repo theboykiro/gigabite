@@ -133,7 +133,50 @@ def cmd_status(args) -> int:
         print(f"    {label:<14} {info['documents']:>5} docs   {info['words']:>9,} words")
     if not s["by_source"]:
         print(dim("    (empty — run `gigabite ingest`)"))
+    warnings = _refresh_warnings()
+    if warnings:
+        print(bold("\n  needs attention — the index is not refreshing by itself"))
+        for w in warnings:
+            print(f"    {yellow('!')} {w}")
+        print(dim(f"    fix: re-run {_tilde(config.REPO_ROOT / 'install.sh')}"))
     return 0
+
+
+def _refresh_warnings() -> list:
+    """What would stop the index refreshing on its own, as one line each.
+
+    A `git pull` changes the repo, not the machine: when a release retires a
+    scheduled job or adds a hook, the installed copies stay as they were until
+    install.sh is re-run. Left alone, that is a launchd job pointing at a script
+    that no longer exists and no hook to replace it — silent, and visible only as
+    an index that stopped growing. Read-only; never touches launchd or settings.
+    """
+    import plistlib
+
+    out = []
+    home = Path.home()
+    settings = home / ".claude" / "settings.json"
+    if _claude_code_present():
+        try:
+            text = settings.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        if "gg-refresh.sh" not in text:
+            out.append("the SessionStart refresh hook is not in ~/.claude/settings.json, "
+                       "so new Claude Code sessions are not indexed")
+    for plist in sorted((home / "Library" / "LaunchAgents").glob("com.gigabite.*.plist")):
+        try:
+            with plist.open("rb") as fh:
+                data = plistlib.load(fh)
+        except Exception:
+            out.append(f"{plist.name} is not a readable plist")
+            continue
+        args = data.get("ProgramArguments") or []
+        program = data.get("Program") or (args[0] if args else "")
+        if program and not Path(program).exists():
+            out.append(f"{data.get('Label') or plist.stem} runs {_tilde(Path(program))}, "
+                       "which no longer exists")
+    return out
 
 
 # ---- welcome: the first-run brief ------------------------------------------
