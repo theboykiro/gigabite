@@ -74,6 +74,7 @@ _ROLE_LABELS = {
     "assistant": "assistant",
     "attachment": "attachment",
     "note": "note",
+    "private_notes": "my notes",
     "file": "file",
 }
 

@@ -76,6 +76,12 @@ def _notes_text(obj: dict) -> str:
     return ""
 
 
+def _private_notes_text(obj: dict) -> str:
+    """The notes you typed yourself in Granola (API shape), apart from its summary."""
+    v = _first(obj, "private_notes_markdown", "private_notes_text")
+    return util.clean_text(v) if isinstance(v, str) else ""
+
+
 def _transcript_text(obj: dict) -> str:
     v = _first(obj, "transcript", "transcript_text", "transcription")
     if isinstance(v, str):
@@ -118,13 +124,18 @@ def document_from_granola_json(obj: dict, ref: str = "granola") -> Optional[Docu
     created = util.to_iso_utc(_first(obj, "created_at", "created", "date", "start_time"))
     updated = util.to_iso_utc(_first(obj, "updated_at", "updated")) or created
 
-    messages: list[Message] = []
-    notes = _notes_text(obj)
-    if notes:
-        messages.append(Message(seq=0, role="note", text=notes, ts_utc=created))
-    transcript = _transcript_text(obj)
-    if transcript:
-        messages.append(Message(seq=1, role="transcript", text=transcript, ts_utc=created))
+    # The API carries the AI summary and your own typed notes as separate
+    # fields; `_notes_text` takes only the first it finds, so the typed notes
+    # need their own message or they are never indexed.
+    parts = [
+        ("note", _notes_text(obj)),
+        ("private_notes", _private_notes_text(obj)),
+        ("transcript", _transcript_text(obj)),
+    ]
+    messages: list[Message] = [
+        Message(seq=i, role=role, text=text, ts_utc=created)
+        for i, (role, text) in enumerate((r, t) for r, t in parts if t)
+    ]
     if not messages:
         return None
 

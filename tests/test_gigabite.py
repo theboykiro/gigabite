@@ -254,6 +254,19 @@ class TestMeetings(unittest.TestCase):
         roles = [m.role for m in doc.messages]
         self.assertEqual(roles, ["note", "transcript"])
 
+    def test_json_api_shape_keeps_private_notes_beside_summary(self):
+        obj = {"id": "g10", "title": "Sync", "created_at": "2026-05-01T09:00:00Z",
+               "summary_markdown": "ship search first",
+               "private_notes_markdown": "remember the otterpondmarker",
+               "transcript": [{"speaker": "K", "text": "search is priority"}]}
+        doc = meetings.document_from_granola_json(obj)
+        self.assertEqual([m.role for m in doc.messages],
+                         ["note", "private_notes", "transcript"])
+        self.assertEqual([m.seq for m in doc.messages], [0, 1, 2])
+        st = fresh_store("granola-private")
+        st.upsert_document(doc)
+        self.assertTrue(st.search("otterpondmarker"))
+
 
 class TestGranolaLive(unittest.TestCase):
     """Exercise the live pull with the Granola public API stubbed out."""
