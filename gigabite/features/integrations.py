@@ -64,7 +64,7 @@ INTEGRATIONS = [
             "plist_template": "install/launchd/com.gigabite.granola-pull.plist",
             "bin": "bin/gigabite-granola-pull",
             "log_name": "gigabite-granola-pull.log",
-            "description": "daily meeting pull at 19:00",
+            "description": "meeting pull at 11:00 and 18:00 on weekdays",
         },
     },
 ]
@@ -192,7 +192,7 @@ def run_interactive(repo_root: Path, *, assume_yes: bool = False) -> None:
 
         schedule = entry.get("schedule")
         if just_stored and schedule:
-            if _ask_yes_no(f"  Schedule the daily pull ({schedule['description']})?",
+            if _ask_yes_no(f"  Schedule the meeting pull ({schedule['description']})?",
                            default=True):
                 _install_schedule(repo_root, schedule)
 

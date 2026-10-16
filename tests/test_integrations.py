@@ -156,7 +156,7 @@ class EnableFlowTests(unittest.TestCase):
             with redirect_stdout(buf):
                 integrations.run_interactive(Path("/nonexistent"))
         self.mod.store_token_interactive.assert_called_once()
-        self.assertNotIn("Schedule the daily pull", buf.getvalue())
+        self.assertNotIn("Schedule the meeting pull", buf.getvalue())
 
 
 class ScheduleTests(unittest.TestCase):

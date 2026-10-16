@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Daily Granola meeting pull, run by launchd (see
+# End-of-workday Granola meeting pull, run by launchd (see
 # install/launchd/com.gigabite.granola-pull.plist). Not everyone has Granola
 # Business / API access yet, so this is an additive install path the user opts
 # into by loading its own plist.
+#
+# launchd wakes this every hour; it does real work once per slot — 11:00 and
+# 18:00 on weekdays (GIGABITE_GRANOLA_HOURS) — the first time it runs after a slot it
+# hasn't pulled for yet. A Mac asleep at a slot gets the missed run during a
+# few-second dark wake with no network — so an offline attempt is quiet and
+# simply waits for the next hour.
 #
 # `gigabite granola-sync` does the whole job in one call: pull every new note
 # via the public API (transcript + AI summary), write raw imports, then route
@@ -20,6 +26,27 @@ REPO="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
 GB="$REPO/bin/gigabite"
 
 LOG="${GIGABITE_GRANOLA_LOG:-$HOME/Library/Logs/gigabite-granola-pull.log}"
+HOURS="${GIGABITE_GRANOLA_HOURS:-11 18}"
+STAMP="${GIGABITE_KNOWLEDGE_DIR:-$HOME/Knowledge}/.gigabite/granola-pull.last"
+
+# The pull this run owes: the latest weekday slot already passed (Monday
+# morning looks back to Friday 18:00).
+due_at() {
+  local now best=0 d h t
+  now="$(date +%s)"
+  for d in 0 1 2 3; do
+    [ "$(date -j -v-"${d}"d +%u)" -le 5 ] || continue
+    for h in $HOURS; do
+      t="$(date -j -v-"${d}"d -v"${h}"H -v0M -v0S +%s)"
+      if [ "$t" -le "$now" ] && [ "$t" -gt "$best" ]; then best="$t"; fi
+    done
+  done
+  echo "$best"
+}
+DUE="$(due_at)"
+LAST="$(cat "$STAMP" 2>/dev/null || echo 0)"
+# Already pulled since then — the common hourly case, so say nothing.
+[ "$LAST" -ge "$DUE" ] 2>/dev/null && exit 0
 
 # launchd appends to this file forever. Keep the last ~256 KB so a year of
 # nightly runs stays readable.
@@ -30,6 +57,7 @@ fi
 log() { printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 
 FAILED=()
+OUT=""
 
 # Run one stage, keeping its output in the log under the stage name.
 stage() {
@@ -37,6 +65,7 @@ stage() {
   log "→ $name: $*"
   local out status
   out="$("$@" 2>&1)"; status=$?
+  OUT="$out"
   if [ -n "$out" ]; then
     printf '%s\n' "$out" | sed 's/^/    /'
   fi
@@ -66,6 +95,17 @@ fi
 # Pulls every new note (transcript + AI summary) and files it by project —
 # materialize runs inside granola-sync, so nothing else is needed here.
 stage "granola-sync" "$GB" granola-sync
+
+# Offline (asleep, no Wi-Fi): not a failure — leave the stamp alone so the next
+# hourly run tries again, and don't notify into a closed lid.
+if [ ${#FAILED[@]} -ne 0 ] && printf '%s' "$OUT" | grep -q "network error reaching granola"; then
+  log "=== offline; will retry next hour ==="
+  exit 0
+fi
+
+# Anything else settles this slot, pass or fail — a real failure (bad key,
+# API down) is reported once, not every hour.
+mkdir -p "$(dirname "$STAMP")" && date +%s >"$STAMP"
 
 notify() {
   /usr/bin/osascript -e "display notification \"$1\" with title \"gigabite\"" \

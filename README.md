@@ -97,7 +97,7 @@ of duplicating them.
 Copy a transcript and run `gigabite paste`, or save an export into
 `~/Knowledge/<project>/meetings/`. If you're on Granola with API access (Business plan),
 run `gigabite integrations`. It stores your API key in the macOS keychain and schedules a
-daily pull at 19:00. The installer offers this step when you run it in a terminal. See
+pull at 11:00 and 18:00 on weekdays (or as soon as the Mac is awake and online after). The installer offers this step when you run it in a terminal. See
 [docs/MEETINGS.md](docs/MEETINGS.md).
 
 ## Troubleshooting

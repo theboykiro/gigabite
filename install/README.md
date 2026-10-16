@@ -9,7 +9,7 @@ installing, this is the list; `../uninstall.sh` takes each row back off again.
 | `claude-commands/` | `~/.claude/commands/` | `/search` and `/core-setup`. `__GIGABITE_BIN__` is replaced with the launcher's absolute path at install time. |
 | `hooks/` | `~/.claude/gigabite/` | The Claude Code hooks, registered in `~/.claude/settings.json`: `gg-recall.sh` (`UserPromptSubmit`, ambient recall), `gg-refresh.sh` (`SessionStart`, refreshes the index in the background; log: `~/Knowledge/.gigabite/refresh.log`. In the first session after a first install it also shows a one-time notice of what the install made) and `gg-agent-model.sh` (`PreToolUse` on `Agent\|Task`, refuses an agent spawn that names no model — core.md §6). Remove them from `settings.json` to switch them off. |
 | `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/CLAUDE.md` | `core.md` (copied only if absent), the knowledge-base README, and the router block kept between markers in `~/.claude/CLAUDE.md`. |
-| `launchd/` | `~/Library/LaunchAgents/` | The optional daily Granola pull. It's installed by `gigabite integrations`, only if you enable it. |
+| `launchd/` | `~/Library/LaunchAgents/` | The optional Granola pull (11:00 and 18:00, weekdays). It's installed by `gigabite integrations`, only if you enable it. |
 | `scripts/` | nothing (you run it) | `claude-ai-safari-export.js`, pasted into the claude.ai browser console to export your chats. |
 
 `~/Knowledge/README.md` is the one file refreshed on every run, because it's instructions,

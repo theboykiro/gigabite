@@ -8,8 +8,10 @@
            > ~/Library/LaunchAgents/com.gigabite.granola-pull.plist
      then load it yourself:
        launchctl bootstrap "gui/$(id -u)" ~/Library/LaunchAgents/com.gigabite.granola-pull.plist
-     Runs `gigabite granola-sync` daily at 19:00 — pulls every new Granola note
-     (transcript + AI summary) via the public API and files it by project. -->
+     Runs `gigabite granola-sync` at 11:00 and 18:00 on weekdays — pulls every new
+     Granola note (transcript + AI summary) via the public API and files it by
+     project. Fires hourly; the bin script pulls once per slot, so a Mac asleep
+     or offline at 11:00/18:00 catches up when it's back. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -21,7 +23,6 @@
   </array>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Hour</key><integer>19</integer>
     <key>Minute</key><integer>0</integer>
   </dict>
   <key>RunAtLoad</key>

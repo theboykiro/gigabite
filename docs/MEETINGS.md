@@ -26,7 +26,7 @@ Granola Business has a documented API. Create a key in the Granola desktop app u
 Settings → Connectors → API keys, then run:
 
 ```bash
-gigabite integrations    # stores the key in the macOS keychain, offers a daily pull at 19:00
+gigabite integrations    # stores the key in the macOS keychain, offers a pull at 11:00 and 18:00 on weekdays
 ```
 
 The installer offers the same step when you run it in a terminal. It can't when you use
