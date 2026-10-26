@@ -5,8 +5,22 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from . import config
-from .sources import IngestReport, claude_ai, claude_code, meetings, notes
+from .sources import IngestReport, claude_ai, claude_code, claude_memory, meetings, notes
 from .store import Store
+
+
+def _notes(store: Store, force: bool = False) -> IngestReport:
+    """The knowledge base, plus Claude Code's auto-memory notes.
+
+    Memory files are notes that happen to live outside ``~/Knowledge`` (see
+    ``sources.claude_memory``), so they ride the same pass: every refresh, and
+    every ``--source note`` after a save, picks them up. They go first because
+    the knowledge-base scan is the one that has to see everything else indexed.
+    """
+    report = claude_memory.ingest(store, force=force)
+    report.merge(notes.ingest(store, force=force))
+    return report
+
 
 # Order matters, and 'note' must stay last.
 #
@@ -20,7 +34,7 @@ _INGESTERS = {
     config.SOURCE_CLAUDE_CODE: claude_code.ingest,
     config.SOURCE_CLAUDE_AI: claude_ai.ingest,
     config.SOURCE_MEETING: meetings.ingest,
-    config.SOURCE_NOTE: notes.ingest,
+    config.SOURCE_NOTE: _notes,
 }
 
 
