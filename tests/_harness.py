@@ -50,6 +50,8 @@ os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(_SESSION_ROOT / "knowledge")
 _FAKE_HOME = _SESSION_ROOT / "home"
 _FAKE_HOME.mkdir(parents=True, exist_ok=True)
 os.environ["HOME"] = str(_FAKE_HOME)
+# Nor pop a macOS notification (the claude.ai export nudge) mid-run.
+os.environ["GIGABITE_NOTIFY"] = "0"
 
 # No test may reach the real keychain — not even a test of the code that talks to
 # it. Every `security` invocation made in-process (subprocess.run/call/check_output
@@ -121,6 +123,7 @@ _DERIVED = (
     "ORIGINALS_DIR", "ALIASES_FILE",
     "BINDINGS_FILE",
     "CLAUDE_CODE_PROJECTS_DIR",
+    "DOWNLOADS_DIR", "CLAUDE_AI_NUDGE_STAMP", "NOTIFY",
 )
 
 
@@ -182,6 +185,12 @@ def _repoint(knowledge: Path, core: Path) -> None:
     config.SOURCES_DIR = config.MACHINE_DIR / "imports"
     config.SOURCES_CLAUDE_AI = config.SOURCES_DIR / "claude_ai"
     config.SOURCES_MEETINGS = config.SOURCES_DIR / "meetings"
+    config.CLAUDE_AI_NUDGE_STAMP = config.MACHINE_DIR / "claude-ai-nudge.last"
+    # Same reason as CLAUDE_CODE_PROJECTS_DIR below, and worse: ingest *moves* a
+    # claude.ai export it finds here, so the real ~/Downloads must never be it.
+    config.DOWNLOADS_DIR = knowledge.parent / "downloads"
+    config.DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    config.NOTIFY = False
     config.ORIGINALS_DIR = config.MACHINE_DIR / "originals"
     config.ALIASES_FILE = config.MACHINE_DIR / "aliases.json"
     config.BINDINGS_FILE = config.MACHINE_DIR / "bindings.json"

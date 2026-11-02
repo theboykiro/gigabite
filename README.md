@@ -80,17 +80,18 @@ claude.ai has no API for your chats, so you export them from the browser:
 2. Paste in the contents of `~/gigabite/install/scripts/claude-ai-safari-export.js` and
    press Enter. If pasting is blocked, type `allow pasting` first. The script downloads a
    `conversations.json` file.
-3. In a terminal:
-   ```bash
-   mv ~/Downloads/conversations.json ~/Knowledge/.gigabite/imports/claude_ai/
-   gigabite ingest
-   ```
+3. That's it. The next refresh (any new Claude Code session) moves the newest export out
+   of `~/Downloads` and indexes it. To do it now, run `gigabite ingest`.
+
+Making the export is the one step gigabite can't do for you, so it reminds you: once
+the last export is more than a week old, you get a macOS notification, at most once a
+day.
 
 Chats inside a claude.ai project are tagged with that project's name. They show up in
 recall when that name is exactly the name of a gigabite project;
 [docs/CLAUDE_AI.md](docs/CLAUDE_AI.md) explains how to map names that differ. Chats
-outside any project show up in `/search` only. Re-exporting later updates chats instead
-of duplicating them.
+outside any project show up in `/search` only. Each export replaces the previous one and
+updates chats instead of duplicating them.
 
 ## Meetings (optional)
 

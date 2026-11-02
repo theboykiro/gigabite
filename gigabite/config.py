@@ -39,6 +39,7 @@ touching real content::
 
     GIGABITE_CORE_DIR         -> ~/.core
     GIGABITE_KNOWLEDGE_DIR    -> ~/Knowledge
+    GIGABITE_DOWNLOADS_DIR    -> ~/Downloads
 """
 
 from __future__ import annotations
@@ -90,6 +91,20 @@ DB_PATH = INDEX_DIR / "gigabite.db"
 SOURCES_DIR = MACHINE_DIR / "imports"
 SOURCES_CLAUDE_AI = SOURCES_DIR / "claude_ai"
 SOURCES_MEETINGS = SOURCES_DIR / "meetings"
+
+# Where a claude.ai export lands when it is downloaded. Every ingest looks here
+# for one newer than the export it already has and moves it into
+# SOURCES_CLAUDE_AI, so the only manual step left is making the export.
+DOWNLOADS_DIR = _env_path("GIGABITE_DOWNLOADS_DIR", HOME / "Downloads")
+
+# An export older than this gets a nudge: a macOS notification, at most once a
+# day, and a note in the ingest report. claude.ai chats can't be pulled, so an
+# export nobody remembers to make is the one way they go quietly stale.
+CLAUDE_AI_STALE_DAYS = 7
+CLAUDE_AI_NUDGE_STAMP = MACHINE_DIR / "claude-ai-nudge.last"
+
+# Off in tests, so a run that ingests an old export doesn't pop a notification.
+NOTIFY = os.environ.get("GIGABITE_NOTIFY", "1") != "0"
 
 # Originals preserved by a migration: the "before" copy of a file that has been
 # rewritten into the current layout. Nothing here is indexed; it exists only so a
