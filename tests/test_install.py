@@ -83,6 +83,11 @@ QUIET_PREAMBLE_MAX = 17
 # actually does before reaching the screen written for them.
 QUIET_TO_WELCOME_MAX = 28
 
+# The line every command, subagent and skill gigabite ships carries. A file needs it
+# (or to be byte for byte a version shipped before it) to count as gigabite's:
+# mentioning gigabite is not enough, since a user's own command may call it.
+MANAGED = "<!-- gigabite:managed -->\n"
+
 
 def tree_digest(root: Path) -> dict:
     """Every path under `root` mapped to a digest of its content (links by target)."""
@@ -331,9 +336,9 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
 
     def test_subagents_and_skills_an_older_install_wrote_are_removed(self):
         for name in ("gg-builder", "gg-researcher", "gg-reviewer"):
-            self.sandbox.write(".claude/agents/%s.md" % name, "a gigabite subagent\n")
+            self.sandbox.write(".claude/agents/%s.md" % name, MANAGED + "a gigabite subagent\n")
         for name in ("meeting-prep", "decision-record", "design-critique"):
-            self.sandbox.write(".claude/skills/%s/SKILL.md" % name, "a gigabite skill\n")
+            self.sandbox.write(".claude/skills/%s/SKILL.md" % name, MANAGED + "a gigabite skill\n")
         extra = self.sandbox.write(".claude/skills/meeting-prep/notes.md", "mine\n")
         out = self.install()
         home = self.sandbox.home
@@ -350,7 +355,7 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
         retired = ("gg", "search-status", "calendar", "meeting", "recall-status", "granola")
         for name in retired:
             self.sandbox.write(".claude/commands/%s.md" % name,
-                               "runs the gigabite launcher\n")
+                               MANAGED + "runs the gigabite launcher\n")
         mine = self.sandbox.write(".claude/commands/calendar.md",
                                   "# my own calendar command\nnothing of theirs here\n")
         out = self.install()
@@ -606,7 +611,7 @@ class TestMigratingAnOlderInstall(InstallCase):
             {"hooks": [{"type": "command",
                         "command": str(s.home / ".claude/gigabite/gg-recall.sh")}]}]}}))
         for name in ("gg", "search-status", "calendar", "meeting"):
-            s.write(".claude/commands/%s.md" % name, "runs the gigabite launcher\n")
+            s.write(".claude/commands/%s.md" % name, MANAGED + "runs the gigabite launcher\n")
 
     def test_the_daily_job_is_unloaded_and_removed_and_the_hook_takes_over(self):
         out = self.install()

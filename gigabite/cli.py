@@ -383,9 +383,14 @@ def _welcome_empty() -> None:
             print(f"  installed here, and no files have been put under {know}.")
         print()
         print(bold("  Shortest path to something useful — about a minute:"))
+        if osutil.WINDOWS:
+            first = (f"    1.  make a folder {os.path.join(know, 'acme')} in Explorer, and drop\n"
+                     f"        any document worth finding later into it")
+        else:
+            first = (f"    1.  mkdir -p {know}/acme\n"
+                     f"        cp <any document worth finding later> {know}/acme/")
         print(f"""
-    1.  mkdir -p {know}/acme
-        cp <any document worth finding later> {know}/acme/
+{first}
     2.  gigabite ingest
     3.  gigabite search "a word you know is in that document"
 """)
@@ -889,10 +894,13 @@ def cmd_paste(args) -> int:
     if args.stdin:
         text = sys.stdin.read()
     else:
+        argv, tool = osutil.clipboard_command()
         try:
-            text = _sp.run(["pbpaste"], capture_output=True, text=True, timeout=10).stdout
-        except (FileNotFoundError, _sp.TimeoutExpired):
-            print(yellow("couldn't read the clipboard (pbpaste). Use --stdin instead."))
+            text = _sp.run(argv, capture_output=True, timeout=10, **osutil.NO_WINDOW,
+                           **({"encoding": "utf-8", "errors": "replace"} if osutil.WINDOWS
+                              else {"text": True})).stdout
+        except (OSError, _sp.TimeoutExpired):
+            print(yellow(f"couldn't read the clipboard ({tool}). Use --stdin instead."))
             return 1
     text = text.strip()
     if not text:
@@ -938,7 +946,8 @@ def cmd_core(args) -> int:
     """
     path = config.CORE_FILE
     if not path.exists():
-        print(f"(no operating protocol at {path} — run ./install.sh)")
+        print(f"(no operating protocol at {path} — run "
+              f"{'gigabite install' if osutil.WINDOWS else './install.sh'})")
         return 1
     print(path.read_text(encoding="utf-8", errors="replace"), end="")
     return 0

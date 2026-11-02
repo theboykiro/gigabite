@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import datetime
 import filecmp
+import hashlib
 import json
 import os
 import re
@@ -128,15 +129,48 @@ def _script(name: str) -> str:
 # shared by both directions
 # ---------------------------------------------------------------------------
 
+# Every command, subagent and skill gigabite ships carries this line.
+MARKER = b"<!-- gigabite:managed"
+# sha256 of each command and subagent template shipped before the marker existed
+# (17 versions, taken from the repository's history; none ships any more). An
+# installed copy is compared with the launcher path put back as the placeholder,
+# so an older install is still recognised and upgraded or removed.
+_PRE_MARKER = frozenset("""
+039f360839dc46fba2f255401aced0b1f1fc096eee0c7b6f7df100ffbd34173f
+2304c425aa3a0207116c2e192bbf7a1f4949d624c8a5e51fc7bf81d9cf6c878a
+2a0f076aafa11e84203d74431695fe54de56dd9a632c013d544dc99f86cb6955
+39c0c14156f41e5264f1a5c89a311ca05d85c1aee00e8038d516beff247d40f5
+4d4d6aea070694d60b138472f6cb78025da35f18fcf90c726f9888736e196ccf
+50cb4479d473fe9a91205cf3ec4c6f10e66b12675010bbb3073218db2da7f8e0
+54372e626b8e1ede2a205e4a0b26e3e41f39dad118b4d4a42e5c638d65db6ac3
+57151f3d59ff1acf4d78d1a44d5cf430ca12c92f94c59947a6c17f42db8a3982
+5c00da7806c5227d1a07665d5e0dece1bee3ec68b4bdc3eb91a5c6ec694d282b
+7dfcc19443ed57c994199a34600d01eebfa686e3bbbb2cf6a4c6ddb5828ceed3
+94c810986ccf2a9b44f8e289155a29dec46730bd360f198751cf9be17d32fe9e
+98fcf703c1ea0b377c64ab951219febccb1f608f736d81197ee1c16332e9f7f2
+a4638b66f37b5133e69003513f6ea36b4c1a336946ae61a41bcc0e6d8c57af9e
+a7f5533584504aef776f2511fa70420aff580e022009a9d66ae79ed712836d69
+aef8056f26180ca050e0a2f2a53e2e3bbb1e5750de7c5227e6a8da022d56ffd8
+b34860e87d45777d1ca7102323a422443cb6dede35e6d3f3030d4fcd99cf7008
+b7381420bc7d3b0130db2a2dd49d1a20f054167d35acaf73e5611b9057626ea9
+""".split())
+# The launcher path an older install baked in: `<clone>/bin/gigabite`.
+_BAKED_LAUNCHER = re.compile(rb"/\S*?/bin/gigabite")
+
+
 def is_ours(path: Path) -> bool:
-    """Any file mentioning gigabite. Installs predating the marker have none, and
-    a command we wrote embeds the launcher's path. Someone else's file that
-    happens to say "gigabite" is rarer than an existing install needing its
-    update; uninstall reverses the trade by keeping anything that fails this."""
+    """A file gigabite wrote: it carries the marker, or it is, byte for byte, a
+    version shipped before the marker. Merely mentioning gigabite is not enough:
+    a command of the user's own that calls gigabite is theirs, and is neither
+    overwritten by install nor deleted by uninstall."""
     try:
-        return b"gigabite" in path.read_bytes().lower()
+        data = path.read_bytes()
     except OSError:
         return False
+    if MARKER in data:
+        return True
+    template = _BAKED_LAUNCHER.sub(b"__GIGABITE_BIN__", data)
+    return hashlib.sha256(template).hexdigest() in _PRE_MARKER
 
 
 def _exec_name(hook) -> Optional[str]:
@@ -257,6 +291,22 @@ gigabite installer — idempotent, additive, non-destructive.
 Nothing here overwrites content you already have. Re-run any time.
 """
 
+INSTALL_HELP_WINDOWS = """\
+gigabite installer: idempotent, additive, non-destructive.
+  - creates ~\\.core and ~\\Knowledge (copies templates only if absent), and on a
+    first install opens ~\\Knowledge in Explorer so you know it exists
+  - checks `gigabite` is on your PATH (uv put it there)
+  - installs the /search and /core-setup commands (user-level)
+  - wires the router block and three hooks into ~\\.claude: ambient recall on every
+    prompt, a background index refresh when a session starts, and a guard that
+    makes every agent spawn name its model
+  - builds the initial index
+Nothing here overwrites content you already have. Re-run any time.
+
+  gigabite install              install, one line per step
+  gigabite install --verbose    every file it touched, one line each
+"""
+
 
 def wanted_hooks(cdir: Path, exe: Optional[str]) -> list:
     """(event, matcher, hook) for the three hooks, in this platform's shape."""
@@ -282,10 +332,11 @@ def _present(entries: list, hook: dict) -> Optional[bool]:
         inner = entry.get("hooks") if isinstance(entry, dict) else None
         for existing in (inner if isinstance(inner, list) else ()):
             if _exec_name(existing) == name:
-                if existing == hook:
+                if all(existing.get(key) == value for key, value in hook.items()):
                     return True
-                existing.clear()
-                existing.update(hook)          # gigabite.exe moved; same hook
+                # gigabite.exe moved: repoint it, and keep every key of the
+                # user's own on the entry (a "timeout", say).
+                existing.update(hook)
                 return False
     return None
 
@@ -323,6 +374,9 @@ def register_hooks(settings: Path, wanted: list) -> str:
         added.append(event)
     if not added:
         return "exists"
+    # The same convention as CLAUDE.md: a copy of what was there before the edit.
+    if settings.is_file() and settings.stat().st_size:
+        shutil.copyfile(str(settings), str(settings) + ".gigabite-bak")
     _write_json(settings, cfg)
     return "added:" + ",".join(added)
 
@@ -369,7 +423,7 @@ def install(argv: list) -> int:
         if arg in ("-v", "--verbose"):
             verbose = True
         elif arg in ("-h", "--help"):
-            text = INSTALL_HELP.replace("Finder", "Explorer") if WINDOWS else INSTALL_HELP
+            text = INSTALL_HELP_WINDOWS if WINDOWS else INSTALL_HELP
             sys.stdout.write(text + "\n")
             return 0
         else:
@@ -414,8 +468,10 @@ def install(argv: list) -> int:
             note("re-running ./install.sh avoids that; everything else works where it is.")
 
     # Claude Code, by its own traces: not ~/.claude, which this creates itself.
+    # With CLAUDE_CONFIG_DIR set, Claude Code keeps its .claude.json in there.
     has_claude = bool(shutil.which("claude") or (home / ".claude.json").exists()
-                      or (cdir / "projects").is_dir())
+                      or (cdir / "projects").is_dir()
+                      or (os.environ.get("CLAUDE_CONFIG_DIR") and (cdir / ".claude.json").exists()))
     # A first install is the one that creates the machinery folder.
     first_install = not config.MACHINE_DIR.is_dir()
 
@@ -550,7 +606,10 @@ def install(argv: list) -> int:
         except Exception:
             status = "error"
     if status.startswith("added:"):
-        detail(ok, "hooks registered (%s)" % status[len("added:"):])
+        backup = Path(str(settings) + ".gigabite-bak")
+        detail(ok, "hooks registered (%s)%s" % (status[len("added:"):],
+                                                " (backup: settings.json.gigabite-bak)"
+                                                if backup.exists() else ""))
     elif status == "exists":
         detail(note, "hooks already registered")
     elif status == "unparseable":
@@ -661,7 +720,8 @@ def install(argv: list) -> int:
             "these points in your reply, in plain words, before anything else:",
             "  • gigabite %s %s%s. It holds their notes," % (made, know_t, shown),
             "    meeting transcripts and files, one subfolder per project, and everything",
-            "    in it is searchable from Claude Code. What goes where: %s/README.md" % know_t,
+            "    in it is searchable from Claude Code. What goes where: %s"
+            % os.path.join(know_t, "README.md"),
         ):
             _out(line)
         if core_unfilled():
@@ -761,6 +821,20 @@ Keys in your keychain are left too; the commands to delete them are printed.
   ./uninstall.sh              show the plan, then ask
   ./uninstall.sh --dry-run    show the plan and stop
   ./uninstall.sh --yes        skip the question (required when stdin is a pipe)
+"""
+
+UNINSTALL_HELP_WINDOWS = """\
+gigabite uninstaller: reverses `gigabite install`, and touches nothing else.
+  - removes the Claude Code commands (and any subagents or skills an older install wrote)
+  - removes the router block from ~\\.claude\\CLAUDE.md and its hooks from settings.json
+  - removes the folders it created, once they are empty
+Your knowledge base (~\\Knowledge) and your operating protocol (~\\.core) are never
+touched, and a file that gigabite did not write is left where it is and reported.
+gigabite itself stays installed; the last line says how to remove it.
+
+  gigabite uninstall              show the plan, then ask
+  gigabite uninstall --dry-run    show the plan and stop
+  gigabite uninstall --yes        skip the question (required when stdin is a pipe)
 """
 
 
@@ -1221,10 +1295,7 @@ def uninstall(argv: list) -> int:
         elif arg in ("-n", "--dry-run"):
             dry_run = True
         elif arg in ("-h", "--help"):
-            text = UNINSTALL_HELP
-            if WINDOWS:
-                text = text.replace("./uninstall.sh", "gigabite uninstall").replace(
-                    "install.sh", "gigabite install")
+            text = UNINSTALL_HELP_WINDOWS if WINDOWS else UNINSTALL_HELP
             sys.stdout.write(text + "\n")
             return 0
         else:

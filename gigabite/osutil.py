@@ -83,6 +83,17 @@ def gigabite_exe() -> Optional[str]:
     return None
 
 
+def clipboard_command():
+    """(argv, name) that prints the clipboard's text: pbpaste on macOS, and on
+    Windows PowerShell's Get-Clipboard, told to write UTF-8 so a transcript in
+    any language survives the pipe."""
+    if WINDOWS:
+        return (["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                 "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw"],
+                "Get-Clipboard")
+    return ["pbpaste"], "pbpaste"
+
+
 # ---------------------------------------------------------------------------
 # locks
 # ---------------------------------------------------------------------------

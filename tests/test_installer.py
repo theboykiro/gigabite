@@ -231,7 +231,11 @@ class TestClaudeConfigDir(unittest.TestCase):
         box = Sandbox()
         self.addCleanup(box.destroy)
         moved = box.base / "claude-config"
-        box.run("install", CLAUDE_CONFIG_DIR=str(moved))
+        out = box.run("install", CLAUDE_CONFIG_DIR=str(moved))
+        self.assertIn("Claude Code isn't installed yet", out)
+        (moved / ".claude.json").write_text("{}", encoding="utf-8")
+        out = box.run("install", CLAUDE_CONFIG_DIR=str(moved))
+        self.assertNotIn("Claude Code isn't installed yet", out, "its .claude.json is in there")
         self.assertEqual(3, sum(len(v) for v in hooks_of(moved / "settings.json").values()))
         self.assertTrue((moved / "commands" / "search.md").exists())
         self.assertIn(START, (moved / "CLAUDE.md").read_text(encoding="utf-8"))
@@ -356,6 +360,108 @@ class TestWindowsHookRegistration(unittest.TestCase):
         self.assertFalse(installer.exec_hook_registered("{not json", "refresh"))
 
 
+    def test_a_moved_exe_keeps_the_users_own_keys_on_the_entry(self):
+        self.register("C:/old/gigabite.exe")
+        cfg = json.loads(self.settings.read_text(encoding="utf-8"))
+        cfg["hooks"]["UserPromptSubmit"][0]["hooks"][0]["timeout"] = 30
+        self.settings.write_text(json.dumps(cfg), encoding="utf-8")
+        self.register()
+        recall = hooks_of(self.settings)["UserPromptSubmit"]
+        self.assertEqual([dict(windows_hook("recall"), timeout=30)], recall)
+        self.assertEqual("exists", self.register(), "a key of the user's is not a change")
+
+    def test_settings_are_backed_up_before_install_edits_them(self):
+        original = json.dumps(USER_SETTINGS).encode("utf-8")
+        self.settings.write_bytes(original)
+        self.register()
+        backup = Path(str(self.settings) + ".gigabite-bak")
+        self.assertEqual(original, backup.read_bytes())
+        backup.unlink()
+        self.assertEqual("exists", self.register())
+        self.assertFalse(backup.exists(), "nothing written, so nothing to back up")
+
+    def test_a_settings_file_install_creates_has_no_backup(self):
+        self.register()
+        self.assertFalse(Path(str(self.settings) + ".gigabite-bak").exists())
+
+
+class TestWhatCountsAsOurs(unittest.TestCase):
+    """install overwrites, and uninstall deletes, only files gigabite wrote."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="gigabite-ours-"))
+        self.addCleanup(shutil.rmtree, str(self.dir), True)
+
+    def write(self, text: str) -> Path:
+        path = self.dir / "search.md"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_every_shipped_template_carries_the_marker(self):
+        shipped = list((REPO / "install" / "claude-commands").glob("*.md"))
+        self.assertTrue(shipped)
+        for path in shipped:
+            self.assertTrue(installer.is_ours(path), path.name)
+
+    def test_a_users_own_command_that_calls_gigabite_is_not_ours(self):
+        self.assertFalse(installer.is_ours(self.write(
+            "# my search\n!`gigabite search \"$ARGUMENTS\" --project acme`\n")))
+
+    def test_a_version_shipped_before_the_marker_is_recognised(self):
+        """By its content, with the launcher path an older install baked in."""
+        template = b"run `__GIGABITE_BIN__ search` and `__GIGABITE_BIN__ ingest`\n"
+        known = frozenset({hashlib.sha256(template).hexdigest()})
+        installed = template.replace(b"__GIGABITE_BIN__", b"/Users/jane/gigabite/bin/gigabite")
+        path = self.dir / "gg.md"
+        path.write_bytes(installed)
+        with mock.patch.object(installer, "_PRE_MARKER", known):
+            self.assertTrue(installer.is_ours(path))
+            path.write_bytes(installed + b"one line of the user's\n")
+            self.assertFalse(installer.is_ours(path), "an edited copy is the user's")
+
+    def test_the_known_versions_are_well_formed(self):
+        self.assertEqual(17, len(installer._PRE_MARKER))
+        for digest in installer._PRE_MARKER:
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+
+
+class TestPlatformText(_harness.TempRoot):
+    """What a Windows user is told to type has to work in PowerShell."""
+
+    def welcome(self, windows: bool) -> str:
+        from gigabite import cli
+        buf = io.StringIO()
+        with mock.patch.object(osutil, "WINDOWS", windows), contextlib.redirect_stdout(buf):
+            cli.main(["welcome"])
+        return buf.getvalue()
+
+    def test_the_first_steps_on_an_empty_index(self):
+        mac, win = self.welcome(False), self.welcome(True)
+        self.assertIn("mkdir -p", mac)
+        self.assertIn("cp <any document", mac)
+        self.assertNotIn("mkdir -p", win)
+        self.assertNotIn("cp <", win)
+        self.assertIn("in Explorer", win)
+
+    def test_the_clipboard_is_read_with_the_platform_tool(self):
+        with mock.patch.object(osutil, "WINDOWS", False):
+            self.assertEqual((["pbpaste"], "pbpaste"), osutil.clipboard_command())
+        with mock.patch.object(osutil, "WINDOWS", True):
+            argv, name = osutil.clipboard_command()
+        self.assertEqual("powershell", argv[0])
+        self.assertIn("Get-Clipboard -Raw", argv[-1])
+        self.assertIn("UTF8", argv[-1])
+
+    def test_the_help_on_windows_names_nothing_macos_only(self):
+        for command in ("install", "uninstall"):
+            buf = io.StringIO()
+            with mock.patch.object(installer, "WINDOWS", True), contextlib.redirect_stdout(buf):
+                installer.main(command, ["--help"])
+            text = buf.getvalue()
+            for mac_only in ("Granola", "launchd", "keychain", "shell rc", "Finder", ".sh"):
+                self.assertNotIn(mac_only, text, (command, mac_only))
+
+
 class TestWindowsInstallEndToEnd(_harness.TempRoot):
     """The whole Windows install and uninstall, in this process, on this machine."""
 
@@ -405,6 +511,17 @@ class TestWindowsInstallEndToEnd(_harness.TempRoot):
         out = self.run_installer("uninstall", "--yes")
         self.assertIn("uv tool uninstall gigabite", out)
         self.assertEqual([], residue(before, tree(self.home)))
+
+    def test_a_users_own_search_command_survives_install_and_uninstall(self):
+        mine = self.home / ".claude" / "commands" / "search.md"
+        mine.write_bytes(b"# my search\n!`gigabite search \"$ARGUMENTS\"`\n")
+        before = mine.read_bytes()
+        out = self.run_installer("install")
+        self.assertIn("kept your own /search", out)
+        self.assertEqual(before, mine.read_bytes())
+        out = self.run_installer("uninstall", "--yes")
+        self.assertIn("kept %s" % mine, out)
+        self.assertEqual(before, mine.read_bytes())
 
     def test_no_exe_no_hooks(self):
         """A hook pointing at nothing fails every prompt, so none is registered."""

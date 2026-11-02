@@ -4,13 +4,15 @@
     python tools/ci_install_check.py installed     # after `gigabite install`
     python tools/ci_install_check.py uninstalled   # after `gigabite uninstall --yes`
 
-Reads ~/.claude/settings.json (USERPROFILE on Windows) and, for `installed`,
+Reads ~/.claude/settings.json (USERPROFILE on Windows, CLAUDE_CONFIG_DIR when
+set) and, for `installed`,
 requires each of the three hooks exactly once, then runs every one the way Claude
 Code does: the registered command with its args, no shell, the payload on stdin.
 On Windows that is the exec form (`command` + `args`); on macOS, the .sh wrapper.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -46,7 +48,8 @@ def run(hook: dict, payload: dict) -> subprocess.CompletedProcess:
 
 
 def main() -> None:
-    settings = Path.home() / ".claude" / "settings.json"
+    moved = os.environ.get("CLAUDE_CONFIG_DIR")             # as Claude Code reads it
+    settings = (Path(moved).expanduser() if moved else Path.home() / ".claude") / "settings.json"
     found = ours(settings)
     if sys.argv[1:] == ["uninstalled"]:
         if found:
