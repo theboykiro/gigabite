@@ -50,7 +50,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # see tests/_harness.py
 import _harness  # noqa: F401,E402  redirects every store into a temp dir
 
-from gigabite import config  # noqa: E402
+from gigabite import config, osutil  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
 from gigabite.features import bindings, routing  # noqa: E402
 
@@ -83,7 +83,14 @@ class BindingCase(_harness.TempRoot):
     def workspace(self, name, marker=".git"):
         """A directory outside the knowledge base that looks like a checkout."""
         path = self.root.parent / "code" / name
-        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            if os.name != "nt":
+                raise
+            # `"`, `|` and control characters cannot be in a Windows file name, so
+            # no folder there is called this and there is nothing to ask about.
+            raise unittest.SkipTest("Windows cannot name a folder %r" % name)
         if marker:
             (path / marker).mkdir(exist_ok=True)
         return str(path)
@@ -353,37 +360,48 @@ class TestTheAskCannotCarryACommand(BindingCase):
     def test_the_block_keeps_its_shape_whatever_the_folder_is_called(self):
         benign = len(self.route(cwd=self.workspace("plain"))["ask"]["text"].splitlines())
         for name in self.HOSTILE:
-            text = self.route(cwd=self.workspace(name))["ask"]["text"]
-            self.assertEqual(len(text.splitlines()), benign, repr(name))
+            with self.subTest(name=name):
+                text = self.route(cwd=self.workspace(name))["ask"]["text"]
+                self.assertEqual(len(text.splitlines()), benign, repr(name))
 
     def test_the_command_parses_to_exactly_one_bind_with_one_path(self):
-        import shlex
         for name in self.HOSTILE:
-            work = self.workspace(name)
-            text = self.route(cwd=work)["ask"]["text"]
-            argv = shlex.split(self.bind_line(text))
-            self.assertEqual(os.path.basename(argv[0]), "gigabite", repr(name))
+            with self.subTest(name=name):
+                self._parses_to_one_bind(name)
+
+    def _parses_to_one_bind(self, name):
+        import shlex
+        work = self.workspace(name)
+        text = self.route(cwd=work)["ask"]["text"]
+        argv = shlex.split(self.bind_line(text))
+        self.assertEqual(argv[0], osutil.launcher(), repr(name))
+        self.assertEqual(os.path.basename(argv[0]), "gigabite", repr(name))
+        if os.name != "nt":                     # on Windows only once installed
             self.assertTrue(os.path.isabs(argv[0]), "the launcher must be absolute")
-            self.assertEqual(argv[1:3], ["project", "bind"], repr(name))
-            self.assertEqual(argv[3:4], ["<name>"], repr(name))
-            self.assertEqual(argv[4:], ["--dir", os.path.realpath(work)], repr(name))
+        self.assertEqual(argv[1:3], ["project", "bind"], repr(name))
+        self.assertEqual(argv[3:4], ["<name>"], repr(name))
+        self.assertEqual(argv[4:], ["--dir", os.path.realpath(work)], repr(name))
 
     def test_the_path_appears_only_in_quoted_form(self):
         """Raw interpolation was the bug: the path must never be there unquoted."""
-        import shlex
         for name in ("repo$(id)", "repo`id`", 'repo"; id #', "repo;id"):
-            work = os.path.realpath(self.workspace(name))
-            text = self.route(cwd=work)["ask"]["text"]
-            quoted = shlex.quote(work)
-            self.assertNotEqual(quoted, work, "this name needs quoting to be safe")
-            # Every mention of the path is a quoted mention: three of them, and no
-            # bare fourth. Raw interpolation was the bug.
-            self.assertEqual(text.count(quoted), 3, repr(name))
-            self.assertEqual(text.count(work), 3, repr(name))
-            for line in text.splitlines():
-                if quoted not in line:
-                    continue
-                self.assertEqual(shlex.split(line).count(work), 1, repr(line))
+            with self.subTest(name=name):
+                self._only_quoted(name)
+
+    def _only_quoted(self, name):
+        import shlex
+        work = os.path.realpath(self.workspace(name))
+        text = self.route(cwd=work)["ask"]["text"]
+        quoted = shlex.quote(work)
+        self.assertNotEqual(quoted, work, "this name needs quoting to be safe")
+        # Every mention of the path is a quoted mention: three of them, and no
+        # bare fourth. Raw interpolation was the bug.
+        self.assertEqual(text.count(quoted), 3, repr(name))
+        self.assertEqual(text.count(work), 3, repr(name))
+        for line in text.splitlines():
+            if quoted not in line:
+                continue
+            self.assertEqual(shlex.split(line).count(work), 1, repr(line))
 
     def test_a_newline_in_the_name_is_not_asked_about_at_all(self):
         """No quoting contains a newline: it becomes its own line of instruction."""
@@ -1023,7 +1041,8 @@ for i in range(count):
         self.assertEqual(entries.get(os.path.realpath(self.work)), "alpha",
                          "the binding was erased by a concurrent ask")
         self.assertEqual(len(record), 240, "ask records were lost")
-        self.assertEqual(sum(1 for k in entries if k.startswith("/x/binder")), 40)
+        binder = os.path.realpath("/x/binder")    # bindings are keyed by real path
+        self.assertEqual(sum(1 for k in entries if k.startswith(binder)), 40)
         self.assertEqual(bindings.lookup(self.work), (True, "alpha"))
 
     def test_no_temp_file_is_left_behind_and_the_file_is_always_whole(self):

@@ -10,6 +10,7 @@ ANSI code page and only draws colour once asked to).
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,22 @@ def tilde(path) -> str:
     if os.path.normcase(text).startswith(os.path.normcase(home + os.sep)):
         return "~" + text[len(home):]
     return text
+
+
+def launcher() -> str:
+    """The command a shell on this machine runs gigabite with, absolute where it
+    can be, because Claude's shell may not have it on PATH.
+
+    The checkout's `bin/gigabite` on macOS. On Windows that is a bash script
+    nothing runs, so it is the `gigabite.exe` an install put on PATH, written with
+    forward slashes and without `.exe`: Claude Code's shell there is Git Bash,
+    which finds the .exe and would read backslashes as escapes.
+    """
+    if not WINDOWS:
+        from . import config
+        return str(config.REPO_ROOT / "bin" / "gigabite")
+    found = shutil.which("gigabite")
+    return Path(found).with_suffix("").as_posix() if found else "gigabite"
 
 
 # ---------------------------------------------------------------------------

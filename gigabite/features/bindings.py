@@ -904,7 +904,7 @@ def _ask_text(directory: str, names: list) -> str:
     existing = ", ".join(names) if names else "none yet"
     quoted = shlex.quote(directory)
     # Absolute, like the router block: Claude's shell may not have the launcher on PATH.
-    launcher = shlex.quote(str(config.REPO_ROOT / "bin" / "gigabite"))
+    launcher = shlex.quote(osutil.launcher())
     return "\n".join([
         "[gigabite — this folder is not linked to a project, so nothing was recalled]",
         "Ask the user which project this folder belongs to, then run their answer as a",

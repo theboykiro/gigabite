@@ -592,14 +592,30 @@ def cmd_materialize(args) -> int:
 
 
 def cmd_reindex(args) -> int:
-    if config.DB_PATH.exists():
-        config.DB_PATH.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = config.DB_PATH.with_name(config.DB_PATH.name + suffix)
-            if p.exists():
-                p.unlink()
+    try:
+        _delete_index()
+    except PermissionError:
+        # Windows will not delete a file that is open. Connections this process
+        # dropped can still hold it until they are collected; anything else is
+        # another process, most likely the refresh a session start set off.
+        import gc
+        gc.collect()
+        try:
+            _delete_index()
+        except PermissionError:
+            print(yellow("the index is in use by another gigabite process (probably "
+                         "a refresh started by a Claude Code session). Try again in "
+                         "a minute."))
+            return 1
     print(dim("index cleared; rebuilding…"))
     return cmd_ingest(argparse.Namespace(source=None, force=True))
+
+
+def _delete_index() -> None:
+    for suffix in ("", "-wal", "-shm"):
+        p = config.DB_PATH.with_name(config.DB_PATH.name + suffix)
+        if p.exists():
+            p.unlink()
 
 
 def cmd_granola_login(args) -> int:
