@@ -40,3 +40,46 @@ jobs:
           for i in $(seq 60); do grep -q "refresh done (exit 0)" "$GIGABITE_KNOWLEDGE_DIR/.gigabite/refresh.log" 2>/dev/null && break; sleep 1; done
           cat "$GIGABITE_KNOWLEDGE_DIR/.gigabite/refresh.log"
           grep -q "refresh done (exit 0)" "$GIGABITE_KNOWLEDGE_DIR/.gigabite/refresh.log"
+      # Windows has no install.sh, so this is the only run of `gigabite install`
+      # there before a user's. Editable, as bootstrap.ps1 installs it: the
+      # installer reads its templates from the checkout.
+      - name: gigabite install registers hooks Claude Code can run (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python -m pip install --editable .
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'home'; $env:HOME = $env:USERPROFILE
+          New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          gigabite install
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python tools/ci_install_check.py installed
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          gigabite install
+          python tools/ci_install_check.py installed
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          gigabite uninstall --yes
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python tools/ci_install_check.py uninstalled
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      # The one line a Windows user runs, run the way they run it (`irm | iex`
+      # takes the script as a string, so this pipes it in the same way), in the
+      # Windows PowerShell 5.1 every PC has. Cloned from this checkout rather than
+      # GitHub, and uv preinstalled from PyPI, so no step depends on a download
+      # the job does not already make.
+      - name: bootstrap.ps1 from nothing to installed (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python -m pip install uv
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'boot'; $env:HOME = $env:USERPROFILE
+          New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          $env:GIGABITE_REPO_URL = $env:GITHUB_WORKSPACE
+          foreach ($run in 1, 2) {
+            Get-Content -Raw bootstrap.ps1 | Invoke-Expression
+            if ($LASTEXITCODE -ne 0) { Write-Host "bootstrap run $run failed"; exit 1 }
+            if (-not (Test-Path (Join-Path $env:USERPROFILE 'gigabite\pyproject.toml'))) { exit 1 }
+            python tools/ci_install_check.py installed
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
