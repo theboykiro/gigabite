@@ -30,11 +30,13 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from .. import osutil
+
 # ---- tiny ANSI helpers, matching cli.py's look -----------------------------
 # Not imported from cli.py: cli.py imports from gigabite.features, so the
 # reverse import would be circular. Same codes, same auto-disable-when-piped
 # rule, so output looks identical either way it's driven.
-_TTY = sys.stdout.isatty()
+_TTY = osutil.ansi_ok()
 
 
 def _c(code: str, s: str) -> str:
@@ -125,6 +127,11 @@ def _install_schedule(repo_root: Path, schedule: dict) -> None:
     Calls `subprocess.run` at module level (not a bound default) so a test can
     patch `integrations.subprocess.run` and never spawn a real `launchctl`.
     """
+    if sys.platform != "darwin":
+        # launchd is macOS-only. Saying so beats `os.getuid` raising mid-setup.
+        print(yellow("  ! scheduled pulls are macOS-only for now. Run "
+                     "`gigabite granola-sync` to pull by hand."))
+        return
     plist_label = schedule["plist_label"]
     template = repo_root / schedule["plist_template"]
     bin_path = repo_root / schedule["bin"]

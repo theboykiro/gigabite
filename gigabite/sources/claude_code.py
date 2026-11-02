@@ -65,6 +65,8 @@ def _memo(fn: Callable[[str], str]) -> Callable[[str], str]:
 
 
 def _under(path: str, root: str) -> bool:
+    # normcase: Windows paths compare case-blind (and a no-op on POSIX).
+    path, root = os.path.normcase(path), os.path.normcase(root)
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 

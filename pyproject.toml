@@ -1,0 +1,26 @@
+# Makes gigabite installable as a tool, which is how it reaches Windows: there is
+# no system Python there, and `uv tool install` brings one and puts a `gigabite`
+# command on PATH. Nothing to install at run time; the package is stdlib-only.
+# On macOS, `bin/gigabite` keeps running the checkout directly.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gigabite"
+dynamic = ["version"]
+description = "A local, context-aware search layer over your Claude conversations and meetings"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+gigabite = "gigabite.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "gigabite.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["gigabite*"]

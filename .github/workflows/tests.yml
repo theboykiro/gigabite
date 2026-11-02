@@ -1,0 +1,37 @@
+# The test suite on macOS and Windows, on every push. Windows is where most new
+# users are and where nobody working on this sits, so this is the only machine that
+# sees a change there before they do.
+#
+# macOS runs the oldest Python gigabite supports, which is what /usr/bin/python3
+# is; Windows runs a current one, which is what `uv tool install` brings.
+
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, python: "3.9" }
+          - { os: windows-latest, python: "3.13" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: unit tests
+        run: python -m unittest discover -s tests
+      - name: installs as a tool, and the command runs
+        shell: bash
+        run: |
+          python -m pip install .
+          export GIGABITE_KNOWLEDGE_DIR="$RUNNER_TEMP/knowledge" GIGABITE_CORE_DIR="$RUNNER_TEMP/core"
+          gigabite paths
+          gigabite ingest
+          echo '{"tool_name":"Agent","tool_input":{"prompt":"x"}}' | gigabite hook agent-model && exit 1 || [ $? -eq 2 ]

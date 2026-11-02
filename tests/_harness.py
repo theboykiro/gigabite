@@ -46,10 +46,12 @@ os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(_SESSION_ROOT / "knowledge")
 # HOME too, for the whole run and every subprocess it starts. Several paths are
 # derived from it rather than from the two variables above — ~/.claude/projects,
 # ~/Library/LaunchAgents, the keychain account's defaults — and a test that
-# reached any of them would read or write the real user's.
+# reached any of them would read or write the real user's. USERPROFILE is the
+# same thing on Windows, where `Path.home()` reads it and ignores HOME.
 _FAKE_HOME = _SESSION_ROOT / "home"
 _FAKE_HOME.mkdir(parents=True, exist_ok=True)
 os.environ["HOME"] = str(_FAKE_HOME)
+os.environ["USERPROFILE"] = str(_FAKE_HOME)
 
 # No test may reach the real keychain — not even a test of the code that talks to
 # it. Every `security` invocation made in-process (subprocess.run/call/check_output

@@ -105,7 +105,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from .. import config
+from .. import config, osutil
 
 # Roots of a self-contained tree: a checkout, or a folder the user has named as
 # its own thing in so many words. These are the strongest "one body of work starts
@@ -566,23 +566,11 @@ def _exclusive():
     """
     path = config.BINDINGS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = None
-    try:
-        import fcntl
-        handle = open(str(path) + ".lock", "a+")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-    except Exception:                              # no fcntl, or no room for a lock
-        if handle is not None:
-            handle.close()
-        handle = None
+    handle = osutil.lock(str(path) + ".lock")     # None: no room for a lock
     try:
         yield
     finally:
-        if handle is not None:
-            try:
-                handle.close()                     # releases the flock
-            except Exception:
-                pass
+        osutil.unlock(handle)
 
 
 def _write(entries: dict, asked_at: dict) -> None:
