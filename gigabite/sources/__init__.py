@@ -43,6 +43,7 @@ class IngestReport:
     scanned: int = 0          # documents examined
     changed: int = 0          # documents inserted/updated
     skipped: int = 0          # unchanged (up to date)
+    removed: int = 0          # documents dropped because their file is gone
     errors: list = field(default_factory=list)
     notes: list = field(default_factory=list)
 
@@ -50,5 +51,6 @@ class IngestReport:
         self.scanned += other.scanned
         self.changed += other.changed
         self.skipped += other.skipped
+        self.removed += other.removed
         self.errors.extend(other.errors)
         self.notes.extend(other.notes)

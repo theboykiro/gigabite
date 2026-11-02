@@ -58,6 +58,8 @@ def cmd_ingest(args) -> int:
         label = config.SOURCE_LABELS.get(src, src)
         line = (f"{green('✓')} {bold(label):<22} "
                 f"changed {rep.changed}, unchanged {rep.skipped}, scanned {rep.scanned}")
+        if rep.removed:
+            line += f", removed {rep.removed}"
         print(line)
         total_changed += rep.changed
         for note in rep.notes:

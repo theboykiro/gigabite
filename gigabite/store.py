@@ -541,6 +541,14 @@ class Store:
             (source, key, signature),
         )
 
+    def signature_keys(self, source: str) -> list[str]:
+        return [r["key"] for r in self.conn.execute(
+            "SELECT key FROM sync_state WHERE source=?", (source,))]
+
+    def delete_signature(self, source: str, key: str) -> None:
+        self.conn.execute("DELETE FROM sync_state WHERE source=? AND key=?",
+                          (source, key))
+
     # -- reads --------------------------------------------------------------
 
     def search(

@@ -47,6 +47,9 @@ nothing is lost by deleting a raw export.
 Each ordinary file becomes a Document with source='note', native_id = its path
 relative to the knowledge root, project = the top folder, and the layer in extra.
 Incremental via an ``mtime:size`` file signature under the 'note' source key.
+Those signatures are also the record of which files this ingester indexed, so a
+file that has gone from disk takes its document out of the index on the next pass
+(see ``_prune_deleted``).
 """
 
 from __future__ import annotations
@@ -220,10 +223,12 @@ def ingest(store: Store, root: Optional[Path] = None, force: bool = False) -> In
         report.notes.append(f"no knowledge base at {base}")
         return report
 
+    seen: set = set()
     for path in _iter_content_files(base):
         report.scanned += 1
         sig = _signature(path)
         key = path.relative_to(base).as_posix()
+        seen.add(key)
         if not force and store.get_signature(SOURCE, key) == sig:
             report.skipped += 1
             continue
@@ -243,8 +248,40 @@ def ingest(store: Store, root: Optional[Path] = None, force: bool = False) -> In
         except Exception as e:
             report.errors.append(f"{path.name}: {e}")
 
+    report.removed += _prune_deleted(store, base, seen)
     store.commit()
     return report
+
+
+def _prune_deleted(store: Store, base: Path, seen: set) -> int:
+    """Drop documents whose file in the knowledge base no longer exists.
+
+    Driven by the signatures this ingester wrote, so it only ever touches what it
+    indexed itself. A document goes only when its ``ref`` is the deleted file: a
+    rendering whose document is still owned by a raw export elsewhere (see
+    ``_defers_to_owner``) leaves that document alone.
+
+    A file that was not seen on this pass but is still on disk is kept. The walk
+    swallows unreadable directories, and a folder that fails to list must not read
+    as every file in it having been deleted.
+
+    The exception is a case-only rename ('research/' to 'Research/'). On a
+    case-insensitive volume the old path still "exists", but the walk saw the file
+    under its new spelling, so the old key is a duplicate of a live one.
+    """
+    removed = 0
+    seen_folded = {k.casefold() for k in seen}
+    for key in store.signature_keys(SOURCE):
+        if key in seen:
+            continue
+        path = base / key
+        if path.exists() and key.casefold() not in seen_folded:
+            continue
+        for row in store.documents_by_ref(str(path)):
+            store.delete_document(row["doc_id"])
+            removed += 1
+        store.delete_signature(SOURCE, key)
+    return removed
 
 
 def _defers_to_owner(store: Store, doc: Document, path: Path) -> bool:
