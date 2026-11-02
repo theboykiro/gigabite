@@ -11,9 +11,9 @@
 //   3. Develop → Show JavaScript Console (or ⌥⌘C).
 //   4. Paste this whole file, press Enter. If pasting is blocked, type
 //      `allow pasting` first, Enter, then paste.
-//   5. It downloads conversations.json to ~/Downloads. Then in a terminal:
-//        mv ~/Downloads/conversations.json ~/Knowledge/.gigabite/imports/claude_ai/
-//        gigabite ingest
+//   5. It downloads conversations.json to ~/Downloads. Leave it there: the next
+//      `gigabite ingest` (every new Claude Code session runs one) moves it in and
+//      indexes it. Then, optionally:
 //        gigabite materialize   # write each chat out as a file you can open
 //
 (async () => {

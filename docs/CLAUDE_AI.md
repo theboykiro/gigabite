@@ -36,15 +36,30 @@ shows what it would do.
 
 ## Anthropic's own export
 
-claude.ai → Settings → Privacy → Export data also works. Put the `.zip` you receive, or
-the `conversations.json` inside it, in `~/Knowledge/.gigabite/imports/claude_ai/` and run
-`gigabite ingest`. That export has no project tags, so every chat behaves like a chat
-outside a project.
+claude.ai → Settings → Privacy → Export data also works. Download the `.zip` from the
+email and leave it in `~/Downloads`: the next ingest picks it up, whether Safari unpacked
+it into a folder or not. That export has no project tags, so every chat behaves like a
+chat outside a project.
+
+## From Downloads to the index
+
+Every `gigabite ingest`, and so every refresh, looks in `~/Downloads` for a claude.ai
+export newer than the one it has: `conversations*.json`, any `.zip`, or a folder with a
+`conversations.json` in it. It checks that the file really is a claude.ai export (another
+tool's `conversations.json` is left alone), moves it into
+`~/Knowledge/.gigabite/imports/claude_ai/`, and indexes it. Exports older than the one
+it has stay where they are.
+
+Each export holds your whole history, so the new one replaces the old one. The old one is
+kept as `<name>.replaced-<date>` until the next pickup, so to undo a bad export, rename it
+back. When the last export is more than 7 days old, the ingest report says so and macOS
+shows a notification, at most once a day. If macOS blocks access to Downloads, the error
+is in `~/Knowledge/.gigabite/refresh.log`.
 
 ## Caveats
 
-- Re-exporting and replacing the file updates chats that are already indexed. Nothing
-  is duplicated, because entries are keyed by conversation id.
+- A new export updates chats that are already indexed. Nothing is duplicated, because
+  entries are keyed by conversation id.
 - The JSON shape isn't a contract. The parser tolerates renamed fields and reports what
   it couldn't map rather than failing silently.
 - The export script logs how many conversations it found. A suspiciously round number

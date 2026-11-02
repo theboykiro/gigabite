@@ -1,10 +1,12 @@
 """Import exported Claude.ai (Anthropic account data export) conversations.
 
 Anthropic's data export is a .zip (or an unpacked folder) containing
-`conversations.json`: a list of conversations, each with `chat_messages`.
-Drop the .zip or conversations.json into ~/Knowledge/_sources/claude_ai/ and
-run ingest. Browser chats can't be pulled programmatically, so this is the
-supported path.
+`conversations.json`: a list of conversations, each with `chat_messages`; the
+Safari script (install/scripts/claude-ai-safari-export.js) downloads that same
+file on its own. Browser chats can't be pulled programmatically, so an export is
+the supported path, and making one is the only manual step: every ingest picks
+the newest export out of ~/Downloads, moves it into the imports folder, and
+nudges once a day when the last one is more than a week old (see `pickup`).
 
 Schema handled (defensively — Anthropic has tweaked field names over time):
     conversation: uuid | name/title | created_at | updated_at | chat_messages
@@ -15,7 +17,12 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
+import subprocess
+import sys
+import time
 import zipfile
+from datetime import date
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -163,9 +170,104 @@ def _export_files(imports: Path) -> Iterable[Path]:
         yield from sorted(imports.glob(pat))
 
 
+# ---- pickup: from ~/Downloads into the imports folder ------------------------
+#
+# Each export is the whole history, so the newest one replaces what the folder
+# holds rather than sitting beside it: two exports side by side are read in name
+# order, and an older file sorting last would overwrite newer chats. The one it
+# replaces is kept as `<name>.replaced-<date>` until the next pickup, so a bad
+# export can be undone by renaming it back.
+
+def _is_claude_export(conversations) -> bool:
+    """A claude.ai export, not another tool's conversations.json (ChatGPT's has
+    `mapping`, not `chat_messages`)."""
+    return (isinstance(conversations, list) and bool(conversations)
+            and isinstance(conversations[0], dict) and "chat_messages" in conversations[0])
+
+
+def _candidates(downloads: Path) -> Iterable[Path]:
+    """What in Downloads could be an export: the Safari script's
+    conversations.json (renamed `conversations 2.json` and the like when one is
+    already there), Anthropic's .zip, and that .zip unpacked by Safari."""
+    yield from downloads.glob("conversations*.json")
+    yield from downloads.glob("*.zip")
+    yield from downloads.glob("*/conversations.json")
+
+
+def pickup(box: Path, downloads: Path) -> Optional[Path]:
+    """Move the newest claude.ai export in `downloads` into `box`, if it is newer
+    than the one `box` already holds. Returns where it landed, or None."""
+    if not downloads.is_dir():
+        return None
+    # glob swallows a permission error and finds nothing; listing first makes
+    # macOS denying access to Downloads an error the ingest report shows.
+    next(downloads.iterdir(), None)
+    current = max((p.stat().st_mtime for p in _export_files(box)), default=0.0)
+    found = []
+    for path in _candidates(downloads):
+        try:
+            mtime = path.stat().st_mtime
+            if mtime > current and _is_claude_export(_load_conversations(path)):
+                found.append((mtime, path))
+        except Exception:
+            continue                    # unreadable, or not an export: leave it be
+    if not found:
+        return None
+    _, newest = max(found)
+
+    stamp = date.today().isoformat()
+    for old in (*box.glob("*.json.replaced-*"), *box.glob("*.zip.replaced-*")):
+        old.unlink()
+    for old in list(_export_files(box)):
+        old.rename(old.with_name(f"{old.name}.replaced-{stamp}"))
+    # A loose json is renamed to the name the docs and the Safari script use.
+    dest = box / (newest.name if newest.suffix.lower() == ".zip" else "conversations.json")
+    shutil.move(str(newest), str(dest))
+    return dest
+
+
+def export_age_days(box: Path) -> Optional[int]:
+    """Whole days since the newest export in `box` was made; None if there is none."""
+    newest = max((p.stat().st_mtime for p in _export_files(box)), default=None)
+    return None if newest is None else int((time.time() - newest) // 86400)
+
+
+def _nudge(age: int) -> None:
+    """A macOS notification that the export is stale, at most once a day."""
+    if not config.NOTIFY or sys.platform != "darwin":
+        return
+    stamp = config.CLAUDE_AI_NUDGE_STAMP
+    today = date.today().isoformat()
+    try:
+        if stamp.read_text().strip() == today:
+            return
+    except OSError:
+        pass
+    text = (f"claude.ai chats were last exported {age} days ago. Export again; "
+            "gigabite picks the file up from Downloads.")
+    try:
+        subprocess.run(["/usr/bin/osascript", "-e",
+                        f'display notification "{text}" with title "gigabite"'],
+                       capture_output=True, timeout=10)
+        stamp.write_text(today + "\n")
+    except Exception:
+        pass
+
+
 def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) -> IngestReport:
     report = IngestReport(source=config.SOURCE_CLAUDE_AI)
     box = Path(imports) if imports else config.SOURCES_CLAUDE_AI
+    # Only the real imports folder takes from Downloads: an explicit `imports`
+    # is a test or a one-off, and must never move the user's files.
+    live = imports is None
+    if live and box.exists():
+        try:
+            landed = pickup(box, config.DOWNLOADS_DIR)
+        except OSError as e:
+            report.errors.append(f"could not pick up an export from {config.DOWNLOADS_DIR}: {e}")
+        else:
+            if landed:
+                report.notes.append(f"picked up {landed.name} from {config.DOWNLOADS_DIR}")
     if not box.exists():
         report.notes.append(f"no claude.ai export at {box}")
         return report
@@ -206,4 +308,10 @@ def ingest(store: Store, imports: Optional[Path] = None, force: bool = False) ->
         store.set_signature(config.SOURCE_CLAUDE_AI, key, sig)
 
     store.commit()
+    age = export_age_days(box)
+    if live and age is not None and age > config.CLAUDE_AI_STALE_DAYS:
+        report.notes.append(
+            f"last export is {age} days old: claude.ai → Settings → Privacy → Export data "
+            "(or the Safari script), then the next ingest picks it up from Downloads")
+        _nudge(age)
     return report
