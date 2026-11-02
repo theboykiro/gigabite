@@ -51,10 +51,16 @@ if out:
     print(out)
 """
 FAKE_INGEST = """
-import sys, time
+import os, sys, time
 with open(sys.argv[1], "a") as fh:
     fh.write(" ".join(sys.argv[3:]) + "\\n")
-time.sleep(float(sys.argv[2]))
+seconds = sys.argv[2]
+if os.path.isabs(seconds):                 # a file to wait for, not a duration
+    deadline = time.monotonic() + 60
+    while not os.path.exists(seconds) and time.monotonic() < deadline:
+        time.sleep(0.05)
+else:
+    time.sleep(float(seconds))
 print("indexed")
 """
 BASH = Path("/bin/bash").exists()
@@ -80,8 +86,9 @@ class RefreshCase(unittest.TestCase):
         hook.chmod(0o755)
         return hook
 
-    def fake_ingest(self, seconds: float) -> list:
-        """A launcher that records each call, takes `seconds` about it, succeeds."""
+    def fake_ingest(self, seconds) -> list:
+        """A launcher that records each call, takes `seconds` about it, succeeds.
+        Given a path instead, it takes until that file exists."""
         fake = self.base / "fake_ingest.py"
         fake.write_text(FAKE_INGEST, encoding="utf-8")
         return [sys.executable, str(fake), str(self.calls), str(seconds)]
@@ -145,10 +152,15 @@ class TestItNeverHoldsUpTheSession(RefreshCase):
 class TestOneRefreshAtATime(RefreshCase):
 
     def test_a_second_session_starting_mid_refresh_does_not_ingest_again(self):
-        slow = self.fake_ingest(2)
-        self.fire(slow)
+        # The first ingest runs until the test lets it go, not for a fixed time a
+        # slow runner's two cold Python starts could outlast.
+        release = self.base / "release"
+        held = self.fake_ingest(release)
+        self.fire(held)
         self.assertTrue(self.wait_for(lambda: self.calls_made() == ["ingest"]))
-        self.fire(slow)
+        self.fire(held)
+        time.sleep(2.0)                     # the second worker's chance to ingest
+        release.touch()
         self.assertTrue(self.wait_for(lambda: "refresh done" in self.log()), self.log())
         time.sleep(0.5)
         self.assertEqual(["ingest"], self.calls_made())

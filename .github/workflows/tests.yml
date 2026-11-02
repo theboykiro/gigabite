@@ -35,3 +35,8 @@ jobs:
           gigabite paths
           gigabite ingest
           echo '{"tool_name":"Agent","tool_input":{"prompt":"x"}}' | gigabite hook agent-model && exit 1 || [ $? -eq 2 ]
+          echo '{"prompt":"what did we decide"}' | gigabite hook recall
+          echo '{}' | gigabite hook refresh
+          for i in $(seq 60); do grep -q "refresh done (exit 0)" "$GIGABITE_KNOWLEDGE_DIR/.gigabite/refresh.log" 2>/dev/null && break; sleep 1; done
+          cat "$GIGABITE_KNOWLEDGE_DIR/.gigabite/refresh.log"
+          grep -q "refresh done (exit 0)" "$GIGABITE_KNOWLEDGE_DIR/.gigabite/refresh.log"

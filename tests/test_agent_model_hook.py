@@ -69,6 +69,12 @@ class AgentModelHook(unittest.TestCase):
         self.assertEqual(0, self.fire(payload({"prompt": "x", "model": "opus"},
                                               "Task")).returncode)
 
+    def test_a_hook_name_this_version_does_not_know_proceeds(self):
+        proc = subprocess.run([sys.executable, "-m", "gigabite", "hook", "from-the-future"],
+                              input=payload({"prompt": "x"}), text=True, capture_output=True,
+                              timeout=30, env=dict(os.environ, PYTHONPATH=str(REPO)))
+        self.assertEqual((0, ""), (proc.returncode, proc.stderr))
+
     def test_what_it_cannot_read_proceeds(self):
         for stdin in (payload({"command": "ls"}, "Bash"), "not json", "", "[]",
                       json.dumps({"tool_name": "Agent", "tool_input": "x"})):
@@ -100,6 +106,17 @@ class AgentModelWrapper(AgentModelHook):
         return subprocess.run(["/bin/bash", str(hook or self.hook)], input=stdin, text=True,
                               capture_output=True, timeout=30,
                               env=dict(os.environ, PYTHONPATH=str(REPO)))
+
+    def test_an_older_gigabite_without_the_hook_lets_the_call_through(self):
+        """argparse exits 2 on a subcommand it does not know, and so does any older
+        package that shadows this one (`python -m` puts the working directory
+        first). Only the hook's own refusal may block."""
+        old = self.base / "old-gigabite"
+        old.write_text("#!/bin/sh\necho \"usage: gigabite: error: invalid choice: 'hook'\" >&2\n"
+                       "exit 2\n", encoding="utf-8")
+        old.chmod(0o755)
+        proc = self.fire(payload({"prompt": "x", "model": "sonnet"}), hook=self.install_hook(old))
+        self.assertEqual((0, ""), (proc.returncode, proc.stderr))
 
     def test_a_launcher_that_is_gone_lets_the_call_through(self):
         hook = self.install_hook(self.base / "moved-away" / "gigabite")

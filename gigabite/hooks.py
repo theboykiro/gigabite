@@ -125,8 +125,11 @@ def refresh(launcher: Optional[list] = None) -> str:
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
         p for p in (str(Path(__file__).resolve().parents[1]), env.get("PYTHONPATH")) if p)
-    osutil.detach([sys.executable, "-m", "gigabite.hooks", "refresh-worker",
-                   str(config.MACHINE_DIR), *launcher], env=env)
+    try:
+        osutil.detach([sys.executable, "-m", "gigabite.hooks", "refresh-worker",
+                       str(config.MACHINE_DIR), *launcher], env=env)
+    except OSError:
+        pass                # the notice is claimed already: drop it now and it is gone
     return out
 
 
