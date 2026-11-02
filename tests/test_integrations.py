@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+import shutil
 import tempfile
 import types
 import unittest
@@ -180,6 +181,7 @@ class ScheduleTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="gigabite-integrations-test-"))
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
         self.repo_root = self.tmp / "repo"
         self.fake_home = self.tmp / "home"
         (self.repo_root / "install" / "launchd").mkdir(parents=True)
