@@ -52,6 +52,8 @@ _FAKE_HOME = _SESSION_ROOT / "home"
 _FAKE_HOME.mkdir(parents=True, exist_ok=True)
 os.environ["HOME"] = str(_FAKE_HOME)
 os.environ["USERPROFILE"] = str(_FAKE_HOME)
+# Claude Code's folder follows this when it is set, and it would point at the real one.
+os.environ.pop("CLAUDE_CONFIG_DIR", None)
 # Nor pop a macOS notification (the claude.ai export nudge) mid-run.
 os.environ["GIGABITE_NOTIFY"] = "0"
 

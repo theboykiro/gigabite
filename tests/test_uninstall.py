@@ -456,13 +456,13 @@ class TestNothingHappensWithoutConsent(UninstallCase):
                "PYTHONDONTWRITEBYTECODE": "1",
                "GIGABITE_BIN_DIRS": str(self.home / ".local" / "bin"),
                "GIGABITE_LAUNCHCTL": str(self.launchctl)}
-        # -t 0 is false down a pipe, so the tty guard is disabled here to reach the
-        # prompt itself. Everything else is the real script.
-        script = UNINSTALL.read_text(encoding="utf-8")
-        self.assertIn("[ -t 0 ] ||", script)          # the guard this test steps around
-        patched = self.home.parent / "uninstall-prompting.sh"
-        patched.write_text(script.replace("[ -t 0 ] ||", "true ||", 1), encoding="utf-8")
-        proc = subprocess.run(["/bin/bash", str(patched)], input="n\n", env=env,
+        # stdin is not a terminal down a pipe, so the tty guard is stepped around
+        # here to reach the prompt itself. Everything else is the real uninstall.
+        code = ("import sys; sys.path.insert(0, %r)\n"
+                "from gigabite import installer\n"
+                "installer._stdin_is_tty = lambda: True\n"
+                "sys.exit(installer.main('uninstall', []))\n" % str(REPO))
+        proc = subprocess.run(["/usr/bin/python3", "-c", code], input="n\n", env=env,
                               cwd=str(REPO), stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)

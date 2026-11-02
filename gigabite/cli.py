@@ -141,7 +141,8 @@ def cmd_status(args) -> int:
         print(bold("\n  needs attention — the index is not refreshing by itself"))
         for w in warnings:
             print(f"    {yellow('!')} {w}")
-        print(dim(f"    fix: re-run {_tilde(config.REPO_ROOT / 'install.sh')}"))
+        fix = "gigabite install" if osutil.WINDOWS else _tilde(config.REPO_ROOT / "install.sh")
+        print(dim(f"    fix: re-run {fix}"))
     return 0
 
 
@@ -158,13 +159,15 @@ def _refresh_warnings() -> list:
 
     out = []
     home = Path.home()
-    settings = home / ".claude" / "settings.json"
+    settings = config.claude_dir() / "settings.json"
     if _claude_code_present():
+        from . import installer
         try:
-            text = settings.read_text(encoding="utf-8")
-        except OSError:
+            text = settings.read_text(encoding="utf-8-sig")
+        except (OSError, ValueError):
             text = ""
-        if "gg-refresh.sh" not in text:
+        # The .sh wrapper on macOS, `gigabite.exe hook refresh` on Windows.
+        if "gg-refresh.sh" not in text and not installer.exec_hook_registered(text, "refresh"):
             out.append("the SessionStart refresh hook is not in ~/.claude/settings.json, "
                        "so new Claude Code sessions are not indexed")
     for plist in sorted((home / "Library" / "LaunchAgents").glob("com.gigabite.*.plist")):
@@ -1195,6 +1198,13 @@ def build_parser() -> argparse.ArgumentParser:
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)
 
+    # Listed for --help only: main() hands both to gigabite.installer, which parses
+    # its own flags (--verbose; --yes, --dry-run) as install.sh and uninstall.sh did.
+    sub.add_parser("install", help="install or update: stores, commands, router block, hooks "
+                                   "(--verbose)")
+    sub.add_parser("uninstall", help="reverse the install; your notes and core.md are kept "
+                                     "(--dry-run, --yes)")
+
     phk = sub.add_parser("hook", help="run a Claude Code hook (reads the hook payload on stdin)")
     phk.add_argument("name", choices=hooks_mod.NAMES)
     phk.set_defaults(func=cmd_hook)
@@ -1204,6 +1214,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list] = None) -> int:
     osutil.utf8_stdio()
+    words = sys.argv[1:] if argv is None else list(argv)
+    if words[:1] in (["install"], ["uninstall"]):
+        from . import installer
+        return installer.main(words[0], words[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
