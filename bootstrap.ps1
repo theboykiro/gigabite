@@ -3,14 +3,16 @@
 #
 #   - checks for git, and says how to get it if it is missing (it does not install it)
 #   - clones to %USERPROFILE%\gigabite, or updates the clone already there
-#   - installs uv with uv's own installer if it is missing
+#   - if uv is missing, installs it with winget (Microsoft's, which IT can allow or
+#     block), and otherwise asks you to get it from IT
 #   - installs gigabite as a uv tool, editable, so the clone is what runs and a
 #     `git pull` updates it (uv brings a Python if there is none)
 #   - puts uv's tool folder on PATH, then runs `gigabite install`
 # Safe to run again any time. Your notes and settings are left alone.
 #
 # Nothing here changes PowerShell's execution policy or works around any other
-# control. If your organisation blocks a step, it stops there and says which.
+# control, and it runs no script it downloads. If your organisation blocks a
+# step, it stops there and says which.
 #
 # Testing a branch or a fork: set GIGABITE_REPO_URL (a URL or a local path) and
 # GIGABITE_BRANCH before running it.
@@ -36,6 +38,15 @@ function Install-Gigabite {
         $global:LASTEXITCODE = 1
     }
     function Have([string]$Name) { [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
+    # A native command's own error text, one line each, for a failure message.
+    function Lines($Output) { @($Output | ForEach-Object { "    $_" } | Where-Object { $_.Trim() }) }
+    # Picks up what an installer just added to PATH, without a new window.
+    function Refresh-Path {
+        $parts = @([Environment]::GetEnvironmentVariable('Path', 'User'),
+                   [Environment]::GetEnvironmentVariable('Path', 'Machine'),
+                   (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'), $env:Path)
+        $env:Path = ($parts | Where-Object { $_ }) -join ';'
+    }
 
     # -----------------------------------------------------------------------
     Say '1/4  Checking this PC can run gigabite'
@@ -45,13 +56,17 @@ function Install-Gigabite {
     }
     if (-not (Have 'git')) {
         Fail 'git is not installed, and gigabite is downloaded with it.' @(
-            'Install Git for Windows (Claude Code uses the Git Bash that comes with it), e.g.:',
+            'Get Git for Windows from Company Portal or your IT team (Claude Code uses',
+            'the Git Bash that comes with it). If you may install software yourself:',
             '    winget install --id Git.Git -e',
             'Then open a new PowerShell window and run the gigabite command again.')
         return
     }
     Ok 'git'
-    if ((Have 'claude') -or (Test-Path (Join-Path $env:USERPROFILE '.claude.json'))) {
+    $claudeJson = Join-Path $env:USERPROFILE '.claude.json'
+    if ($env:CLAUDE_CONFIG_DIR) { $claudeJson = Join-Path $env:CLAUDE_CONFIG_DIR '.claude.json' }
+    if ((Have 'claude') -or (Test-Path $claudeJson) -or
+        (Test-Path (Join-Path $env:USERPROFILE '.claude.json'))) {
         Ok 'Claude Code'
     } else {
         Warn 'Claude Code is not installed on this PC.'
@@ -74,24 +89,26 @@ function Install-Gigabite {
             return
         }
         Note "already installed at $Dest, updating it"
-        git -C $Dest pull --ff-only --quiet 2>$null
+        $out = git -C $Dest pull --ff-only --quiet 2>&1
         if ($LASTEXITCODE -eq 0) {
             Ok 'updated to the latest version'
         } else {
             # --ff-only cannot rewrite or discard anything, so a failure means local
             # edits, another branch, or no network. None is worth stopping for.
-            Warn 'could not update this copy, carrying on with the version already there'
-            Note 'usually means local edits, a different branch, or no internet'
+            Warn 'could not update this copy, carrying on with the version already there. git said:'
+            foreach ($line in (Lines $out)) { Note $line }
+            Note 'Usually local edits, a different branch, or no network (on a company'
+            Note 'network, a proxy may be blocking github.com).'
         }
     } else {
         $env:GIT_TERMINAL_PROMPT = '0'
         $cloneArgs = @('clone', '--quiet')
         if ($Branch) { $cloneArgs += @('--branch', $Branch) }
-        git @cloneArgs $RepoUrl $Dest 2>$null
+        $out = git @cloneArgs $RepoUrl $Dest 2>&1
         if ($LASTEXITCODE -ne 0) {
-            Fail 'Could not download gigabite.' @(
-                'Check your internet connection and try again. On a work network,',
-                'access to github.com may be blocked.')
+            Fail 'Could not download gigabite. git said:' (@(Lines $out) + @(
+                'If that names a proxy, a certificate or a connection, a company proxy or',
+                'firewall is the likely cause: ask IT whether git needs a proxy setting here.'))
             return
         }
         Ok "downloaded to $Dest"
@@ -100,36 +117,34 @@ function Install-Gigabite {
     # -----------------------------------------------------------------------
     Say '3/4  Installing gigabite with uv'
     if (-not (Have 'uv')) {
-        Note 'uv is not installed, so installing it with its own installer (astral.sh)'
-        try {
-            [Net.ServicePointManager]::SecurityProtocol =
-                [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-            Invoke-RestMethod 'https://astral.sh/uv/install.ps1' | Invoke-Expression
-        } catch {
-            Fail 'Could not install uv.' @(
-                "The error was: $($_.Exception.Message)",
-                'If your organisation restricts PowerShell scripts or downloads, ask IT to',
-                'install uv (https://docs.astral.sh/uv/), then run this again.')
+        $getUv = @('Get uv from Company Portal or your IT team, then run this again.',
+                   'It is the tool gigabite is installed with: https://docs.astral.sh/uv/')
+        if (-not (Have 'winget')) {
+            Fail 'uv is not installed, and winget is not here to install it.' $getUv
             return
         }
-        # The installer puts uv on the user PATH for new windows; this one too.
-        foreach ($dir in @((Join-Path $env:USERPROFILE '.local\bin'),
-                           (Join-Path $env:USERPROFILE '.cargo\bin'))) {
-            if ((Test-Path $dir) -and (($env:Path -split ';') -notcontains $dir)) {
-                $env:Path = "$dir;$env:Path"
-            }
+        Note 'uv is not installed, so installing it with winget'
+        winget install --id astral-sh.uv -e --scope user
+        if ($LASTEXITCODE -ne 0) {
+            Fail 'winget could not install uv (see above).' $getUv
+            return
         }
+        Refresh-Path
         if (-not (Have 'uv')) {
-            Fail 'uv was installed, but this window cannot find it yet.' @(
-                'Open a new PowerShell window and run the gigabite command again.')
+            Fail 'uv was installed, but this PC will not run it.' @(
+                'Company policy may block programs installed in your user folder.',
+                'Ask your IT team to allow uv, or to install it, then run this again.')
             return
         }
     }
     Ok 'uv'
     uv tool install --editable $Dest --force
     if ($LASTEXITCODE -ne 0) {
-        Fail 'uv could not install gigabite (the lines above say why).' @(
-            'If a download was refused, your network may block pypi.org or python.org.')
+        Fail 'uv could not install gigabite.' @(
+            'If Claude Code, or a terminal running gigabite, is open, it may be holding',
+            'gigabite.exe: quit it and run this again.',
+            'Otherwise the lines above say why. A refused download usually means a company',
+            'proxy: uv fetches packages from pypi.org and Python from github.com.')
         return
     }
     uv tool update-shell 2>$null | Out-Null

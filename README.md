@@ -52,11 +52,13 @@ irm https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.ps1 | i
 
 Then **quit and restart Claude Code**.
 
-You need [Git for Windows](https://git-scm.com/download/win) (`winget install --id Git.Git -e`)
-and Claude Code. The script checks for Git and stops with that command if it is
-missing. It clones to `%USERPROFILE%\gigabite`, installs [uv](https://docs.astral.sh/uv/)
-if you don't have it (uv brings its own Python), installs gigabite with
-`uv tool install --editable`, and runs `gigabite install`. Run the same line again to
+You need Claude Code and [Git for Windows](https://git-scm.com/download/win), from
+Company Portal or your IT team (or `winget install --id Git.Git -e` if you may install
+software yourself). The script checks for Git and stops with those instructions if it is
+missing. It clones to `%USERPROFILE%\gigabite`, and if you don't have
+[uv](https://docs.astral.sh/uv/) it installs it with winget, or asks you to get it from
+IT. uv brings its own Python. It then installs gigabite with
+`uv tool install --editable` and runs `gigabite install`. Run the same line again to
 update. It changes no PowerShell policy: if your organisation blocks a step, it stops
 and says which one, so you can take that to IT.
 

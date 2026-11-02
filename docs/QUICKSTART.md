@@ -35,15 +35,16 @@ Running the same line again later updates gigabite.
 
 ### On Windows
 
-You need Claude Code and [Git for Windows](https://git-scm.com/download/win). Open
-**PowerShell**, paste this line and press Enter:
+You need Claude Code and [Git for Windows](https://git-scm.com/download/win) (from
+Company Portal or your IT team). Open **PowerShell**, paste this line and press Enter:
 
 ```powershell
 irm https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.ps1 | iex
 ```
 
 Then quit Claude Code and open it again. If Git is missing, the script stops and tells
-you how to install it. Running the same line again later updates gigabite.
+you how to get it. It also needs a small tool called uv, which it installs with winget
+when it can; if it can't, it asks you to get uv from IT. Running the same line again later updates gigabite.
 
 ## Make it yours: set up your core (one time)
 
