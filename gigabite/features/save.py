@@ -205,9 +205,29 @@ def _dest_dir(project: str, layer: Optional[str]) -> tuple:
     dest = config.KNOWLEDGE_DIR / _safe_folder(project, "project")
     layer_name = ""
     if layer:
-        layer_name = _safe_folder(layer, "layer")
+        layer_name = _existing_folder(dest, _safe_folder(layer, "layer"))
         dest = dest / layer_name
     return dest, layer_name
+
+
+def _existing_folder(parent: Path, slug: str) -> str:
+    """The folder in *parent* that *slug* names, reusing one made by hand.
+
+    Folders in the knowledge base are browsed in Finder, so people name them
+    ("Apollo Explorations"); a layer naming that folder must land in it, not in a
+    ``apollo-explorations`` sibling beside it. A folder whose own name slugifies to
+    *slug* is that folder. The slug folder wins when both exist, symlinks and
+    reserved ('_' / '.') folders are never matched, and the result is always a
+    real child of *parent*, so this cannot reach outside the knowledge base.
+    """
+    if (parent / slug).is_dir() or not parent.is_dir():
+        return slug
+    for entry in sorted(parent.iterdir()):
+        if (entry.is_dir() and not entry.is_symlink()
+                and not entry.name.startswith(("_", "."))
+                and slugify(entry.name) == slug):
+            return entry.name
+    return slug
 
 
 _FM_RESERVED = ("title", "date", "project", "layer")

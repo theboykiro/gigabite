@@ -101,6 +101,37 @@ class TestSaveRouting(_Base):
         self.assertTrue(str(resolved).startswith(str(self.knowledge.resolve())))
         self.assertEqual(path.parent, self.knowledge / "evil" / "secrets")
 
+    def test_layer_reuses_a_folder_named_by_hand(self):
+        named = self.knowledge / "acme" / "Apollo Explorations"
+        named.mkdir(parents=True)
+        src = self.tmp / "export.csv"
+        src.write_text("a,b\n", encoding="utf-8")
+
+        stored = save.save_file(src, project="acme", layer="Apollo Explorations")
+        note = save.save_note("x", project="acme", layer="apollo explorations",
+                              title="n", ts="2026-06-19")
+
+        self.assertEqual(stored.parent, named)
+        self.assertEqual(note.parent, named)
+        self.assertIn("layer: Apollo Explorations", note.read_text(encoding="utf-8"))
+        self.assertFalse((self.knowledge / "acme" / "apollo-explorations").exists())
+
+    def test_layer_never_reuses_a_symlink_or_reserved_folder(self):
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        (self.knowledge / "acme").mkdir()
+        # differs from its slug by more than case, so a case-insensitive
+        # filesystem (macOS) can't resolve the slug path to it directly
+        (self.knowledge / "acme" / "Secret Stuff").symlink_to(outside)
+        (self.knowledge / "acme" / "_inbox").mkdir()
+
+        a = save.save_note("x", project="acme", layer="secret stuff", title="a", ts="2026-06-20")
+        b = save.save_note("x", project="acme", layer="inbox", title="b", ts="2026-06-20")
+
+        self.assertEqual(a.parent, self.knowledge / "acme" / "secret-stuff")
+        self.assertEqual(b.parent, self.knowledge / "acme" / "inbox")
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_collision_gets_suffixed(self):
         a = save.save_note("one", project="acme", title="Same", ts="2026-06-18")
         b = save.save_note("two", project="acme", title="Same", ts="2026-06-18")
