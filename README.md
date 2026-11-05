@@ -127,6 +127,8 @@ pull at 11:00 and 18:00 on weekdays (or as soon as the Mac is awake and online a
 
 ## Troubleshooting
 
+Something not working? Run `gigabite check` and send the output to whoever set you up.
+
 - **Nothing gets recalled.** Did you restart Claude Code after installing? Does the
   message mention the project's name or a keyword, or start with `@project`? Run
   `gigabite project list` to see each project's keywords. Short replies like "ok, go on"
