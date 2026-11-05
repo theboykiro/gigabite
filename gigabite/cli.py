@@ -3,6 +3,7 @@
     gigabite ingest [--source S] [--force]
     gigabite search QUERY [--source S] [--project P] [--limit N] [--context C] [--raw] [--json]
     gigabite status [--json]
+    gigabite check [--json]
     gigabite welcome
     gigabite doc DOC_ID [--json]
     gigabite add PATH [--project P] [--layer L] [--move]
@@ -19,6 +20,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -143,6 +145,7 @@ def cmd_status(args) -> int:
             print(f"    {yellow('!')} {w}")
         fix = "gigabite install" if osutil.WINDOWS else _tilde(config.REPO_ROOT / "install.sh")
         print(dim(f"    fix: re-run {fix}"))
+        print(dim("    more detail: gigabite check"))
     return 0
 
 
@@ -155,8 +158,6 @@ def _refresh_warnings() -> list:
     that no longer exists and no hook to replace it — silent, and visible only as
     an index that stopped growing. Read-only; never touches launchd or settings.
     """
-    import plistlib
-
     out = []
     home = Path.home()
     settings = config.claude_dir() / "settings.json"
@@ -170,6 +171,15 @@ def _refresh_warnings() -> list:
         if "gg-refresh.sh" not in text and not installer.exec_hook_registered(text, "refresh"):
             out.append("the SessionStart refresh hook is not in ~/.claude/settings.json, "
                        "so new Claude Code sessions are not indexed")
+    out += _launchd_warnings(home)
+    return out
+
+
+def _launchd_warnings(home: Path) -> list:
+    """Scheduled jobs of ours whose program is gone (macOS; none elsewhere)."""
+    import plistlib
+
+    out = []
     for plist in sorted((home / "Library" / "LaunchAgents").glob("com.gigabite.*.plist")):
         try:
             with plist.open("rb") as fh:
@@ -184,6 +194,212 @@ def _refresh_warnings() -> list:
                        "which no longer exists")
     return out
 
+
+# ---- check: is recall actually wired up ------------------------------------
+#
+# The hooks never fail a turn, by design, so when one breaks the only symptom is
+# recall going quiet. This walks the chain a prompt takes, one line per link, so
+# a teammate can paste the output to whoever maintains gigabite. Read-only: it
+# opens the index read-only and never creates a folder, a database or a log.
+
+REFRESH_STALE_DAYS = 7
+_BAKED_BIN = re.compile(r'^GIGABITE_BIN="([^"]*)"', re.M)
+_REFRESH_DONE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)  refresh done \(exit (.*)\)\s*$")
+
+
+def _reinstall() -> str:
+    return "re-run " + ("gigabite install" if osutil.WINDOWS
+                        else _tilde(config.REPO_ROOT / "install.sh"))
+
+
+def _settings_text() -> Optional[str]:
+    try:
+        return (config.claude_dir() / "settings.json").read_text(encoding="utf-8-sig")
+    except OSError:
+        return None
+
+
+def _hook_targets(text: str) -> dict:
+    """{hook name: the gigabite launcher it runs} for each of ours in settings.json.
+
+    Windows registers `gigabite.exe hook <name>` directly. macOS registers a
+    wrapper script with the launcher baked in, so that is read from the wrapper;
+    a missing wrapper maps to "" (registered, but runs nothing), and one that
+    runs no launcher at all (agent-model) is left out.
+    """
+    from . import installer
+    out = {}
+    try:
+        cfg = json.loads(text)
+    except ValueError:
+        return out
+    hooks = cfg.get("hooks") if isinstance(cfg, dict) else None
+    for entries in (hooks.values() if isinstance(hooks, dict) else ()):
+        for entry in (entries if isinstance(entries, list) else ()):
+            inner = entry.get("hooks") if isinstance(entry, dict) else None
+            for hook in (inner if isinstance(inner, list) else [entry]):
+                name = installer._exec_name(hook)
+                if name:
+                    out[name] = hook["command"]
+                    continue
+                command = hook.get("command") if isinstance(hook, dict) else None
+                for _, _, wanted in installer.HOOKS:
+                    script = f"gg-{wanted}.sh"
+                    if isinstance(command, str) and script in command:
+                        found = re.search(r"\S*" + re.escape(script), command)
+                        try:
+                            body = Path(found.group(0)).read_text(encoding="utf-8")
+                        except OSError:
+                            out[wanted] = ""
+                            continue
+                        baked = _BAKED_BIN.search(body)
+                        if baked:                   # agent-model is self-contained
+                            out[wanted] = baked.group(1)
+    return out
+
+
+def _check_command() -> tuple:
+    mine = osutil.launcher()
+    on_path = shutil.which("gigabite")
+    text = _settings_text()
+    targets = set(_hook_targets(text).values()) if text else set()
+    if not on_path and not Path(mine).exists():
+        return (False, "the gigabite command is not on this machine's PATH",
+                "open a new terminal window; if it is still missing, " + _reinstall())
+    if not targets:
+        return (True, _tilde(on_path or mine), None)
+    missing = [t for t in targets if not t or not Path(t).exists()]
+    if missing:
+        return (False, f"the hooks run {_tilde(missing[0]) or 'nothing'}, which does not exist",
+                _reinstall())
+    norm = lambda p: os.path.normcase(os.path.abspath(p))  # noqa: E731
+    if any(norm(t) != norm(mine) for t in targets):
+        other = next(t for t in targets if norm(t) != norm(mine))
+        return (False, f"the hooks run {_tilde(other)}, not this copy ({_tilde(mine)})",
+                f"if this copy is the one you use, {_reinstall()}")
+    return (True, _tilde(mine), None)
+
+
+def _check_hooks() -> tuple:
+    from . import installer
+    settings = config.claude_dir() / "settings.json"
+    if not _claude_code_present():
+        return (False, "Claude Code has not run on this machine yet",
+                "open Claude Code once, then " + _reinstall())
+    text = _settings_text()
+    if text is None:
+        return (False, f"{_tilde(settings)} does not exist", _reinstall())
+    names = [name for _, _, name in installer.HOOKS]
+    targets = _hook_targets(text)
+    missing = [n for n in names
+               if n not in targets and f"gg-{n}.sh" not in text
+               and not installer.exec_hook_registered(text, n)]
+    if missing:
+        return (False, f"{_and_list(missing)} not registered in {_tilde(settings)}",
+                _reinstall() + ", then restart Claude Code")
+    return (True, f"recall, refresh and agent-model registered in {_tilde(settings)}", None)
+
+
+def _check_claude_version() -> tuple:
+    import subprocess
+    exe = shutil.which("claude")
+    if not exe:
+        return (None, "couldn't tell (claude is not on PATH here)", None)
+    try:
+        run = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=2,
+                             stdin=subprocess.DEVNULL, **osutil.NO_WINDOW)
+        version = (run.stdout or "").strip().splitlines()[0]
+    except (OSError, subprocess.SubprocessError, IndexError):
+        return (None, "couldn't tell (claude --version gave no answer)", None)
+    return (True, version, None)
+
+
+def _check_index() -> tuple:
+    import sqlite3
+    db = config.DB_PATH
+    if not db.is_file():
+        return (False, f"no index at {_tilde(db)}", "run gigabite ingest")
+    conn = sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=2)
+    try:
+        conn.row_factory = sqlite3.Row
+        s = Store(conn).stats()
+    finally:
+        conn.close()
+    if not s["documents"]:
+        return (False, "the index is empty", "run gigabite ingest")
+    return (True, f"{_count(s['documents'], 'document')} indexed", None)
+
+
+def _check_refresh() -> tuple:
+    log = config.MACHINE_DIR / "refresh.log"
+    fix = "start a new Claude Code session; if this stays, " + _reinstall()
+    try:
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return (False, "no refresh has run yet", fix)
+    last = next((m for m in map(_REFRESH_DONE.match, reversed(lines)) if m), None)
+    if not last:
+        return (False, "no refresh has finished yet", fix)
+    when = datetime.strptime(last.group(1), "%Y-%m-%d %H:%M:%S")
+    age = datetime.now() - when
+    ago = (f"{age.days} days ago" if age.days > 1 else "1 day ago" if age.days == 1
+           else f"{age.seconds // 3600}h ago" if age.seconds >= 3600
+           else f"{age.seconds // 60} min ago")
+    if last.group(2).strip() != "0":
+        return (False, f"last refresh failed ({ago}, exit {last.group(2)})",
+                f"run gigabite ingest and send the output; the log is {_tilde(log)}")
+    if age.days >= REFRESH_STALE_DAYS:
+        return (False, f"last refresh was {ago}", fix)
+    return (True, f"last refresh {ago}", None)
+
+
+def _check_knowledge() -> tuple:
+    k = config.KNOWLEDGE_DIR
+    if not k.is_dir():
+        return (False, f"{_tilde(k)} does not exist", _reinstall())
+    return (True, _tilde(k), None)
+
+
+def _check_launchd() -> tuple:
+    found = _launchd_warnings(Path.home())
+    if found:
+        return (False, "; ".join(found), _reinstall())
+    return (True, "no stale scheduled jobs", None)
+
+
+_CHECKS = (("gigabite command", _check_command),
+           ("Claude Code hooks", _check_hooks),
+           ("Claude Code version", _check_claude_version),
+           ("index", _check_index),
+           ("last refresh", _check_refresh),
+           ("knowledge folder", _check_knowledge),
+           ("scheduled jobs", _check_launchd))
+
+
+def cmd_check(args) -> int:
+    rows = []
+    for label, fn in _CHECKS:
+        if label == "scheduled jobs" and osutil.WINDOWS:
+            continue
+        try:
+            ok, detail, fix = fn()
+        except Exception as exc:                        # one broken check is one line
+            ok, detail, fix = False, f"couldn't check: {type(exc).__name__}: {exc}", \
+                "send this output to whoever maintains gigabite"
+        rows.append({"check": label, "ok": ok, "detail": detail, "fix": fix})
+    failed = sum(1 for r in rows if r["ok"] is False)
+    if args.json:
+        print(json.dumps({"ok": not failed, "checks": rows}, indent=2, ensure_ascii=False))
+        return 1 if failed else 0
+    print(bold(f"gigabite check ({__version__})"))
+    for r in rows:
+        mark = green("✓") if r["ok"] else yellow("✗") if r["ok"] is False else dim("?")
+        print(f"  {mark} {r['check']}: {r['detail']}")
+        if r["fix"]:
+            print(dim(f"      fix: {r['fix']}"))
+    print(green("all OK") if not failed else
+          bold(f"{_count(failed, 'problem')}. Send this output to whoever maintains gigabite."))
+    return 1 if failed else 0
 
 # ---- welcome: the first-run brief ------------------------------------------
 #
@@ -1091,6 +1307,10 @@ def build_parser() -> argparse.ArgumentParser:
     pt = sub.add_parser("status", help="show index statistics")
     pt.add_argument("--json", action="store_true")
     pt.set_defaults(func=cmd_status)
+
+    pck = sub.add_parser("check", help="is recall working? one line per step, with the fix")
+    pck.add_argument("--json", action="store_true")
+    pck.set_defaults(func=cmd_check)
 
     pw = sub.add_parser("welcome", help="what is already indexed, and the one command to run first")
     pw.set_defaults(func=cmd_welcome)
