@@ -137,7 +137,17 @@ LEGACY_SYSTEM_DIRNAMES = frozenset({
 CORE_FILE = CORE_DIR / "core.md"
 
 # --- external sources (read-only, never written to) ------------------------
-CLAUDE_CODE_PROJECTS_DIR = HOME / ".claude" / "projects"
+
+def claude_dir() -> Path:
+    """Claude Code's own folder: ``~/.claude``, or wherever ``CLAUDE_CONFIG_DIR``
+    moves it. Its settings.json, CLAUDE.md and commands/ are where the installer
+    writes, and its projects/ is where sessions are read from. Resolved when
+    asked, so the installer follows the environment it is run in."""
+    val = os.environ.get("CLAUDE_CONFIG_DIR")
+    return Path(val).expanduser() if val else Path.home() / ".claude"
+
+
+CLAUDE_CODE_PROJECTS_DIR = claude_dir() / "projects"
 
 # --- source identifiers -----------------------------------------------------
 SOURCE_CLAUDE_CODE = "claude_code"

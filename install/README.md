@@ -1,13 +1,14 @@
 # install/
 
-Everything `install.sh` copies onto the machine. Nothing here is imported by the
-`gigabite` package at runtime. If you want to know what changed on your machine after
+Everything `gigabite install` (`install.sh` on macOS) copies onto the machine. Nothing
+here is imported by the `gigabite` package at runtime; the installer reads it from the
+checkout, which is why Windows installs gigabite editable. If you want to know what changed on your machine after
 installing, this is the list; `../uninstall.sh` takes each row back off again.
 
 | Directory | Installs to | What it is |
 |---|---|---|
-| `claude-commands/` | `~/.claude/commands/` | `/search` and `/core-setup`. `__GIGABITE_BIN__` is replaced with the launcher's absolute path at install time. |
-| `hooks/` | `~/.claude/gigabite/` | The Claude Code hooks, registered in `~/.claude/settings.json`: `gg-recall.sh` (`UserPromptSubmit`, ambient recall), `gg-refresh.sh` (`SessionStart`, refreshes the index in the background; log: `~/Knowledge/.gigabite/refresh.log`. In the first session after a first install it also shows a one-time notice of what the install made) and `gg-agent-model.sh` (`PreToolUse` on `Agent\|Task`, refuses an agent spawn that names no model — core.md §6). Remove them from `settings.json` to switch them off. |
+| `claude-commands/` | `~/.claude/commands/` | `/search` and `/core-setup`. `__GIGABITE_BIN__` is replaced with the launcher's absolute path at install time (`gigabite.exe` on Windows). |
+| `hooks/` | `~/.claude/gigabite/` | The Claude Code hooks, registered in `~/.claude/settings.json`: `gg-recall.sh` (`UserPromptSubmit`, ambient recall), `gg-refresh.sh` (`SessionStart`, refreshes the index in the background; log: `~/Knowledge/.gigabite/refresh.log`. In the first session after a first install it also shows a one-time notice of what the install made) and `gg-agent-model.sh` (`PreToolUse` on `Agent\|Task`, refuses an agent spawn that names no model — core.md §6). Remove them from `settings.json` to switch them off. macOS only: on Windows the same three hooks are registered as `gigabite.exe` with `args` `["hook", "recall"]` and so on, and nothing is copied here. |
 | `scaffold/` | `~/.core/`, `~/Knowledge/`, `~/.claude/CLAUDE.md` | `core.md` (copied only if absent), the knowledge-base README, and the router block kept between markers in `~/.claude/CLAUDE.md`. |
 | `launchd/` | `~/Library/LaunchAgents/` | The optional Granola pull (11:00 and 18:00, weekdays). It's installed by `gigabite integrations`, only if you enable it. |
 | `scripts/` | nothing (you run it) | `claude-ai-safari-export.js`, pasted into the claude.ai browser console to export your chats. |
@@ -20,6 +21,6 @@ When editing here:
 
 - **Templates only, never real content.** No client names, people, prices or internal
   details. These files are the easiest place to leak them, because they look like notes.
-- **`install.sh` copies files by name.** Rename or retire a file and update `install.sh`
-  and `uninstall.sh` too, including their lists of stale commands. Otherwise the old copy
+- **The installer copies files by name.** Rename or retire a file and update
+  `gigabite/installer.py` too, both its install and its uninstall half, including their lists of stale commands. Otherwise the old copy
   is stranded on users' machines.

@@ -10,6 +10,7 @@ test here re-points config.KNOWLEDGE_DIR at its own fresh dir in setUp, which is
 exactly the surface save.py / notes.py resolve against at call time.
 """
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,6 +33,7 @@ from gigabite.sources import notes  # noqa: E402
 class _Base(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="gigabite-routing-case-"))
+        self.addCleanup(shutil.rmtree, str(self.tmp), True)
         self.knowledge = self.tmp / "knowledge"
         self.knowledge.mkdir(parents=True, exist_ok=True)
         # point every knowledge-resolving call at this test's dir

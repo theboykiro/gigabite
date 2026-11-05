@@ -141,7 +141,8 @@ def cmd_status(args) -> int:
         print(bold("\n  needs attention — the index is not refreshing by itself"))
         for w in warnings:
             print(f"    {yellow('!')} {w}")
-        print(dim(f"    fix: re-run {_tilde(config.REPO_ROOT / 'install.sh')}"))
+        fix = "gigabite install" if osutil.WINDOWS else _tilde(config.REPO_ROOT / "install.sh")
+        print(dim(f"    fix: re-run {fix}"))
     return 0
 
 
@@ -158,13 +159,15 @@ def _refresh_warnings() -> list:
 
     out = []
     home = Path.home()
-    settings = home / ".claude" / "settings.json"
+    settings = config.claude_dir() / "settings.json"
     if _claude_code_present():
+        from . import installer
         try:
-            text = settings.read_text(encoding="utf-8")
-        except OSError:
+            text = settings.read_text(encoding="utf-8-sig")
+        except (OSError, ValueError):
             text = ""
-        if "gg-refresh.sh" not in text:
+        # The .sh wrapper on macOS, `gigabite.exe hook refresh` on Windows.
+        if "gg-refresh.sh" not in text and not installer.exec_hook_registered(text, "refresh"):
             out.append("the SessionStart refresh hook is not in ~/.claude/settings.json, "
                        "so new Claude Code sessions are not indexed")
     for plist in sorted((home / "Library" / "LaunchAgents").glob("com.gigabite.*.plist")):
@@ -380,9 +383,14 @@ def _welcome_empty() -> None:
             print(f"  installed here, and no files have been put under {know}.")
         print()
         print(bold("  Shortest path to something useful — about a minute:"))
+        if osutil.WINDOWS:
+            first = (f"    1.  make a folder {os.path.join(know, 'acme')} in Explorer, and drop\n"
+                     f"        any document worth finding later into it")
+        else:
+            first = (f"    1.  mkdir -p {know}/acme\n"
+                     f"        cp <any document worth finding later> {know}/acme/")
         print(f"""
-    1.  mkdir -p {know}/acme
-        cp <any document worth finding later> {know}/acme/
+{first}
     2.  gigabite ingest
     3.  gigabite search "a word you know is in that document"
 """)
@@ -886,10 +894,13 @@ def cmd_paste(args) -> int:
     if args.stdin:
         text = sys.stdin.read()
     else:
+        argv, tool = osutil.clipboard_command()
         try:
-            text = _sp.run(["pbpaste"], capture_output=True, text=True, timeout=10).stdout
-        except (FileNotFoundError, _sp.TimeoutExpired):
-            print(yellow("couldn't read the clipboard (pbpaste). Use --stdin instead."))
+            text = _sp.run(argv, capture_output=True, timeout=10, **osutil.NO_WINDOW,
+                           **({"encoding": "utf-8", "errors": "replace"} if osutil.WINDOWS
+                              else {"text": True})).stdout
+        except (OSError, _sp.TimeoutExpired):
+            print(yellow(f"couldn't read the clipboard ({tool}). Use --stdin instead."))
             return 1
     text = text.strip()
     if not text:
@@ -935,7 +946,8 @@ def cmd_core(args) -> int:
     """
     path = config.CORE_FILE
     if not path.exists():
-        print(f"(no operating protocol at {path} — run ./install.sh)")
+        print(f"(no operating protocol at {path} — run "
+              f"{'gigabite install' if osutil.WINDOWS else './install.sh'})")
         return 1
     print(path.read_text(encoding="utf-8", errors="replace"), end="")
     return 0
@@ -1195,6 +1207,13 @@ def build_parser() -> argparse.ArgumentParser:
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)
 
+    # Listed for --help only: main() hands both to gigabite.installer, which parses
+    # its own flags (--verbose; --yes, --dry-run) as install.sh and uninstall.sh did.
+    sub.add_parser("install", help="install or update: stores, commands, router block, hooks "
+                                   "(--verbose)")
+    sub.add_parser("uninstall", help="reverse the install; your notes and core.md are kept "
+                                     "(--dry-run, --yes)")
+
     phk = sub.add_parser("hook", help="run a Claude Code hook (reads the hook payload on stdin)")
     phk.add_argument("name", choices=hooks_mod.NAMES)
     phk.set_defaults(func=cmd_hook)
@@ -1204,6 +1223,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list] = None) -> int:
     osutil.utf8_stdio()
+    words = sys.argv[1:] if argv is None else list(argv)
+    if words[:1] in (["install"], ["uninstall"]):
+        from . import installer
+        return installer.main(words[0], words[1:])
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):

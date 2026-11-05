@@ -10,7 +10,7 @@ machine.
 
 ## What you need
 
-- macOS.
+- macOS, or Windows (see [Install on Windows](#install-on-windows)).
 - Apple's command line tools: `xcode-select --install`. They provide `git` and
   `/usr/bin/python3`.
 - Python 3.9 or later **at `/usr/bin/python3`** (Apple's). A Homebrew or pyenv Python
@@ -41,6 +41,30 @@ and `/core-setup`, creates `~/Knowledge` and `~/.core`, and builds the first ind
 opens `~/Knowledge` in Finder, and the first Claude Code session afterwards says once what
 was created, so an install Claude Code ran for you doesn't leave the folder a surprise.
 It's safe to re-run, and it never overwrites your notes or your `core.md`.
+
+## Install on Windows
+
+Open **PowerShell** (not as administrator), paste this line and press Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/theboykiro/gigabite/main/bootstrap.ps1 | iex
+```
+
+Then **quit and restart Claude Code**.
+
+You need Claude Code and [Git for Windows](https://git-scm.com/download/win), from
+Company Portal or your IT team (or `winget install --id Git.Git -e` if you may install
+software yourself). The script checks for Git and stops with those instructions if it is
+missing. It clones to `%USERPROFILE%\gigabite`, and if you don't have
+[uv](https://docs.astral.sh/uv/) it installs it with winget, or asks you to get it from
+IT. uv brings its own Python. It then installs gigabite with
+`uv tool install --editable` and runs `gigabite install`. Run the same line again to
+update. It changes no PowerShell policy: if your organisation blocks a step, it stops
+and says which one, so you can take that to IT.
+
+On Windows the hooks run `gigabite.exe` directly, with no shell in between. Granola and
+the scheduled pulls are macOS-only, so the installer skips that step. To uninstall, run
+`gigabite uninstall`, then `uv tool uninstall gigabite`.
 
 ## How it works
 
@@ -124,6 +148,8 @@ pull at 11:00 and 18:00 on weekdays (or as soon as the Mac is awake and online a
 ~/gigabite/uninstall.sh --dry-run  # only show
 ~/gigabite/uninstall.sh --yes      # no prompt (needed when not run from a terminal)
 ```
+
+On Windows: `gigabite uninstall` (same flags), then `uv tool uninstall gigabite`.
 
 It removes the launcher, the commands, the hooks, the router block and the scheduled jobs.
 **`~/Knowledge` and `~/.core` are never touched.** It then prints the `rm -rf ~/gigabite`

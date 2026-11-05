@@ -52,8 +52,14 @@ _FAKE_HOME = _SESSION_ROOT / "home"
 _FAKE_HOME.mkdir(parents=True, exist_ok=True)
 os.environ["HOME"] = str(_FAKE_HOME)
 os.environ["USERPROFILE"] = str(_FAKE_HOME)
+# Claude Code's folder follows this when it is set, and it would point at the real one.
+os.environ.pop("CLAUDE_CONFIG_DIR", None)
 # Nor pop a macOS notification (the claude.ai export nudge) mid-run.
 os.environ["GIGABITE_NOTIFY"] = "0"
+# Nor show a folder in Finder or Explorer: a first install opens the knowledge
+# base, and a test that installs without naming an opener would open a window
+# per run. A name that is not a program opens nothing.
+os.environ["GIGABITE_OPEN"] = str(_SESSION_ROOT / "no-opener")
 
 # No test may reach the real keychain — not even a test of the code that talks to
 # it. Every `security` invocation made in-process (subprocess.run/call/check_output
@@ -109,6 +115,11 @@ def _fail_the_run_if_the_keychain_was_reached():
 
 import atexit  # noqa: E402
 atexit.register(_fail_the_run_if_the_keychain_was_reached)
+# Every store, fake home and scratch index of the run lives under one root, so
+# one removal at exit leaves nothing behind in the temp dir. Registered after the
+# keychain check, so it runs before it (atexit is last-in, first-out) and that
+# check's os._exit cannot skip it.
+atexit.register(lambda: _rmtree(_SESSION_ROOT, ignore_errors=True))
 
 # Windows will not delete a file that is open, and an SQLite connection a test
 # dropped stays open until it is collected (Python 3.13 and later). So every
@@ -194,6 +205,7 @@ class TempRoot(unittest.TestCase):
         self.addCleanup(self._restore)
 
         base = Path(tempfile.mkdtemp(prefix="gigabite-case-"))
+        self.addCleanup(_rmtree, str(base), ignore_errors=True)
         self.root = base / "knowledge"
         self.core = base / "core"
         self.root.mkdir(parents=True, exist_ok=True)

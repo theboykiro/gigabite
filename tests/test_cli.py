@@ -663,7 +663,8 @@ class TestStatusRefreshWarnings(CliTestCase):
         out = run("status")[1]
         self.assertIn("needs attention", out)
         self.assertIn("com.gigabite.example", out)
-        self.assertIn("install.sh", out)
+        # The re-run that fixes it: the script on macOS, the command on Windows.
+        self.assertIn("gigabite install" if os.name == "nt" else "install.sh", out)
 
     def test_a_missing_refresh_hook_is_reported(self):
         self._settings('{"hooks": {}}')

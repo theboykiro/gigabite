@@ -375,7 +375,8 @@ class TestTheAskCannotCarryACommand(BindingCase):
         text = self.route(cwd=work)["ask"]["text"]
         argv = shlex.split(self.bind_line(text))
         self.assertEqual(argv[0], osutil.launcher(), repr(name))
-        self.assertEqual(os.path.basename(argv[0]), "gigabite", repr(name))
+        # `gigabite.exe` on Windows, `bin/gigabite` on macOS.
+        self.assertEqual(os.path.splitext(os.path.basename(argv[0]))[0], "gigabite", repr(name))
         if os.name != "nt":                     # on Windows only once installed
             self.assertTrue(os.path.isabs(argv[0]), "the launcher must be absolute")
         self.assertEqual(argv[1:3], ["project", "bind"], repr(name))

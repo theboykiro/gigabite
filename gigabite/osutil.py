@@ -10,6 +10,7 @@ ANSI code page and only draws colour once asked to).
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -45,15 +46,52 @@ def launcher() -> str:
     can be, because Claude's shell may not have it on PATH.
 
     The checkout's `bin/gigabite` on macOS. On Windows that is a bash script
-    nothing runs, so it is the `gigabite.exe` an install put on PATH, written with
-    forward slashes and without `.exe`: Claude Code's shell there is Git Bash,
-    which finds the .exe and would read backslashes as escapes.
+    nothing runs, so it is the installed `gigabite.exe`, with forward slashes and
+    the `.exe` kept: Claude may run the command in Git Bash, which reads
+    backslashes as escapes, or in PowerShell, which runs a bare path but not a
+    quoted one. So a path that would need quoting (a space in the user profile)
+    falls back to plain `gigabite`, which uv put on PATH.
     """
     if not WINDOWS:
         from . import config
         return str(config.REPO_ROOT / "bin" / "gigabite")
-    found = shutil.which("gigabite")
-    return Path(found).with_suffix("").as_posix() if found else "gigabite"
+    exe = gigabite_exe()
+    return exe if exe and shlex.quote(exe) == exe else "gigabite"
+
+
+def gigabite_exe() -> Optional[str]:
+    """The absolute path of the installed `gigabite.exe`, forward slashes, or None.
+
+    The one on PATH first (uv's tool bin directory, which survives a reinstall),
+    then the console script this process was started as. Windows only: a hook
+    registered in exec form needs a real executable, and a path to nothing would
+    fail every prompt.
+    """
+    candidates = [shutil.which("gigabite")]
+    argv0 = sys.argv[0] if sys.argv else ""
+    if argv0 and os.path.splitext(os.path.basename(argv0))[0].lower() == "gigabite":
+        candidates += [argv0, argv0 + ".exe"]
+    here = os.path.dirname(sys.executable)          # a venv's Scripts, or a Python's root
+    candidates += [os.path.join(here, "gigabite.exe"), os.path.join(here, "Scripts", "gigabite.exe")]
+    for found in candidates:
+        if not found:
+            continue
+        path = Path(found)
+        if path.suffix.lower() != ".exe" or not path.is_file():
+            continue
+        return path.absolute().with_suffix(".exe").as_posix()
+    return None
+
+
+def clipboard_command():
+    """(argv, name) that prints the clipboard's text: pbpaste on macOS, and on
+    Windows PowerShell's Get-Clipboard, told to write UTF-8 so a transcript in
+    any language survives the pipe."""
+    if WINDOWS:
+        return (["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                 "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw"],
+                "Get-Clipboard")
+    return ["pbpaste"], "pbpaste"
 
 
 # ---------------------------------------------------------------------------

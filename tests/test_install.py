@@ -83,6 +83,11 @@ QUIET_PREAMBLE_MAX = 17
 # actually does before reaching the screen written for them.
 QUIET_TO_WELCOME_MAX = 28
 
+# The line every command, subagent and skill gigabite ships carries. A file needs it
+# (or to be byte for byte a version shipped before it) to count as gigabite's:
+# mentioning gigabite is not enough, since a user's own command may call it.
+MANAGED = "<!-- gigabite:managed -->\n"
+
 
 def tree_digest(root: Path) -> dict:
     """Every path under `root` mapped to a digest of its content (links by target)."""
@@ -331,9 +336,9 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
 
     def test_subagents_and_skills_an_older_install_wrote_are_removed(self):
         for name in ("gg-builder", "gg-researcher", "gg-reviewer"):
-            self.sandbox.write(".claude/agents/%s.md" % name, "a gigabite subagent\n")
+            self.sandbox.write(".claude/agents/%s.md" % name, MANAGED + "a gigabite subagent\n")
         for name in ("meeting-prep", "decision-record", "design-critique"):
-            self.sandbox.write(".claude/skills/%s/SKILL.md" % name, "a gigabite skill\n")
+            self.sandbox.write(".claude/skills/%s/SKILL.md" % name, MANAGED + "a gigabite skill\n")
         extra = self.sandbox.write(".claude/skills/meeting-prep/notes.md", "mine\n")
         out = self.install()
         home = self.sandbox.home
@@ -350,7 +355,7 @@ class TestQuieteningHidesNothingThatMatters(InstallCase):
         retired = ("gg", "search-status", "calendar", "meeting", "recall-status", "granola")
         for name in retired:
             self.sandbox.write(".claude/commands/%s.md" % name,
-                               "runs the gigabite launcher\n")
+                               MANAGED + "runs the gigabite launcher\n")
         mine = self.sandbox.write(".claude/commands/calendar.md",
                                   "# my own calendar command\nnothing of theirs here\n")
         out = self.install()
@@ -505,34 +510,32 @@ class TestTheSeamsAreRealSeams(InstallCase):
 
     def test_no_launchctl_is_invoked_except_through_the_seam(self):
         """One missed call site is enough to unload the real user's job, and it
-        would only ever show up on the machine of whoever ran the suite."""
-        for line in INSTALL.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if stripped.startswith("#") or "launchctl" not in stripped:
-                continue
-            if 'LAUNCHCTL="${GIGABITE_LAUNCHCTL:-launchctl}"' in stripped:
-                continue
-            # The only other mention is the line telling the user what to type.
-            self.assertIn("disable with:", stripped,
-                          "install.sh calls launchctl directly: %s" % stripped)
+        would only ever show up on the machine of whoever ran the suite. The work
+        is in gigabite/installer.py now; the two wrappers call nothing at all."""
+        source = (REPO / "gigabite" / "installer.py").read_text(encoding="utf-8")
+        seams = [line.strip() for line in source.splitlines()
+                 if '"launchctl"' in line and not line.strip().startswith("#")]
+        self.assertEqual(['return os.environ.get("GIGABITE_LAUNCHCTL") or "launchctl"'], seams)
+        for script in (INSTALL, UNINSTALL):
+            for line in script.read_text(encoding="utf-8").splitlines():
+                if not line.strip().startswith("#"):
+                    self.assertNotIn("launchctl", line, "%s: %s" % (script.name, line))
 
     def test_uninstall_looks_everywhere_install_links(self):
-        """Two scripts that disagree about where the launcher lives cannot uninstall
+        """Two halves that disagree about where the launcher lives cannot uninstall
         what the other installed, and the seam would be the thing hiding it. The
         uninstaller's list is a superset — it also cleans up the directories older
         installs linked into — with the installer's own directory first."""
-        def defaults(path):
-            return {line.split("=", 1)[0]: line.split("=", 1)[1]
-                    for line in path.read_text(encoding="utf-8").splitlines()
-                    if line.startswith(("BIN_DIRS=", "LAUNCHCTL="))}
-
-        inst, uninst = defaults(INSTALL), defaults(UNINSTALL)
-        self.assertEqual(inst["LAUNCHCTL"], uninst["LAUNCHCTL"])
-        self.assertEqual('"${GIGABITE_BIN_DIRS:-$HOME/.local/bin}"', inst["BIN_DIRS"])
-        self.assertTrue(uninst["BIN_DIRS"].startswith('"${GIGABITE_BIN_DIRS:-$HOME/.local/bin:'),
-                        uninst["BIN_DIRS"])
+        from unittest import mock
+        from gigabite import installer
+        home = Path("/Users/jane")
+        with mock.patch.dict(os.environ):
+            os.environ.pop("GIGABITE_BIN_DIRS", None)
+            inst, uninst = installer.install_bin_dirs(home), installer.uninstall_bin_dirs(home)
+        self.assertEqual(["/Users/jane/.local/bin"], inst)
+        self.assertEqual(inst, uninst[:1])
         for legacy in ("/opt/homebrew/bin", "/usr/local/bin"):
-            self.assertIn(legacy, uninst["BIN_DIRS"])
+            self.assertIn(legacy, uninst)
 
 # ---------------------------------------------------------------------------
 class TestTheHooks(InstallCase):
@@ -608,7 +611,7 @@ class TestMigratingAnOlderInstall(InstallCase):
             {"hooks": [{"type": "command",
                         "command": str(s.home / ".claude/gigabite/gg-recall.sh")}]}]}}))
         for name in ("gg", "search-status", "calendar", "meeting"):
-            s.write(".claude/commands/%s.md" % name, "runs the gigabite launcher\n")
+            s.write(".claude/commands/%s.md" % name, MANAGED + "runs the gigabite launcher\n")
 
     def test_the_daily_job_is_unloaded_and_removed_and_the_hook_takes_over(self):
         out = self.install()
