@@ -10,6 +10,7 @@
     gigabite reindex
     gigabite paths
     gigabite integrations
+    gigabite hook {recall,refresh,agent-model}
 """
 
 from __future__ import annotations
@@ -23,11 +24,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from . import __version__, config, ingest as ingest_mod, util
+from . import __version__, config, hooks as hooks_mod, ingest as ingest_mod, osutil, util
 from .store import Store, connect
 
 # ---- tiny ANSI helpers (auto-disabled when piped) --------------------------
-_TTY = sys.stdout.isatty()
+_TTY = osutil.ansi_ok()
 
 
 def _c(code: str, s: str) -> str:
@@ -258,9 +259,7 @@ def _claude_code_history() -> bool:
 def _tilde(path) -> str:
     """`~/Knowledge` rather than `/Users/jane/Knowledge` — shorter to read, and
     the same string the docs and the README use."""
-    text = str(path)
-    home = str(Path.home())
-    return "~" + text[len(home):] if text.startswith(home) else text
+    return osutil.tilde(path)
 
 
 def _welcome_example(store: Store, docs: list) -> Optional[tuple]:
@@ -595,14 +594,30 @@ def cmd_materialize(args) -> int:
 
 
 def cmd_reindex(args) -> int:
-    if config.DB_PATH.exists():
-        config.DB_PATH.unlink()
-        for suffix in ("-wal", "-shm"):
-            p = config.DB_PATH.with_name(config.DB_PATH.name + suffix)
-            if p.exists():
-                p.unlink()
+    try:
+        _delete_index()
+    except PermissionError:
+        # Windows will not delete a file that is open. Connections this process
+        # dropped can still hold it until they are collected; anything else is
+        # another process, most likely the refresh a session start set off.
+        import gc
+        gc.collect()
+        try:
+            _delete_index()
+        except PermissionError:
+            print(yellow("the index is in use by another gigabite process (probably "
+                         "a refresh started by a Claude Code session). Try again in "
+                         "a minute."))
+            return 1
     print(dim("index cleared; rebuilding…"))
     return cmd_ingest(argparse.Namespace(source=None, force=True))
+
+
+def _delete_index() -> None:
+    for suffix in ("", "-wal", "-shm"):
+        p = config.DB_PATH.with_name(config.DB_PATH.name + suffix)
+        if p.exists():
+            p.unlink()
 
 
 def cmd_granola_login(args) -> int:
@@ -709,6 +724,10 @@ def cmd_route(args) -> int:
         print(f"  {bold(h['title'] or '(untitled)')}  {dim(meta)}")
         print(f"    {' '.join((h.get('snippet') or '').split())}")
     return 0
+
+
+def cmd_hook(args) -> int:
+    return hooks_mod.run(args.name)
 
 
 def cmd_save(args) -> int:
@@ -1176,10 +1195,15 @@ def build_parser() -> argparse.ArgumentParser:
     pp = sub.add_parser("paths", help="show where things live")
     pp.set_defaults(func=cmd_paths)
 
+    phk = sub.add_parser("hook", help="run a Claude Code hook (reads the hook payload on stdin)")
+    phk.add_argument("name", choices=hooks_mod.NAMES)
+    phk.set_defaults(func=cmd_hook)
+
     return p
 
 
 def main(argv: Optional[list] = None) -> int:
+    osutil.utf8_stdio()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):

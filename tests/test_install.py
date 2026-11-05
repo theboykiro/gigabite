@@ -39,7 +39,6 @@ one per assertion.
 import hashlib
 import json
 import os
-import pwd
 import shutil
 import subprocess
 import sys
@@ -475,6 +474,7 @@ class TestTheSeamsAreRealSeams(InstallCase):
     def test_it_writes_nothing_into_the_real_path_directories(self):
         """Read-only on the real machine: whatever is in those directories now,
         including the owner's own launcher, is exactly there afterwards."""
+        import pwd                                            # POSIX-only, like install.sh
         real_home = Path(pwd.getpwuid(os.getuid()).pw_dir)   # the harness fakes HOME
         defaults = ["/opt/homebrew/bin", "/usr/local/bin",
                     str(real_home / ".local/bin"), str(real_home / "bin")]

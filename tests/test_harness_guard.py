@@ -42,7 +42,8 @@ class TestTheKeychainGuard(unittest.TestCase):
             granola_live.read_token()
 
     def test_other_commands_still_run(self):
-        out = subprocess.run(["/bin/echo", "security"], capture_output=True, text=True)
+        out = subprocess.run([sys.executable, "-c", "print('security')"],
+                             capture_output=True, text=True)
         self.assertEqual("security\n", out.stdout)
 
     def test_home_is_a_temp_directory(self):

@@ -22,10 +22,8 @@ import contextlib
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -38,7 +36,6 @@ from gigabite.sources import claude_code  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-HOOK_SOURCE = REPO_ROOT / "install" / "hooks" / "gg-recall.sh"
 
 SESSIONS = {
     "s-cache": ("Catalogue caching strategy",
@@ -183,32 +180,21 @@ class TestABoundFolderRecallsItsOwnSessions(SessionCase):
 # A2 — the recall gate works on a two-session index and stays quiet on noise
 # ---------------------------------------------------------------------------
 
-@unittest.skipUnless(Path("/bin/bash").exists() and Path("/usr/bin/python3").exists(),
-                     "the hook is bash + /usr/bin/python3 by construction")
 class HookCase(SessionCase):
-
-    def setUp(self):
-        super().setUp()
-        self.bin_dir = Path(tempfile.mkdtemp(prefix="gigabite-hook-"))
-        self.addCleanup(shutil.rmtree, str(self.bin_dir), True)
-        shim = self.bin_dir / "gigabite"
-        shim.write_text('#!/bin/sh\nexec /usr/bin/python3 -m gigabite "$@"\n')
-        shim.chmod(0o755)
-        self.hook = self.bin_dir / "gg-recall.sh"
-        self.hook.write_text(HOOK_SOURCE.read_text(encoding="utf-8")
-                             .replace("__GIGABITE_BIN__", str(shim)), encoding="utf-8")
-        self.hook.chmod(0o755)
+    """`gigabite hook recall` as Claude Code runs it. The bash wrapper a macOS
+    install registers in front of it is covered in test_cli.py."""
 
     def fire(self, prompt, session_id=None, cwd=None):
         payload = {"prompt": prompt, "hook_event_name": "UserPromptSubmit",
                    "cwd": str(cwd or self.work)}
         if session_id:
             payload["session_id"] = session_id
-        env = dict(os.environ, PYTHONPATH=str(REPO_ROOT), HOME=str(self.home))
-        proc = subprocess.run(["/bin/bash", str(self.hook)], input=json.dumps(payload),
-                              env=env, cwd=str(cwd or self.work),
+        env = dict(os.environ, PYTHONPATH=str(REPO_ROOT), HOME=str(self.home),
+                   USERPROFILE=str(self.home))
+        proc = subprocess.run([sys.executable, "-m", "gigabite", "hook", "recall"],
+                              input=json.dumps(payload), env=env, cwd=str(cwd or self.work),
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              universal_newlines=True)
+                              encoding="utf-8")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return proc.stdout
 

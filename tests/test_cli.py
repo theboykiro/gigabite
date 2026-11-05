@@ -220,29 +220,32 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 HOOK_SOURCE = REPO_ROOT / "install" / "hooks" / "gg-recall.sh"
 
 
-@unittest.skipUnless(Path("/bin/bash").exists() and Path("/usr/bin/python3").exists(),
-                     "the hook is bash + /usr/bin/python3 by construction")
 class TestTheRecallHook(CliTestCase):
-    """The shell script itself, run end to end against a shim binary.
+    """`gigabite hook recall` itself, run end to end as Claude Code runs it.
 
     This is the product's primary surface and it had no coverage at all: it
     swallows every error and exits 0 by design, so any mistake inside it is silent
-    and permanent. Running the real file — rather than asserting on the JSON it
-    happens to parse — is the only way a change to those thirty lines gets caught.
+    and permanent. Running the real hook — rather than asserting on the JSON it
+    happens to parse — is the only way a change to it gets caught.
 
-    `__GIGABITE_BIN__` is replaced with a shim that runs this working copy, and the
-    subprocess inherits `GIGABITE_KNOWLEDGE_DIR` from `TempRoot`, so nothing here
-    can reach the real knowledge base.
+    The subprocess inherits `GIGABITE_KNOWLEDGE_DIR` from `TempRoot`, so nothing
+    here can reach the real knowledge base. `TestTheRecallWrapper` runs the same
+    cases through the bash wrapper a macOS install registers.
     """
+
+    WRAPPER = False
 
     def setUp(self):
         super().setUp()
         self.bin_dir = Path(tempfile.mkdtemp(prefix="gigabite-hook-"))
         self.addCleanup(shutil.rmtree, str(self.bin_dir), True)
-        self.shim = self.bin_dir / "gigabite"
-        self.shim.write_text('#!/bin/sh\nexec /usr/bin/python3 -m gigabite "$@"\n')
-        self.shim.chmod(0o755)
-        self.hook = self.install_hook(str(self.shim))
+        self.hook = None
+        if self.WRAPPER:
+            # `__GIGABITE_BIN__` is replaced with a shim that runs this working copy.
+            self.shim = self.bin_dir / "gigabite"
+            self.shim.write_text('#!/bin/sh\nexec "%s" -m gigabite "$@"\n' % sys.executable)
+            self.shim.chmod(0o755)
+            self.hook = self.install_hook(str(self.shim))
 
     def install_hook(self, binary: str) -> Path:
         path = self.bin_dir / "gg-recall.sh"
@@ -253,10 +256,11 @@ class TestTheRecallHook(CliTestCase):
 
     def fire(self, payload, hook=None, cwd=None):
         env = dict(os.environ, PYTHONPATH=str(REPO_ROOT))
-        proc = subprocess.run(["/bin/bash", str(hook or self.hook)],
-                              input=payload, env=env, cwd=cwd,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              universal_newlines=True)
+        hook = hook or self.hook
+        argv = (["/bin/bash", str(hook)] if hook
+                else [sys.executable, "-m", "gigabite", "hook", "recall"])
+        proc = subprocess.run(argv, input=payload, env=env, cwd=cwd, encoding="utf-8",
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return proc.returncode, proc.stdout
 
     def prompt(self, text, hook=None, cwd=None):
@@ -298,6 +302,8 @@ class TestTheRecallHook(CliTestCase):
     def test_it_exits_zero_when_the_binary_is_missing(self):
         """A moved install directory must degrade to no recall, never to a broken
         prompt."""
+        if not self.WRAPPER:
+            self.skipTest("only the wrapper has a binary to lose")
         hook = self.install_hook(str(self.bin_dir / "does-not-exist"))
         code, out = self.prompt("what did we decide about widget pricing", hook=hook)
         self.assertEqual(code, 0)
@@ -308,6 +314,14 @@ class TestTheRecallHook(CliTestCase):
             code, out = self.fire(payload)
             self.assertEqual(code, 0, repr(payload))
             self.assertEqual(out, "", repr(payload))
+
+
+@unittest.skipUnless(Path("/bin/bash").exists(), "the wrapper is bash by construction")
+class TestTheRecallWrapper(TestTheRecallHook):
+    """Every case above, through `install/hooks/gg-recall.sh` as a macOS install
+    registers it: the payload has to reach the hook, and its output come back."""
+
+    WRAPPER = True
 
 
 class TestTheHookAsksWhenNothingResolves(TestTheRecallHook):

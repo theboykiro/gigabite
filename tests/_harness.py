@@ -46,10 +46,12 @@ os.environ["GIGABITE_KNOWLEDGE_DIR"] = str(_SESSION_ROOT / "knowledge")
 # HOME too, for the whole run and every subprocess it starts. Several paths are
 # derived from it rather than from the two variables above — ~/.claude/projects,
 # ~/Library/LaunchAgents, the keychain account's defaults — and a test that
-# reached any of them would read or write the real user's.
+# reached any of them would read or write the real user's. USERPROFILE is the
+# same thing on Windows, where `Path.home()` reads it and ignores HOME.
 _FAKE_HOME = _SESSION_ROOT / "home"
 _FAKE_HOME.mkdir(parents=True, exist_ok=True)
 os.environ["HOME"] = str(_FAKE_HOME)
+os.environ["USERPROFILE"] = str(_FAKE_HOME)
 # Nor pop a macOS notification (the claude.ai export nudge) mid-run.
 os.environ["GIGABITE_NOTIFY"] = "0"
 
@@ -108,10 +110,60 @@ def _fail_the_run_if_the_keychain_was_reached():
 import atexit  # noqa: E402
 atexit.register(_fail_the_run_if_the_keychain_was_reached)
 
+# Windows will not delete a file that is open, and an SQLite connection a test
+# dropped stays open until it is collected (Python 3.13 and later). So every
+# connection is tracked, and those on a database inside a tree are closed before
+# the tree is deleted, by a test's own cleanup or by TemporaryDirectory's.
+import shutil  # noqa: E402
+import sqlite3  # noqa: E402
+import weakref  # noqa: E402
+
+_REAL_CONNECT = sqlite3.connect
+_REAL_RMTREE = shutil.rmtree
+_CONNECTIONS = weakref.WeakSet()
+
+
+class _TrackedConnection(sqlite3.Connection):
+    pass
+
+
+def _tracked_connect(database, *a, **kw):
+    kw.setdefault("factory", _TrackedConnection)
+    conn = _REAL_CONNECT(database, *a, **kw)
+    if isinstance(conn, _TrackedConnection):
+        conn.gigabite_path = os.path.normcase(os.path.realpath(str(database)))
+        _CONNECTIONS.add(conn)
+    return conn
+
+
+def close_connections_under(root) -> None:
+    """Close every tracked connection on a database at or under *root*."""
+    root = os.path.normcase(os.path.realpath(str(root)))
+    for conn in list(_CONNECTIONS):
+        path = getattr(conn, "gigabite_path", "")
+        if path == root or path.startswith(root.rstrip(os.sep) + os.sep):
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _rmtree(path, *a, **kw):
+    close_connections_under(path)
+    return _REAL_RMTREE(path, *a, **kw)
+
+
+sqlite3.connect = _tracked_connect
+shutil.rmtree = _rmtree
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from gigabite import config  # noqa: E402
+from gigabite import config, osutil  # noqa: E402
 from gigabite.store import Document, Message, Store, connect  # noqa: E402
+
+# What `cli.main` does for a real run, for the tests that call a command directly:
+# a ✓ written to a Windows pipe in the ANSI code page raises.
+osutil.utf8_stdio()
 
 # Every config constant derived from KNOWLEDGE_DIR or CORE_DIR at import time.
 # Rebound per test and restored afterwards. If a new derived constant is added to
@@ -210,6 +262,7 @@ SCRATCH.mkdir(parents=True, exist_ok=True)
 def scratch_store(name: str) -> Store:
     """A Store on its own file, rebuilt from empty each time it is asked for."""
     db = SCRATCH / f"{name}.db"
+    close_connections_under(db)
     if db.exists():
         db.unlink()
     return Store(connect(db))

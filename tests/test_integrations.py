@@ -159,6 +159,21 @@ class EnableFlowTests(unittest.TestCase):
         self.assertNotIn("Schedule the meeting pull", buf.getvalue())
 
 
+class OffMacScheduleTests(unittest.TestCase):
+    """launchd is macOS-only: elsewhere scheduling says so rather than raising."""
+
+    def test_it_says_so_and_touches_nothing(self):
+        buf = io.StringIO()
+        with mock.patch.object(integrations.sys, "platform", "win32"), \
+                mock.patch.object(integrations.subprocess, "run") as run, \
+                redirect_stdout(buf):
+            integrations._install_schedule(Path("/nonexistent"), {"plist_label": "x"})
+        run.assert_not_called()
+        self.assertIn("macOS-only", buf.getvalue())
+        self.assertIn("gigabite granola-sync", buf.getvalue())
+
+
+@unittest.skipUnless(sys.platform == "darwin", "launchd is macOS-only")
 class ScheduleTests(unittest.TestCase):
     """Scheduling renders the plist template and drives launchd — with
     `subprocess.run` and `Path.home` faked out so nothing real is touched."""
