@@ -42,6 +42,7 @@ Type `/search` in Claude Code, followed by a few words. It searches every projec
 - **Move a file to another project** and it belongs to that project from then on.
 - **A loose file at the top of `Knowledge`** means gigabite couldn't tell where it
   belonged, so it didn't guess. Drag it into the right project.
+- **Loose files at the top of a project:** `gigabite tidy` proposes where they belong (exact duplicates, files named after an existing folder, notes with a layer) and moves nothing until you add `--apply`; `gigabite tidy --undo` reverses the last run. A nightly job (`install/launchd/com.gigabite.tidy.plist`) only proposes and notifies.
 - **Rename, reorganise or delete** anything you like. It's your folder.
 - **Leave the `.gigabite` folder alone.** It holds the search index, not your content.
 

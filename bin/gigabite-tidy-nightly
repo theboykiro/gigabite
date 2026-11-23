@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Nightly tidy PROPOSAL, run by launchd (install/launchd/com.gigabite.tidy.plist).
+# Propose-only: it never moves anything. It logs the plan and, when there is one,
+# posts a notification. Apply with `gigabite tidy --apply` (undo: `gigabite tidy --undo`).
+set -uo pipefail
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+REPO="$(cd -P "$(dirname "$SOURCE")/.." >/dev/null 2>&1 && pwd)"
+GB="$REPO/bin/gigabite"
+LOG="${GIGABITE_TIDY_LOG:-$HOME/Library/Logs/gigabite-tidy.log}"
+if [ -f "$LOG" ] && [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 262144 ]; then
+  tail -c 131072 "$LOG" >"$LOG.trim" 2>/dev/null && mv "$LOG.trim" "$LOG"
+fi
+printf '=== %s tidy proposal ===\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+[ -x "$GB" ] || { echo "cannot execute $GB"; exit 1; }
+COUNT="$("$GB" tidy --json 2>/dev/null | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["moves"]))' 2>/dev/null || echo 0)"
+"$GB" tidy
+if [ "${COUNT:-0}" -gt 0 ]; then
+  /usr/bin/osascript -e "display notification \"$COUNT file(s) to tidy. Run: gigabite tidy --apply\" with title \"gigabite\"" >/dev/null 2>&1
+fi

@@ -1038,6 +1038,46 @@ def cmd_core_apply(args) -> int:
     return 0
 
 
+def cmd_tidy(args) -> int:
+    """Propose (default) or apply moves for loose files at the top of each project."""
+    from .features import tidy
+    config.ensure_dirs()
+    if args.undo:
+        manifest, restored, skipped = tidy.undo_last()
+        if not manifest:
+            print(yellow("nothing to undo."))
+            return 1
+        print(green(f"✓ restored {restored} file(s)") + dim(f"  ({skipped} already gone)  {manifest.name}"))
+        ingest_mod.run(_open(), sources=[config.SOURCE_NOTE])
+        return 0
+    plan = tidy.plan_all(only=args.project)
+    if args.json:
+        print(json.dumps(plan.as_dict(), indent=2))
+    else:
+        for kind, label in (("duplicate", "duplicates -> tidy trash"),
+                            ("folder", "into an existing folder"),
+                            ("layer", "by note layer")):
+            ms = [m for m in plan.moves if m.kind == kind]
+            if not ms:
+                continue
+            print(bold(f"{label} ({len(ms)})"))
+            for m in ms:
+                print(f"  {m.project}/{Path(m.src).name}")
+                print(dim(f"    -> {'(trash)' if m.kind == 'duplicate' else Path(m.dst).parent.name + '/'}   {m.reason}"))
+        n_un = sum(len(v) for v in plan.unplaced.values())
+        print(dim(f"{len(plan.moves)} move(s) proposed, {n_un} file(s) unplaced (left alone)"
+                  + (f", {len(plan.skipped)} skipped as busy" if plan.skipped else "")))
+    if not args.apply:
+        if plan.moves and not args.json:
+            print(dim("dry run. re-run with --apply to move them; `gigabite tidy --undo` reverses."))
+        return 0
+    manifest = tidy.apply(plan)
+    if manifest:
+        print(green(f"✓ moved {len(plan.moves)} file(s)") + dim(f"  manifest {manifest.name}"))
+        ingest_mod.run(_open(), sources=[config.SOURCE_NOTE])
+    return 0
+
+
 def cmd_paths(args) -> int:
     config.ensure_dirs()
     print(bold("gigabite paths"))
@@ -1107,6 +1147,13 @@ def build_parser() -> argparse.ArgumentParser:
     pad.add_argument("--move", action="store_true",
                      help="move the original instead of copying it")
     pad.set_defaults(func=cmd_add)
+
+    ptd = sub.add_parser("tidy", help="propose (or --apply) moves for loose files at the top of each project")
+    ptd.add_argument("--project", "-p", help="only this project")
+    ptd.add_argument("--apply", action="store_true", help="perform the moves (default is a dry run)")
+    ptd.add_argument("--undo", action="store_true", help="reverse the most recent applied run")
+    ptd.add_argument("--json", action="store_true")
+    ptd.set_defaults(func=cmd_tidy)
 
     pmz = sub.add_parser("materialize",
                          help="write every indexed conversation out as a readable file")
