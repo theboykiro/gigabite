@@ -214,8 +214,8 @@ def _existing_folder(parent: Path, slug: str) -> str:
     """The folder in *parent* that *slug* names, reusing one made by hand.
 
     Folders in the knowledge base are browsed in Finder, so people name them
-    ("Apollo Explorations"); a layer naming that folder must land in it, not in a
-    ``apollo-explorations`` sibling beside it. A folder whose own name slugifies to
+    ("Team Explorations"); a layer naming that folder must land in it, not in a
+    ``team-explorations`` sibling beside it. A folder whose own name slugifies to
     *slug* is that folder. The slug folder wins when both exist, symlinks and
     reserved ('_' / '.') folders are never matched, and the result is always a
     real child of *parent*, so this cannot reach outside the knowledge base.

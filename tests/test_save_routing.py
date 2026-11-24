@@ -104,19 +104,19 @@ class TestSaveRouting(_Base):
         self.assertEqual(path.parent, self.knowledge / "evil" / "secrets")
 
     def test_layer_reuses_a_folder_named_by_hand(self):
-        named = self.knowledge / "acme" / "Apollo Explorations"
+        named = self.knowledge / "acme" / "Team Explorations"
         named.mkdir(parents=True)
         src = self.tmp / "export.csv"
         src.write_text("a,b\n", encoding="utf-8")
 
-        stored = save.save_file(src, project="acme", layer="Apollo Explorations")
-        note = save.save_note("x", project="acme", layer="apollo explorations",
+        stored = save.save_file(src, project="acme", layer="Team Explorations")
+        note = save.save_note("x", project="acme", layer="team explorations",
                               title="n", ts="2026-06-19")
 
         self.assertEqual(stored.parent, named)
         self.assertEqual(note.parent, named)
-        self.assertIn("layer: Apollo Explorations", note.read_text(encoding="utf-8"))
-        self.assertFalse((self.knowledge / "acme" / "apollo-explorations").exists())
+        self.assertIn("layer: Team Explorations", note.read_text(encoding="utf-8"))
+        self.assertFalse((self.knowledge / "acme" / "team-explorations").exists())
 
     def test_layer_never_reuses_a_symlink_or_reserved_folder(self):
         outside = self.tmp / "outside"
