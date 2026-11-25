@@ -118,6 +118,21 @@ class TestSaveRouting(_Base):
         self.assertIn("layer: Team Explorations", note.read_text(encoding="utf-8"))
         self.assertFalse((self.knowledge / "acme" / "team-explorations").exists())
 
+    def test_nested_layer_nests_folders(self):
+        named = self.knowledge / "acme" / "People Files" / "Jane Doe"
+        named.mkdir(parents=True)
+        src = self.tmp / "review.html"
+        src.write_text("<p>x</p>", encoding="utf-8")
+
+        stored = save.save_file(src, project="acme", layer="people files/jane-doe")
+        note = save.save_note("x", project="acme", layer="team/sub ../..",
+                              title="n", ts="2026-06-21")
+
+        self.assertEqual(stored.parent, named)
+        self.assertEqual(note.parent, self.knowledge / "acme" / "team" / "sub")
+        self.assertIn("layer: team/sub", note.read_text(encoding="utf-8"))
+        self.assertFalse((self.knowledge / "acme" / "people-filesjane-doe").exists())
+
     def test_layer_never_reuses_a_symlink_or_reserved_folder(self):
         outside = self.tmp / "outside"
         outside.mkdir()

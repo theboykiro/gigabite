@@ -203,11 +203,19 @@ def _dest_dir(project: str, layer: Optional[str]) -> tuple:
     if project == config.UNFILED_PROJECT:
         return config.KNOWLEDGE_DIR, ""
     dest = config.KNOWLEDGE_DIR / _safe_folder(project, "project")
-    layer_name = ""
+    parts = []
     if layer:
-        layer_name = _existing_folder(dest, _safe_folder(layer, "layer"))
-        dest = dest / layer_name
-    return dest, layer_name
+        # A nested layer ("team-profiles/stefan") nests one folder per segment.
+        # Each segment is sanitised on its own; segments that sanitise to nothing
+        # ('..', '.') are dropped, so nothing can climb out of the project folder.
+        segments = [s for s in re.split(r"[\\/]+", layer) if slugify(s)]
+        if not segments:
+            raise ValueError(f"invalid layer: {layer!r}")
+        for segment in segments:
+            name = _existing_folder(dest, _safe_folder(segment, "layer"))
+            parts.append(name)
+            dest = dest / name
+    return dest, "/".join(parts)
 
 
 def _existing_folder(parent: Path, slug: str) -> str:
