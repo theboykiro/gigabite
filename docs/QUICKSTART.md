@@ -79,6 +79,8 @@ every session. You can run `/core-setup` again at any time, or edit the file dir
 
 ## If something seems off
 
+Something not working? Run `gigabite check` and send the output to whoever set you up.
+
 - **Nothing recalled?** Restart Claude Code, and check that your message mentions the
   project's name or one of its keywords.
 - **Something filed in the wrong project?** Drag it into the right project's folder in
